@@ -44,7 +44,7 @@ test("full 模式：全量注入", () => {
 
 test("注入块包含方法论关键要素", () => {
 	const block = buildPromptBlock("full");
-	// 前置声明 / 威胁建模优先 / oracle 证据纪律 / 假定 breach / exploit 导向 / 薄切片
+	// 身份定位 / 授权声明 / 威胁建模优先 / oracle 证据纪律 / 假定 breach / exploit 导向 / 薄切片
 	for (const marker of ["身份定位", "授权声明", "威胁建模", "oracle", "假定 breach", "exploit", "薄切片", "先证伪再上报", "锚定", "fuzz", "沙箱"]) {
 		assert.ok(block.includes(marker), `缺少方法论要素：${marker}`);
 	}
