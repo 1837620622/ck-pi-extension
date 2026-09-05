@@ -16,7 +16,7 @@ import {
 } from "./extension-status.js";
 import { formatGitBranchValue, type GitStatusSummary } from "./git-status.js";
 import { composeAdaptiveLine } from "./powerline.js";
-import { stripEmoji, truncateToWidthWithEllipsis } from "./text.js";
+import { boundRawStatus, stripEmoji, truncateToWidthWithEllipsis } from "./text.js";
 import {
 	LINE_BREAK_SEGMENT_NAME,
 	type PowerlineBlockName,
@@ -87,8 +87,10 @@ function formatRightCluster(statuses: ReadonlyMap<string, string>): string[] {
 	const parts: string[] = [];
 	for (const [key, value] of statuses) {
 		if (key === "statusline" || key === "github-pr") continue;
-		// 去表情 + 去前缀，上游插件带什么符号都不会污染底栏。
-		const text = stripEmoji(stripExtensionStatusPrefix(key, value));
+		// 先限长再净化：上游插件带什么符号都不会污染底栏，也不会放大每帧 CPU。
+		const text = stripEmoji(
+			sanitizeTerminalText(stripExtensionStatusPrefix(key, boundRawStatus(value))),
+		);
 		if (!text) continue;
 		parts.push(text);
 	}
@@ -404,13 +406,14 @@ function prLinkText(span: string): string | undefined {
 export function prContextFromStatuses(statuses: ReadonlyMap<string, string>): string | undefined {
 	const value = statuses.get(GITHUB_PR_KEY);
 	if (!value) return undefined;
+	const boundedValue = boundRawStatus(value);
 	const link = prLinkFromStatuses(statuses);
 	// A2：分支栏只用纯文本 PR 上下文，不再透传原始 ANSI。
-	const reference = (link ? prLinkText(link) : undefined) ?? plainPrReference(value);
+	const reference = (link ? prLinkText(link) : undefined) ?? plainPrReference(boundedValue);
 	if (!reference) return undefined;
 
 	const state = compactPrState(
-		stripEmoji(sanitizeTerminalText(link ? value.replace(link, "") : value)),
+		stripEmoji(sanitizeTerminalText(link ? boundedValue.replace(link, "") : boundedValue)),
 	);
 	const context = state ? `${reference} · ${state}` : undefined;
 	if (!context) return undefined;

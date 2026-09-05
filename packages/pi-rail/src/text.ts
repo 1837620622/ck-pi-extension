@@ -29,6 +29,19 @@ export function containsEmoji(value: string): boolean {
 	return EMOJI_TEST.test(value);
 }
 
+// D1 真修：原始输入先按码点限长（4096），再做 sanitize/strip 等全量扫描。
+// slice 按 UTF-16 切分会劈开代理对，收尾时退一位，保证不产生孤代理对
+// （孤代理对会让下游 String.fromCodePoint 直接抛异常）。
+export const MAX_RAW_STATUS_LENGTH = 4096;
+
+export function boundRawStatus(value: string): string {
+	if (value.length <= MAX_RAW_STATUS_LENGTH) return value;
+	let end = MAX_RAW_STATUS_LENGTH;
+	const trailing = value.charCodeAt(end - 1);
+	if (trailing >= 0xd800 && trailing <= 0xdbff) end -= 1;
+	return value.slice(0, end);
+}
+
 /** 按终端列宽截断，末尾加省略号，保证可见宽度 <= maxWidth。 */
 export function truncateToWidthWithEllipsis(value: string, maxWidth: number): string {
 	if (maxWidth <= 0) return "";

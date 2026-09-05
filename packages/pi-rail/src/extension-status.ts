@@ -4,7 +4,7 @@ import { getAgentDir, type Theme, type ThemeColor } from "@earendil-works/pi-cod
 import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { powerlineExtensionSeparator } from "./powerline.js";
 import { DEFAULT_EXTENSION_STATUS_ICONS } from "./settings.js";
-import { stripEmoji, truncateToWidthWithEllipsis } from "./text.js";
+import { stripEmoji, boundRawStatus, truncateToWidthWithEllipsis } from "./text.js";
 import { sanitizeTerminalText } from "@narumitw/pi-tui-kit/terminal-text";
 import type { StatuslineConfig } from "./types.js";
 
@@ -63,7 +63,7 @@ export function formatExtensionStatus(
 	extensionStatusIconAliases: ExtensionStatusIconAliasMap = EMPTY_EXTENSION_STATUS_ICON_ALIASES,
 ): string {
 	const status = splitExtensionStatusIcon(
-		stripExtensionStatusPrefix(key, sanitizeTerminalText(value)),
+		stripExtensionStatusPrefix(key, sanitizeTerminalText(boundRawStatus(value))),
 	);
 	const text = simplifyExtensionStatusText(status.text);
 	const color = extensionColor(key, value);
@@ -151,7 +151,9 @@ function formatDuplicateExtensionStatus(runtime: ExtensionStatusRuntime, theme: 
 	if (runtime.duplicateExtensions.length === 0) return [];
 	const names = runtime.duplicateExtensions
 		.slice(0, 2)
-		.map((name) => truncateToWidthWithEllipsis(stripEmoji(sanitizeTerminalText(name)), 32))
+		.map((name) =>
+			truncateToWidthWithEllipsis(stripEmoji(sanitizeTerminalText(boundRawStatus(name))), 32),
+		)
 		.join(", ");
 	const suffix =
 		runtime.duplicateExtensions.length > 2 ? ` +${runtime.duplicateExtensions.length - 2}` : "";

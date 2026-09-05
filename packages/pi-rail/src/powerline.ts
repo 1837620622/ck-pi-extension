@@ -16,7 +16,7 @@ import {
 	RIGHT_PART_SEPARATOR,
 } from "./icons.js";
 import { resolvePreset } from "./presets/index.js";
-import { stripEmoji, truncatePath, truncateToWidthWithEllipsis } from "./text.js";
+import { boundRawStatus, stripEmoji, truncatePath, truncateToWidthWithEllipsis } from "./text.js";
 import { sanitizeTerminalText } from "@narumitw/pi-tui-kit/terminal-text";
 import type { BlockColors, PowerlinePreset } from "./presets/types.js";
 import {
@@ -78,7 +78,7 @@ export function splitRightParts(rightText: string | readonly string[]): string[]
 			? rightText.split("|")
 			: [...rightText];
 	return rawParts
-		.map((part) => stripEmoji(sanitizeTerminalText(part)))
+		.map((part) => stripEmoji(sanitizeTerminalText(boundRawStatus(part))))
 		.filter((part) => part.length > 0)
 		.map((part) => truncateToWidthWithEllipsis(part, MAX_RIGHT_PART_WIDTH))
 		.slice(0, MAX_RIGHT_PARTS);
@@ -124,12 +124,12 @@ export function composeAdaptiveLine(
 		.join("\n");
 }
 
-/** 排版入口统一去表情与终端转义：任何调用方传进来的文本都先净化，底栏永不出现表情包与转义注入。 */
+/** 排版入口统一设限与净化：先按码点限长，再去终端转义与表情，底栏永不出现表情包与转义注入。 */
 function sanitizeItems(items: RenderItem[]): RenderItem[] {
 	return items.map((item) =>
 		item.name === LINE_BREAK_SEGMENT_NAME
 			? item
-			: { ...item, text: stripEmoji(sanitizeTerminalText(item.text)) },
+			: { ...item, text: stripEmoji(sanitizeTerminalText(boundRawStatus(item.text))) },
 	);
 }
 

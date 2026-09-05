@@ -284,8 +284,24 @@ export function normalizeStatuslineConfig(value: unknown): {
 
 export function loadStatuslineSettings(settingsPath: string): LoadedStatuslineSettings {
 	let rawDocument: string;
+	let fileIdentity: StatuslineFileIdentity | undefined;
+	// ②：先 stat 限大小再读，避免超大文件进内存与 JSON.parse。
 	try {
+		const info = statSync(settingsPath);
+		if (info.size > MAX_SETTINGS_DOCUMENT_LENGTH) {
+			return {
+				...builtInSettings(settingsPath, [
+					diagnostic("error", "io", "", "Settings file exceeds 1MB and was ignored"),
+				]),
+			};
+		}
 		rawDocument = readFileSync(settingsPath, "utf8");
+		fileIdentity = {
+			dev: info.dev,
+			ino: info.ino,
+			mtimeNs: info.mtimeNs,
+			size: info.size,
+		};
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT" && !pathExists(settingsPath)) {
 			return builtInSettings(settingsPath);
@@ -293,16 +309,6 @@ export function loadStatuslineSettings(settingsPath: string): LoadedStatuslineSe
 		return builtInSettings(settingsPath, [
 			diagnostic("error", "io", "", `Unable to read settings: ${formatError(error)}`),
 		]);
-	}
-
-	// D3：自有配置文件也封顶 1MB，超大文件回退内置默认。
-	if (rawDocument.length > MAX_SETTINGS_DOCUMENT_LENGTH) {
-		return {
-			...builtInSettings(settingsPath, [
-				diagnostic("error", "io", "", "Settings file exceeds 1MB and was ignored"),
-			]),
-			rawDocument,
-		};
 	}
 
 	let parsed: unknown;
