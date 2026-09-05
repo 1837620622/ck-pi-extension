@@ -1,6 +1,6 @@
 {
   "name": "ck-pi-redkit",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Authorized-engagement doctrine injector for the Pi coding agent (pentest/reverse).",
   "keywords": [
     "pi-package",
