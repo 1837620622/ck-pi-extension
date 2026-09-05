@@ -5,8 +5,10 @@ import { sliceByColumn, visibleWidth } from "@earendil-works/pi-tui";
 // 科技符号白名单（系统字体可显示，非 Emoji）：
 // π • · │ ─ ┃ › ↑ ↓ … → ^ v + ~ ? ! # $ / < > [ ] ( ) = - _ %
 // ------------------------------------------------------------
-const EMOJI_PATTERN = /\p{Extended_Pictographic}/gu;
-const EMOJI_TEST = /\p{Extended_Pictographic}/u;
+// 审计③：国旗（Regional_Indicator 对）与肤色（Emoji_Modifier）同样是 Emoji，
+// 不能只拦 Extended_Pictographic，否则 🇯🇵 / 👍🏽 / 🏻 会漏网。
+const EMOJI_PATTERN = /(?:\p{Extended_Pictographic}|\p{Regional_Indicator}|\p{Emoji_Modifier})/gu;
+const EMOJI_TEST = /(?:\p{Extended_Pictographic}|\p{Regional_Indicator}|\p{Emoji_Modifier})/u;
 // Emoji 组装残件与隐形字符（审计 L-3 加固）：
 // - U+FE00-FE0F 变体选择器（含 VS16）、U+20E3 keycap 圈、U+E0020-E007F tags、U+E0100-E01EF 变体补充
 // - U+200D ZWJ、U+200B/U+200C/U+2060/U+FEFF/U+00AD 零宽与格式字符

@@ -4,13 +4,13 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { loadConfig } from "./config.js";
 import piRedkit from "./index.js";
-import { buildPromptBlock } from "./prompt.js";
+import { buildPromptBlock, REDKIT_INJECTION_MARKER } from "./prompt.js";
 import { DEFAULT_CONFIG, type RedkitConfig } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -107,35 +107,100 @@ test("配置非法字段被过滤，合法字段生效", () => {
 // 扩展工厂：模拟 pi 加载过程，验证每次运行都会钉入条令
 // ---------------------------------------------------------------------------
 
-/** 最小 pi 存根：只捕获 before_agent_start 处理器 */
+/** 最小 pi 存根：捕获 before_agent_start 处理器与 redkit 命令 */
 function stubPi() {
 	const handlers: Array<(event: { systemPrompt: string }) => { systemPrompt?: string } | undefined> = [];
+	const commands = new Map<string, { handler: (args: string, ctx: never) => Promise<void> }>();
 	const pi = {
 		on(event: string, handler: (event: { systemPrompt: string }) => { systemPrompt?: string } | undefined) {
 			assert.equal(event, "before_agent_start", "只应订阅 before_agent_start");
 			handlers.push(handler);
 		},
+		registerCommand(name: string, def: { handler: (args: string, ctx: never) => Promise<void> }) {
+			commands.set(name, def);
+		},
 	};
-	return { pi, handlers };
+	return { pi, handlers, commands };
+}
+
+function stubCtx() {
+	const notices: string[] = [];
+	const ctx = {
+		hasUI: true,
+		ui: { notify: (message: string) => void notices.push(message) },
+	};
+	return { ctx, notices };
 }
 
 function makeConfig(mode: RedkitConfig["mode"]): RedkitConfig {
 	return { ...DEFAULT_CONFIG, mode };
 }
 
-test("工厂注册 before_agent_start，处理器把条令追加到系统提示词尾部", () => {
-	const { pi, handlers } = stubPi();
+test("工厂注册 before_agent_start 与 /redkit 命令，条令追加到系统提示词尾部", async () => {
+	const { pi, handlers, commands } = stubPi();
 	// 类型层面 pi 存根不等于 ExtensionAPI，这里只验证运行时行为
 	piRedkit(pi as never, makeConfig("full"));
 	assert.equal(handlers.length, 1);
+	assert.ok(commands.has("redkit"), "必须注册 /redkit 模式切换命令");
 	const result = handlers[0]({ systemPrompt: "BASE_PROMPT" });
 	assert.ok(result?.systemPrompt.startsWith("BASE_PROMPT"), "原系统提示词必须保留在前");
 	assert.ok(result.systemPrompt.includes("授权事实"), "条令必须钉在原提示词之后");
 	assert.ok(result.systemPrompt.includes("协议逆向条令"));
 });
 
-test("off 模式不注册任何处理器（零注入、零开销）", () => {
+test("只追加不覆盖：sys.md 与 agent.md 内容原样保留", () => {
+	const { pi, handlers } = stubPi();
+	piRedkit(pi as never, makeConfig("reverse"));
+	const base = "# SYSTEM.md 内置提示词\n\n# 全局 agent.md 上下文\n\n用户任务";
+	const result = handlers[0]({ systemPrompt: base });
+	assert.ok(result?.systemPrompt.startsWith(base), "原提示词一个字都不能动");
+	assert.ok(result.systemPrompt.indexOf("协议逆向条令") > base.length, "条令只能出现在尾部");
+});
+
+test("off 模式处理器直接放行（零注入）", () => {
 	const { pi, handlers } = stubPi();
 	piRedkit(pi as never, makeConfig("off"));
-	assert.equal(handlers.length, 0);
+	assert.equal(handlers.length, 1);
+	assert.equal(handlers[0]({ systemPrompt: "BASE" }), undefined);
+});
+
+test("/redkit 命令即时切换模式并写回文件", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-redkit-cmd-"));
+	try {
+		const configPath = join(dir, "ck-pi-redkit.json");
+		const { pi, handlers, commands } = stubPi();
+		piRedkit(pi as never, makeConfig("full"), { configPath });
+		const { ctx, notices } = stubCtx();
+		await commands.get("redkit")?.handler("reverse", ctx as never);
+		assert.ok(notices.some((message) => message.includes("reverse")), "应通知切换结果");
+		assert.equal(JSON.parse(readFileSync(configPath, "utf8")).mode, "reverse");
+		// 切换即时生效：同一处理器下一次触发即用新模式
+		const result = handlers[0]({ systemPrompt: "BASE" });
+		assert.ok(result?.systemPrompt.includes("协议逆向条令"));
+		assert.ok(!result.systemPrompt.includes("渗透作战条令"));
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("/redkit 未知模式不切换只告警", async () => {
+	const { pi, commands } = stubPi();
+	piRedkit(pi as never, makeConfig("full"));
+	const { ctx, notices } = stubCtx();
+	await commands.get("redkit")?.handler("bogus", ctx as never);
+	assert.ok(notices.some((message) => message.includes("Unknown redkit mode")));
+});
+
+test("重复触发不叠加注入（幂等标记）", () => {
+	const { pi, handlers } = stubPi();
+	piRedkit(pi as never, makeConfig("full"));
+	const first = handlers[0]({ systemPrompt: "BASE_PROMPT" });
+	assert.ok(first?.systemPrompt.includes("授权事实"));
+	// 第二次事件里已带标记，必须跳过
+	const second = handlers[0]({ systemPrompt: first.systemPrompt });
+	assert.equal(second, undefined);
+});
+
+test("注入块首行为幂等标记", () => {
+	assert.ok(buildPromptBlock("full").startsWith(REDKIT_INJECTION_MARKER));
 });

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { lstatSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { INFORMATION_PROFILES } from "./information-profiles.js";
@@ -20,6 +20,7 @@ import {
 } from "./types.js";
 
 import { DEFAULT_EXTENSION_STATUS_ICONS, DEFAULT_SEGMENT_PREFIX, isForbiddenKey } from "./icons.js";
+import { containsEmoji } from "./text.js";
 
 export const SETTINGS_FILE_NAME = "ck-pi-rail.json";
 const LEGACY_SETTINGS_FILE_NAME = "pi-statusline.json";
@@ -104,12 +105,20 @@ export interface StatuslineConfigDiagnostic {
 	message: string;
 }
 
+export interface StatuslineFileIdentity {
+	dev: number;
+	ino: number;
+	/** 读取时刻的 mtime/size，用于保存前 CAS 比对，缺失则只比 dev+ino。 */
+	mtimeMs?: number;
+	size?: number;
+}
+
 export interface LoadedStatuslineSettings {
 	config: StatuslineConfig;
 	source: "built-in" | "user";
 	settingsPath: string;
 	rawDocument?: string;
-	fileIdentity?: { dev: number; ino: number };
+	fileIdentity?: StatuslineFileIdentity;
 	diagnostics: StatuslineConfigDiagnostic[];
 }
 
@@ -299,7 +308,7 @@ export function loadStatuslineSettings(settingsPath: string): LoadedStatuslineSe
 		fileIdentity = {
 			dev: info.dev,
 			ino: info.ino,
-			mtimeNs: info.mtimeNs,
+			mtimeMs: info.mtimeMs,
 			size: info.size,
 		};
 	} catch (error) {
@@ -320,6 +329,7 @@ export function loadStatuslineSettings(settingsPath: string): LoadedStatuslineSe
 				diagnostic("error", "parse", "", `Unable to parse JSON: ${formatError(error)}`),
 			]),
 			rawDocument,
+			...(fileIdentity ? { fileIdentity } : {}),
 		};
 	}
 	const normalized = normalizeStatuslineConfig(parsed);
@@ -328,6 +338,7 @@ export function loadStatuslineSettings(settingsPath: string): LoadedStatuslineSe
 		source: normalized.diagnostics.some((item) => item.severity === "error") ? "built-in" : "user",
 		settingsPath,
 		rawDocument,
+		...(fileIdentity ? { fileIdentity } : {}),
 		diagnostics: normalized.diagnostics,
 	};
 }
@@ -382,6 +393,7 @@ export function saveStatuslineSettingsDocument(
 	settingsPath: string,
 	rawDocument: string,
 	overrides: Partial<AtomicFileSystem> = {},
+	expectedIdentity?: StatuslineFileIdentity,
 ): LoadedStatuslineSettings {
 	let parsed: unknown;
 	try {
@@ -395,10 +407,17 @@ export function saveStatuslineSettingsDocument(
 		throw new Error(blocking.map((item) => `${item.path || "root"}: ${item.message}`).join("\n"));
 	}
 
+	// ④ CAS：调用方打开编辑器时的文件若已被改动（另一 Pi/编辑器），拒绝覆盖，避免 lost-update。
+	if (expectedIdentity && !statuslineFileMatches(settingsPath, expectedIdentity)) {
+		throw new Error(
+			`${SETTINGS_FILE_NAME} changed on disk since you opened it; reopen settings and retry. Your edits were not saved.`,
+		);
+	}
+
 	const fs = { mkdirSync, writeFileSync, renameSync, rmSync, ...overrides };
 	const replaceExisting = pathEntryExists(settingsPath);
 	const temporaryPath = temporarySettingsPath(settingsPath);
-	let fileIdentity: { dev: number; ino: number } | undefined;
+	let fileIdentity: StatuslineFileIdentity | undefined;
 	try {
 		fs.mkdirSync(dirname(settingsPath), { recursive: true });
 		fs.writeFileSync(temporaryPath, rawDocument, { encoding: "utf8", flag: "wx" });
@@ -424,7 +443,7 @@ export function saveStatuslineSettingsDocument(
 export function removeStatuslineSettingsDocumentIfMatches(
 	settingsPath: string,
 	expectedRawDocument: string,
-	expectedIdentity: { dev: number; ino: number },
+	expectedIdentity: StatuslineFileIdentity,
 ): void {
 	const quarantinePath = join(
 		dirname(settingsPath),
@@ -453,6 +472,20 @@ export function removeStatuslineSettingsDocumentIfMatches(
 		}
 	}
 	throw new Error("Statusline settings changed concurrently; the newer file was preserved");
+}
+
+/** 磁盘文件是否与期望身份一致（dev+ino 必比，mtimeMs/size 有则比）。文件不存在返回 false。 */
+function statuslineFileMatches(settingsPath: string, expected: StatuslineFileIdentity): boolean {
+	let info: { dev: number; ino: number; mtimeMs: number; size: number };
+	try {
+		info = statSync(settingsPath);
+	} catch {
+		return false;
+	}
+	if (info.dev !== expected.dev || info.ino !== expected.ino) return false;
+	if (expected.mtimeMs !== undefined && info.mtimeMs !== expected.mtimeMs) return false;
+	if (expected.size !== undefined && info.size !== expected.size) return false;
+	return true;
 }
 
 export function consumeStatuslineSettingsNotice(): string | undefined {
@@ -586,7 +619,7 @@ function isSafeSegmentText(
 		diagnostics.push(invalidDiagnostic(path, "Bidirectional controls are not allowed"));
 		return false;
 	}
-	if (/\p{Extended_Pictographic}/u.test(value)) {
+	if (containsEmoji(value)) {
 		diagnostics.push(invalidDiagnostic(path, "Emoji is not allowed"));
 		return false;
 	}

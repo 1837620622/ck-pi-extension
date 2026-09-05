@@ -5,7 +5,7 @@
  * 绝不让配置问题阻断扩展加载。
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import {
@@ -17,6 +17,12 @@ import {
 	type RedkitMode,
 	type ScopeEnforcement,
 } from "./types.js";
+
+/** 配置文件体积上限：正常几百字节，超限直接回退默认（先 stat 后读）。 */
+const MAX_CONFIG_BYTES = 64 * 1024;
+/** allowlist 上限：条数与单条长度，避免超大配置拖慢每次加载。 */
+const MAX_ALLOWLIST_ENTRIES = 200;
+const MAX_ALLOWLIST_ENTRY_LENGTH = 253;
 
 export function configFilePath(): string {
 	return join(getAgentDir(), CONFIG_FILE_NAME);
@@ -33,6 +39,7 @@ export function loadConfig(path = configFilePath()): RedkitConfig {
 	};
 	let raw: string;
 	try {
+		if (statSync(path).size > MAX_CONFIG_BYTES) return config;
 		raw = readFileSync(path, "utf8");
 	} catch {
 		return config;
@@ -55,14 +62,29 @@ export function loadConfig(path = configFilePath()): RedkitConfig {
 		config.enforcement = parsed.enforcement as ScopeEnforcement;
 	}
 	if (typeof parsed.engagementDir === "string" && parsed.engagementDir.trim().length > 0) {
-		// 只接受相对目录名，避免配置把产物写到任意位置
+		// 只接受相对目录名，避免配置把产物写到任意位置：
+		// 拒绝绝对路径、~、Windows 盘符、反斜杠与 .. 穿越。
 		const dir = parsed.engagementDir.trim();
-		if (!dir.startsWith("/") && !dir.includes("..")) config.engagementDir = dir;
+		if (
+			!dir.startsWith("/") &&
+			!dir.startsWith("~") &&
+			!/^[a-zA-Z]:/.test(dir) &&
+			!dir.includes("\\") &&
+			!dir.includes("..")
+		) {
+			config.engagementDir = dir;
+		}
 	}
 	if (Array.isArray(parsed.allowlist)) {
-		config.allowlist = parsed.allowlist.filter(
-			(item): item is string => typeof item === "string" && item.trim().length > 0,
-		);
+		config.allowlist = parsed.allowlist
+			.filter(
+				(item): item is string =>
+					typeof item === "string" &&
+					item.trim().length > 0 &&
+					item.trim().length <= MAX_ALLOWLIST_ENTRY_LENGTH,
+			)
+			.slice(0, MAX_ALLOWLIST_ENTRIES)
+			.map((item) => item.trim());
 	}
 	return config;
 }

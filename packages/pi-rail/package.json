@@ -1,18 +1,46 @@
 {
   "name": "ck-pi-rail",
-  "version": "0.1.1",
-  "description": "No-emoji adaptive statusline for Pi coding agent.",
+  "version": "0.1.0",
+  "description": "No-emoji adaptive full-width statusline for the Pi coding agent.",
   "keywords": [
     "pi-package",
     "pi-extension",
     "pi-coding-agent",
-    "statusline"
+    "statusline",
+    "tui",
+    "footer"
   ],
   "license": "MIT",
+  "author": "传康Kk <1837620622@qq.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/1837620622/ck-pi-extension.git",
+    "directory": "packages/pi-rail"
+  },
+  "homepage": "https://github.com/1837620622/ck-pi-extension#pi-rail",
+  "bugs": {
+    "url": "https://github.com/1837620622/ck-pi-extension/issues"
+  },
   "type": "module",
+  "files": [
+    "src",
+    "!src/layout.test.ts",
+    "README.md",
+    "LICENSE"
+  ],
   "pi": {
     "extensions": [
       "./src/index.ts"
     ]
+  },
+  "dependencies": {
+    "@narumitw/pi-tui-kit": "^0.59.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.85.0",
+    "@earendil-works/pi-tui": ">=0.85.0"
+  },
+  "scripts": {
+    "test": "esbuild src/layout.test.ts --bundle --packages=external --platform=node --format=esm --outfile=.test-dist/test.mjs --log-level=warning && node --test .test-dist/test.mjs"
   }
 }

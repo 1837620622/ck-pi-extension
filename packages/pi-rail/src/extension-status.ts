@@ -4,7 +4,7 @@ import { getAgentDir, type Theme, type ThemeColor } from "@earendil-works/pi-cod
 import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { powerlineExtensionSeparator } from "./powerline.js";
 import { DEFAULT_EXTENSION_STATUS_ICONS } from "./settings.js";
-import { stripEmoji, boundRawStatus, truncateToWidthWithEllipsis } from "./text.js";
+import { stripEmoji, boundRawStatus, containsEmoji, truncateToWidthWithEllipsis } from "./text.js";
 import { sanitizeTerminalText } from "@narumitw/pi-tui-kit/terminal-text";
 import type { StatuslineConfig } from "./types.js";
 
@@ -87,11 +87,11 @@ function extensionStatusIcon(
 	// 用户配置的图标若含 Emoji 则忽略，保证无表情包。
 	const configured = pickConfiguredIcon(key, configuredIcons, extensionStatusIconAliases);
 	if (configured !== undefined) {
-		return /\p{Extended_Pictographic}/u.test(configured) ? "" : configured;
+		return containsEmoji(configured) ? "" : configured;
 	}
 	if (leadingIcon) {
-		const cleanIcon = stripEmoji(sanitizeTerminalText(leadingIcon));
-		if (cleanIcon && !/\p{Extended_Pictographic}/u.test(cleanIcon)) return cleanIcon;
+		const cleanIcon = stripEmoji(sanitizeTerminalText(boundRawStatus(leadingIcon)));
+		if (cleanIcon && !containsEmoji(cleanIcon)) return cleanIcon;
 	}
 	return DEFAULT_EXTENSION_STATUS_ICONS[key] ?? "";
 }
@@ -352,7 +352,8 @@ export function npmPackageName(source: string): string {
 }
 
 function sourceIdentity(source: string, baseDirectory: string): string {
-	if (source.startsWith("npm:")) return `npm:${npmPackageName(source)}`;
+	// 保留完整 spec（含版本号）：npm:pi-foo@1 与 npm:pi-foo@2 是不同安装，必须能检出双加载。
+	if (source.startsWith("npm:")) return `npm:${source.slice("npm:".length).trim()}`;
 	return resolveSourcePath(source, baseDirectory);
 }
 

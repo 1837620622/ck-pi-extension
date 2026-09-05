@@ -11,6 +11,7 @@ import { sanitizeTerminalText } from "@narumitw/pi-tui-kit/terminal-text";
 import { formatDirectoryPath } from "./directory.js";
 import {
 	type ExtensionStatusRuntime,
+	formatExtensionStatuses,
 	stripExtensionStatusPrefix,
 	wrapExtensionStatusline,
 } from "./extension-status.js";

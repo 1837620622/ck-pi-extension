@@ -26,6 +26,7 @@ import {
 	type LoadedStatuslineSettings,
 	removeStatuslineSettingsDocumentIfMatches,
 	saveStatuslineSettingsDocument,
+	type StatuslineFileIdentity,
 } from "./settings.js";
 import {
 	type ConfigSegmentName,
@@ -66,7 +67,11 @@ export interface StatuslineCommandOptions {
 	getLoaded(): LoadedStatuslineSettings;
 	apply(loaded: LoadedStatuslineSettings, ctx: ExtensionCommandContext): void;
 	preview?(palettePreset: PalettePreset | undefined, ctx: ExtensionCommandContext): void;
-	save?: (settingsPath: string, rawDocument: string) => LoadedStatuslineSettings;
+	save?: (
+		settingsPath: string,
+		rawDocument: string,
+		expectedIdentity?: StatuslineFileIdentity,
+	) => LoadedStatuslineSettings;
 	getMenuOwner?(): StatuslineMenuOwner;
 }
 
@@ -266,7 +271,7 @@ async function choosePalettePreset(
 	let loaded: LoadedStatuslineSettings;
 	try {
 		const rawDocument = palettePresetDocument(current, selection);
-		loaded = (options.save ?? saveStatuslineSettingsDocument)(options.settingsPath, rawDocument);
+		loaded = saveSettings(options, rawDocument, current.fileIdentity);
 	} catch (error) {
 		ctx.ui.notify(`Palette preset was not saved: ${formatError(error)}`, "error");
 		return;
@@ -570,7 +575,7 @@ async function editSettings(ctx: ExtensionCommandContext, options: StatuslineCom
 	if (edited === undefined) return;
 	let loaded: LoadedStatuslineSettings;
 	try {
-		loaded = (options.save ?? saveStatuslineSettingsDocument)(options.settingsPath, edited);
+		loaded = saveSettings(options, edited, current.fileIdentity);
 	} catch (error) {
 		ctx.ui.notify(`pi-statusline settings were not saved: ${formatError(error)}`, "error");
 		return;
@@ -792,8 +797,7 @@ function applySegmentsDocumentChange(
 	options: StatuslineCommandOptions,
 ): LoadedStatuslineSettings {
 	const previous = options.getLoaded();
-	const save = options.save ?? saveStatuslineSettingsDocument;
-	const next = save(options.settingsPath, change.nextDocument);
+	const next = saveSettings(options, change.nextDocument, previous.fileIdentity);
 	try {
 		options.apply(next, ctx);
 	} catch (applyError) {
@@ -806,6 +810,18 @@ function applySegmentsDocumentChange(
 		throw applyError;
 	}
 	return next;
+}
+
+function saveSettings(
+	options: StatuslineCommandOptions,
+	rawDocument: string,
+	expectedIdentity: StatuslineFileIdentity | undefined,
+): LoadedStatuslineSettings {
+	const save =
+		options.save ??
+		((settingsPath, document, identity) =>
+			saveStatuslineSettingsDocument(settingsPath, document, {}, identity));
+	return save(options.settingsPath, rawDocument, expectedIdentity);
 }
 
 function restoreStatuslineSettings(
@@ -827,10 +843,8 @@ function restoreStatuslineSettings(
 			options.apply(previous, ctx);
 			return undefined;
 		}
-		const restored = (options.save ?? saveStatuslineSettingsDocument)(
-			options.settingsPath,
-			previous.rawDocument,
-		);
+		// 回滚重建：刚删掉新文件，磁盘为空，不带 CAS 身份直接写回旧文档。
+		const restored = saveSettings(options, previous.rawDocument, undefined);
 		options.apply(restored, ctx);
 		return undefined;
 	} catch (error) {

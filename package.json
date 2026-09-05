@@ -1,54 +1,14 @@
 {
-  "name": "ck-pi-extension",
-  "version": "0.2.0",
-  "description": "CK Pi extensions: pi-rail (no-emoji adaptive statusline) and pi-redkit (authorized pentest & network/protocol reverse-engineering doctrine injection) for the Pi coding agent.",
-  "keywords": [
-    "pi-package",
-    "pi-extension",
-    "pi-coding-agent",
-    "statusline",
-    "tui",
-    "footer",
-    "pentest",
-    "reverse-engineering",
-    "protocol-reverse-engineering",
-    "red-team",
-    "security"
-  ],
-  "license": "MIT",
-  "author": "传康Kk <1837620622@qq.com>",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/1837620622/ck-pi-extension.git"
-  },
-  "homepage": "https://github.com/1837620622/ck-pi-extension",
-  "bugs": {
-    "url": "https://github.com/1837620622/ck-pi-extension/issues"
-  },
+  "name": "ck-pi-extension-workspace",
+  "private": true,
   "type": "module",
-  "files": [
-    "packages/pi-rail/src",
-    "!packages/pi-rail/src/layout.test.ts",
-    "packages/pi-redkit/src",
-    "!packages/pi-redkit/src/prompt.test.ts",
-    "README.md",
-    "LICENSE"
+  "description": "Monorepo for CK Pi extensions. NOT published: install ck-pi-rail / ck-pi-redkit individually.",
+  "workspaces": [
+    "packages/*"
   ],
-  "pi": {
-    "extensions": [
-      "./packages/pi-rail/src/index.ts",
-      "./packages/pi-redkit/src/index.ts"
-    ]
-  },
   "scripts": {
-    "test": "esbuild packages/pi-rail/src/layout.test.ts --bundle --packages=external --platform=node --format=esm --outfile=.test-dist/ck-pi-rail-test.mjs --log-level=warning && esbuild packages/pi-redkit/src/prompt.test.ts --bundle --packages=external --platform=node --format=esm --outfile=.test-dist/ck-pi-redkit-test.mjs --log-level=warning && node --test .test-dist/"
-  },
-  "dependencies": {
-    "@narumitw/pi-tui-kit": "^0.59.0"
-  },
-  "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*",
-    "@earendil-works/pi-tui": "*"
+    "test": "npm run test --workspaces --if-present",
+    "pack:check": "npm pack --workspaces --dry-run"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.85.0",

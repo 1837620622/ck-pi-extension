@@ -1,11 +1,19 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { formatGitStatusSummary } from "./git-status.js";
 import { composeAdaptiveLine, splitRightParts } from "./powerline.js";
-import { isLightRailTheme, prLinkFromStatuses } from "./render.js";
-import { DEFAULT_STATUSLINE_CONFIG, normalizeStatuslineConfig } from "./settings.js";
-import { stripEmoji } from "./text.js";
+import { isLightRailTheme, prLinkFromStatuses, renderExtensionStatusline } from "./render.js";
+import {
+	DEFAULT_STATUSLINE_CONFIG,
+	loadStatuslineSettings,
+	normalizeStatuslineConfig,
+	saveStatuslineSettingsDocument,
+} from "./settings.js";
+import { boundRawStatus, containsEmoji, stripEmoji } from "./text.js";
 import type { RenderSegment, StatuslineConfig } from "./types.js";
 
 const config = {
@@ -136,9 +144,89 @@ describe("composeAdaptiveLine", () => {
 	});
 
 	it("strips keycap, tags and zero-width chars", () => {
-		assert.equal(stripEmoji("12️⃣3"), "123");
-				assert.equal(stripEmoji("hi\u{E0020}bye"), "hibye");
-		assert.equal(stripEmoji("a​b‏c"), "abc");
+		assert.equal(stripEmoji("12" + String.fromCodePoint(0xFE0F, 0x20E3) + "3"), "123");
+		assert.equal(stripEmoji("hi" + String.fromCodePoint(0xE0020, 0xE0067, 0xE007F) + "bye"), "hibye");
+		assert.equal(stripEmoji("a" + String.fromCodePoint(0x200B, 0x200F) + "bc"), "abc");
+	});
+
+	it("strips flags and skin-tone modifiers", () => {
+		assert.equal(stripEmoji("🇯🇵"), "");
+		assert.equal(stripEmoji("👍🏽"), "");
+		assert.equal(stripEmoji("🏻"), "");
+		assert.equal(containsEmoji("🇯🇵 ok"), true);
+		assert.equal(containsEmoji("plain ok"), false);
+	});
+
+	it("rejects flag emoji in extension status icons", () => {
+		const { config: parsed, diagnostics } = normalizeStatuslineConfig({
+			extensionStatusIcons: { mcp: "🇯🇵" },
+		});
+		assert.equal(parsed.extensionStatusIcons["mcp"], "");
+		assert.ok(diagnostics.some((item) => item.path === "extensionStatusIcons.mcp"));
+	});
+
+	it("bounds raw status length without splitting surrogate pairs", () => {
+		assert.equal(boundRawStatus("a".repeat(5000)).length, 4096);
+		const emoji = "😀".repeat(3000);
+		const bounded = boundRawStatus(emoji);
+		assert.ok(bounded.length <= 4096);
+		assert.equal(Array.from(bounded).join(""), bounded);
+		assert.equal(stripEmoji(bounded), "");
+	});
+
+	it("handles megabyte status strings at exact width", () => {
+		const line = composeAdaptiveLine(80, [seg("model", "m".repeat(5_000_000))], ["R" + "x".repeat(1_000_000)], config, true);
+		assert.equal(visibleWidth(line), 80);
+		assert.equal(/\p{Extended_Pictographic}/u.test(line), false);
+	});
+
+	it("refuses to overwrite concurrently changed settings (CAS)", () => {
+		const dir = mkdtempSync(join(tmpdir(), "rail-cas-"));
+		const path = join(dir, "ck-pi-rail.json");
+		writeFileSync(path, JSON.stringify({ density: "cozy" }));
+		const loaded = loadStatuslineSettings(path);
+		assert.equal(loaded.config.density, "cozy");
+		assert.ok(loaded.fileIdentity);
+		// 外部改动后再保存必须抛错，而不是覆盖。
+		writeFileSync(path, JSON.stringify({ density: "compact" }));
+		assert.throws(
+			() => saveStatuslineSettingsDocument(path, JSON.stringify({ time: 1 }), {}, loaded.fileIdentity),
+			/changed on disk/,
+		);
+		// 未改动时保存成功。
+		const reloaded = loadStatuslineSettings(path);
+		const saved = saveStatuslineSettingsDocument(
+			path,
+			JSON.stringify({ density: "compact" }),
+			{},
+			reloaded.fileIdentity,
+		);
+		assert.equal(saved.config.density, "compact");
+	});
+
+	it("ignores oversize settings files before parsing", () => {
+		const dir = mkdtempSync(join(tmpdir(), "rail-big-"));
+		const path = join(dir, "ck-pi-rail.json");
+		writeFileSync(path, `{"segments": ["${"model\",".repeat(300_000)}"]}`);
+		const loaded = loadStatuslineSettings(path);
+		assert.equal(loaded.source, "built-in");
+		assert.ok(loaded.diagnostics.some((item) => item.message.includes("exceeds 1MB")));
+	});
+
+	it("renders the extension status row without throwing", () => {
+		const footerData = { getExtensionStatuses: () => new Map([["mcp", "mcp: ok"]]) };
+		const theme = { fg: (_color: string, text: string) => text };
+		const runtime = { duplicateExtensions: [], extensionStatusIconAliases: new Map() };
+		const rows = renderExtensionStatusline(
+			80,
+			footerData as never,
+			theme as never,
+			{ ...config, extensionStatusIcons: {} } as never,
+			runtime as never,
+			"main",
+			true,
+		);
+		assert.ok(Array.isArray(rows));
 	});
 });
 
