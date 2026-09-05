@@ -96,10 +96,10 @@ export function parseGitRoot(output: string): string | undefined {
 
 export function formatGitStatusSummary(summary: GitStatusSummary | undefined): string {
 	if (!summary) return "";
-	// 纯 ASCII 科技符号：^ 超前 / v 落后，系统字体无缺字，不用 Emoji。
+	// 箭头符号：↑ 超前 / ↓ 落后，WGL4 系统字形，各终端无缺字。
 	const tokens = [
-		["^", summary.ahead],
-		["v", summary.behind],
+		["↑", summary.ahead],
+		["↓", summary.behind],
 		["+", summary.staged],
 		["~", summary.modified],
 		["?", summary.untracked],

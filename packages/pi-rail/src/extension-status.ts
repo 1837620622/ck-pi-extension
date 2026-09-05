@@ -1,10 +1,11 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { getAgentDir, type Theme, type ThemeColor } from "@earendil-works/pi-coding-agent";
 import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { powerlineExtensionSeparator } from "./powerline.js";
 import { DEFAULT_EXTENSION_STATUS_ICONS } from "./settings.js";
-import { stripEmoji } from "./text.js";
+import { stripEmoji, truncateToWidthWithEllipsis } from "./text.js";
+import { sanitizeTerminalText } from "@narumitw/pi-tui-kit/terminal-text";
 import type { StatuslineConfig } from "./types.js";
 
 export type ExtensionStatusIconAliasMap = ReadonlyMap<string, readonly string[]>;
@@ -14,6 +15,8 @@ export interface ExtensionStatusRuntime {
 }
 
 const STATUSLINE_KEY = "statusline";
+const MAX_PACKAGES_PER_SETTINGS_FILE = 200;
+const MAX_PACKAGE_JSON_BYTES = 64 * 1024;
 const COMPATIBLE_STATUS_ICON_KEYS: Readonly<Record<string, string>> = {
 	retry: "unknown-error-retry",
 	sync: "pisync",
@@ -59,7 +62,9 @@ export function formatExtensionStatus(
 	config: Pick<StatuslineConfig, "extensionStatusIcons">,
 	extensionStatusIconAliases: ExtensionStatusIconAliasMap = EMPTY_EXTENSION_STATUS_ICON_ALIASES,
 ): string {
-	const status = splitExtensionStatusIcon(stripExtensionStatusPrefix(key, value));
+	const status = splitExtensionStatusIcon(
+		stripExtensionStatusPrefix(key, sanitizeTerminalText(value)),
+	);
 	const text = simplifyExtensionStatusText(status.text);
 	const color = extensionColor(key, value);
 	const textColor = color === "warning" ? "warning" : "muted";
@@ -84,7 +89,10 @@ function extensionStatusIcon(
 	if (configured !== undefined) {
 		return /\p{Extended_Pictographic}/u.test(configured) ? "" : configured;
 	}
-	if (leadingIcon && !/\p{Extended_Pictographic}/u.test(leadingIcon)) return leadingIcon;
+	if (leadingIcon) {
+		const cleanIcon = stripEmoji(sanitizeTerminalText(leadingIcon));
+		if (cleanIcon && !/\p{Extended_Pictographic}/u.test(cleanIcon)) return cleanIcon;
+	}
 	return DEFAULT_EXTENSION_STATUS_ICONS[key] ?? "";
 }
 
@@ -141,7 +149,10 @@ export function wrapExtensionStatusline(status: string, width: number): string[]
 
 function formatDuplicateExtensionStatus(runtime: ExtensionStatusRuntime, theme: Theme): string[] {
 	if (runtime.duplicateExtensions.length === 0) return [];
-	const names = runtime.duplicateExtensions.slice(0, 2).join(", ");
+	const names = runtime.duplicateExtensions
+		.slice(0, 2)
+		.map((name) => truncateToWidthWithEllipsis(stripEmoji(sanitizeTerminalText(name)), 32))
+		.join(", ");
 	const suffix =
 		runtime.duplicateExtensions.length > 2 ? ` +${runtime.duplicateExtensions.length - 2}` : "";
 	return [`${theme.fg("warning", "dup")} ${theme.fg("warning", `${names}${suffix}`)}`];
@@ -299,7 +310,9 @@ function uniqueStrings(values: readonly string[]): string[] {
 function readPackageSources(settingsFile: string): string[] {
 	try {
 		const settings = JSON.parse(readFileSync(settingsFile, "utf8")) as { packages?: unknown[] };
+		// D2：恶意仓库可能塞数万条 packages，封顶避免同步 readFileSync 卡顿。
 		return (settings.packages ?? [])
+			.slice(0, MAX_PACKAGES_PER_SETTINGS_FILE)
 			.map((entry) => {
 				if (typeof entry === "string") return entry;
 				if (
@@ -321,6 +334,8 @@ function packageNameForSource(source: string, baseDirectory: string): string | u
 	if (source.startsWith("npm:")) return npmPackageName(source);
 	const packageJson = join(resolveSourcePath(source, baseDirectory), "package.json");
 	try {
+		// 体积 guard：package.json 正常几 KB，超 64KB 直接跳过。
+		if (statSync(packageJson).size > MAX_PACKAGE_JSON_BYTES) return undefined;
 		const packageData = JSON.parse(readFileSync(packageJson, "utf8")) as { name?: unknown };
 		return typeof packageData.name === "string" ? packageData.name : undefined;
 	} catch {

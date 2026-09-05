@@ -1,6 +1,6 @@
 import type { ConfigSegmentName, SegmentName } from "./types.js";
 
-export const INFORMATION_PROFILE_NAMES = ["minimal", "balanced", "detailed"] as const;
+export const INFORMATION_PROFILE_NAMES = ["minimal", "balanced", "detailed", "full"] as const;
 export type InformationProfileName = (typeof INFORMATION_PROFILE_NAMES)[number];
 export type InformationProfile = InformationProfileName | "custom";
 
@@ -21,6 +21,22 @@ export const INFORMATION_PROFILES: Readonly<
 		"cache",
 		"cost",
 		"time",
+	],
+	// 全量：能加的都加上，窄终端下自适应压缩/丢段，宽屏全展开。
+	full: [
+		"brand",
+		"provider",
+		"model",
+		"thinking",
+		"cwd",
+		"branch",
+		"tools",
+		"context",
+		"tokens",
+		"cache",
+		"cost",
+		"time",
+		"turn",
 	],
 };
 

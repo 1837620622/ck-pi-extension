@@ -3,7 +3,8 @@ import { describe, it } from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { formatGitStatusSummary } from "./git-status.js";
 import { composeAdaptiveLine, splitRightParts } from "./powerline.js";
-import { isLightRailTheme } from "./render.js";
+import { isLightRailTheme, prLinkFromStatuses } from "./render.js";
+import { DEFAULT_STATUSLINE_CONFIG, normalizeStatuslineConfig } from "./settings.js";
 import { stripEmoji } from "./text.js";
 import type { RenderSegment, StatuslineConfig } from "./types.js";
 
@@ -75,8 +76,8 @@ describe("composeAdaptiveLine", () => {
 	});
 
 	it("supports legacy string right cluster", () => {
-		const line = composeAdaptiveLine(80, items, "TPS 42  |  MCP 9", config, true);
-		assert.equal(visibleWidth(line), 80);
+		const line = composeAdaptiveLine(120, items, "TPS 42  |  MCP 9", config, true);
+		assert.equal(visibleWidth(line), 120);
 		assert.match(line, /TPS 42/);
 	});
 
@@ -85,6 +86,59 @@ describe("composeAdaptiveLine", () => {
 		const light = composeAdaptiveLine(80, items, right, config, true, true);
 		assert.match(dark, /24;24;37/);
 		assert.match(light, /226;232;240/);
+	});
+
+	it("separates blocks with arrow dividers", () => {
+		const line = composeAdaptiveLine(120, items, right, config, true);
+		assert.match(line, /›/);
+		assert.equal(visibleWidth(line), 120);
+	});
+
+	it("defaults to the full segment set", () => {
+		const segments = DEFAULT_STATUSLINE_CONFIG.segments;
+		for (const name of ["tokens", "cache", "cost", "time", "turn", "provider", "brand"]) {
+			assert.ok((segments as string[]).includes(name), `missing ${name}`);
+		}
+	});
+
+	it("strips terminal escapes from segments and right parts", () => {
+		const evil = [
+			seg("model", "omen[2Jalpha"),
+			seg("cwd", "~/x]0;pwnedy"),
+		];
+		const line = composeAdaptiveLine(80, evil, ["TPS [2J42"], config, true);
+		assert.equal(line.includes("2J"), false);
+		assert.equal(line.includes("]0;"), false);
+		assert.equal(line.includes("pwned"), false);
+		assert.equal(visibleWidth(line), 80);
+	});
+
+	it("keeps github links but drops phishing links", () => {
+		const good = new Map([
+			["github-pr", "PR ]8;;https://github.com/o/r/pull/1#1]8;;: checks passing"],
+		]);
+		const evil = new Map([
+			["github-pr", "PR ]8;;http://evil.example/p#1]8;;: checks passing"],
+		]);
+		assert.ok(prLinkFromStatuses(good)?.includes("github.com"));
+		assert.equal(prLinkFromStatuses(evil), undefined);
+		assert.equal(prLinkFromStatuses(new Map()), undefined);
+	});
+
+	it("rejects emoji and control chars in extension status icons", () => {
+		const { config: parsed, diagnostics } = normalizeStatuslineConfig({
+			extensionStatusIcons: { mcp: "🚀", lsp: "[2J", ok: "OK" },
+		});
+		assert.equal(parsed.extensionStatusIcons["mcp"], "");
+		assert.equal(parsed.extensionStatusIcons["lsp"], "");
+		assert.equal(parsed.extensionStatusIcons["ok"], "OK");
+		assert.ok(diagnostics.length >= 2);
+	});
+
+	it("strips keycap, tags and zero-width chars", () => {
+		assert.equal(stripEmoji("12️⃣3"), "123");
+				assert.equal(stripEmoji("hi\u{E0020}bye"), "hibye");
+		assert.equal(stripEmoji("a​b‏c"), "abc");
 	});
 });
 
@@ -105,8 +159,8 @@ describe("no-emoji rails", () => {
 	it("git status uses ascii markers", () => {
 		const text = formatGitStatusSummary({ ahead: 2, behind: 1, staged: 3, modified: 1, untracked: 0, conflicts: 0 });
 		assert.equal(/\p{Extended_Pictographic}/u.test(text), false);
-		assert.match(text, /\^2/);
-		assert.match(text, /v1/);
+		assert.match(text, /↑2/);
+		assert.match(text, /↓1/);
 	});
 
 	it("detects light themes from text luminance", () => {

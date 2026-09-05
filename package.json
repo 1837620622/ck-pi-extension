@@ -23,6 +23,7 @@
   "type": "module",
   "files": [
     "packages/pi-rail/src",
+    "!packages/pi-rail/src/layout.test.ts",
     "README.md",
     "LICENSE"
   ],
@@ -43,6 +44,7 @@
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.85.0",
-    "@earendil-works/pi-tui": "^0.85.0"
+    "@earendil-works/pi-tui": "^0.85.0",
+    "esbuild": "0.28.1"
   }
 }

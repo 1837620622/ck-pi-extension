@@ -5,3 +5,9 @@ node_modules/
 dist/
 coverage/
 .test-dist/
+AGENTS.md
+.env*
+*.pem
+*.key
+*token*
+*secret*

@@ -16,7 +16,7 @@ import {
 } from "./extension-status.js";
 import { formatGitBranchValue, type GitStatusSummary } from "./git-status.js";
 import { composeAdaptiveLine } from "./powerline.js";
-import { stripEmoji } from "./text.js";
+import { stripEmoji, truncateToWidthWithEllipsis } from "./text.js";
 import {
 	LINE_BREAK_SEGMENT_NAME,
 	type PowerlineBlockName,
@@ -381,20 +381,43 @@ export function prLinkFromStatuses(statuses: ReadonlyMap<string, string>): strin
 	if (open === -1) return undefined;
 	const closeMarker = "\x1b]8;;\x07";
 	const close = value.indexOf(closeMarker, open + 1);
-	return close === -1 ? undefined : value.slice(open, close + closeMarker.length);
+	if (close === -1) return undefined;
+	const span = value.slice(open, close + closeMarker.length);
+	// A2：只放行 github.com 的链接，钓鱼 URL 直接丢弃。
+	return prLinkUrl(span) !== undefined ? span : undefined;
+}
+
+/** 校验 OSC 8 链接目标，仅允许 github.com，返回 URL；非法返回 undefined。 */
+function prLinkUrl(span: string): string | undefined {
+	const match = /^\x1b\]8;;([^\s\x07]*)\x07/.exec(span);
+	const url = match?.[1] ?? "";
+	return url.startsWith("https://github.com/") ? url : undefined;
+}
+
+/** OSC 8 span 内部的可点击文本（如 #123），去转义后返回。 */
+function prLinkText(span: string): string | undefined {
+	const match = /^\x1b\]8;;[^\s\x07]*\x07([\s\S]*?)\x1b\]8;;\x07/.exec(span);
+	const text = match ? stripEmoji(sanitizeTerminalText(match[1] ?? "")) : "";
+	return text || undefined;
 }
 
 export function prContextFromStatuses(statuses: ReadonlyMap<string, string>): string | undefined {
 	const value = statuses.get(GITHUB_PR_KEY);
 	if (!value) return undefined;
 	const link = prLinkFromStatuses(statuses);
-	const reference = link ?? plainPrReference(value);
+	// A2：分支栏只用纯文本 PR 上下文，不再透传原始 ANSI。
+	const reference = (link ? prLinkText(link) : undefined) ?? plainPrReference(value);
 	if (!reference) return undefined;
 
-	const state = compactPrState(link ? value.replace(link, "") : value);
+	const state = compactPrState(
+		stripEmoji(sanitizeTerminalText(link ? value.replace(link, "") : value)),
+	);
 	const context = state ? `${reference} · ${state}` : undefined;
-	return context ? stripEmoji(context) : undefined;
+	if (!context) return undefined;
+	return truncateToWidthWithEllipsis(stripEmoji(sanitizeTerminalText(context)), MAX_PR_CONTEXT_WIDTH);
 }
+
+const MAX_PR_CONTEXT_WIDTH = 64;
 
 function plainPrReference(value: string): string | undefined {
 	return /^PR\s+(#\d+):/u.exec(value)?.[1];

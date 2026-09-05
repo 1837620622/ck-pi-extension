@@ -2,6 +2,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { ansiStyle } from "./ansi.js";
 import {
+	BLOCK_DIVIDER,
 	FILL_BG,
 	FILL_BG_LIGHT,
 	FILL_FG,
@@ -16,6 +17,7 @@ import {
 } from "./icons.js";
 import { resolvePreset } from "./presets/index.js";
 import { stripEmoji, truncatePath, truncateToWidthWithEllipsis } from "./text.js";
+import { sanitizeTerminalText } from "@narumitw/pi-tui-kit/terminal-text";
 import type { BlockColors, PowerlinePreset } from "./presets/types.js";
 import {
 	LINE_BREAK_SEGMENT_NAME,
@@ -61,6 +63,8 @@ export function resolveChrome(isLight: boolean): RailChrome {
 
 const LEAD_WIDTH = 1;
 const MAX_RIGHT_PARTS = 4;
+// D1：单条右簇文本封顶，避免恶意/故障扩展用 MB 级字符串每帧放大 CPU。
+const MAX_RIGHT_PART_WIDTH = 64;
 
 type RailConfig = Pick<
 	StatuslineConfig,
@@ -74,8 +78,9 @@ export function splitRightParts(rightText: string | readonly string[]): string[]
 			? rightText.split("|")
 			: [...rightText];
 	return rawParts
-		.map((part) => stripEmoji(part))
+		.map((part) => stripEmoji(sanitizeTerminalText(part)))
 		.filter((part) => part.length > 0)
+		.map((part) => truncateToWidthWithEllipsis(part, MAX_RIGHT_PART_WIDTH))
 		.slice(0, MAX_RIGHT_PARTS);
 }
 
@@ -119,12 +124,12 @@ export function composeAdaptiveLine(
 		.join("\n");
 }
 
-/** 排版入口统一去表情：任何调用方传进来的文本都先净化，底栏永不出现表情包。 */
+/** 排版入口统一去表情与终端转义：任何调用方传进来的文本都先净化，底栏永不出现表情包与转义注入。 */
 function sanitizeItems(items: RenderItem[]): RenderItem[] {
 	return items.map((item) =>
 		item.name === LINE_BREAK_SEGMENT_NAME
 			? item
-			: { ...item, text: stripEmoji(item.text) },
+			: { ...item, text: stripEmoji(sanitizeTerminalText(item.text)) },
 	);
 }
 
@@ -135,7 +140,7 @@ function composePlainLine(
 	chrome: RailChrome,
 	trueColor: boolean,
 ): string {
-	const left = fitSegmentsToBudget(segments, Math.max(0, width - LEAD_WIDTH), config, trueColor);
+	const left = fitSegmentsToBudget(segments, Math.max(0, width - LEAD_WIDTH), config, chrome, trueColor);
 	return `${renderLead(chrome, trueColor)}${padLine(left.text, width - LEAD_WIDTH, chrome, trueColor)}`;
 }
 
@@ -149,14 +154,14 @@ function composeLastLine(
 ): string {
 	const lead = renderLead(chrome, trueColor);
 	// 基准：不放右簇时左侧能保住哪些段；右簇只有在不造成丢段时才保留。
-	const alone = fitSegmentsToBudget(segments, Math.max(0, width - LEAD_WIDTH), config, trueColor);
+	const alone = fitSegmentsToBudget(segments, Math.max(0, width - LEAD_WIDTH), config, chrome, trueColor);
 	// 右簇从全保留到全丢逐档尝试：优先保住左侧核心信息。
 	for (let keep = parts.length; keep >= 0; keep -= 1) {
 		const right = renderRight(parts.slice(0, keep), chrome, trueColor);
 		const rightWidth = visibleWidth(right);
 		const leftBudget = width - LEAD_WIDTH - rightWidth;
 		if (leftBudget < 0) continue;
-		const left = fitSegmentsToBudget(segments, leftBudget, config, trueColor);
+		const left = fitSegmentsToBudget(segments, leftBudget, config, chrome, trueColor);
 		if (keep > 0 && left.names !== alone.names) continue;
 		const leftWidth = visibleWidth(left.text);
 		if (LEAD_WIDTH + leftWidth + rightWidth > width) continue;
@@ -226,6 +231,7 @@ function fitSegmentsToBudget(
 	segments: readonly RenderSegment[],
 	budget: number,
 	config: RailConfig,
+	chrome: RailChrome,
 	trueColor: boolean,
 ): { text: string; names: string } {
 	if (segments.length === 0 || budget <= 0) return { text: "", names: "" };
@@ -235,11 +241,11 @@ function fitSegmentsToBudget(
 	let modelLevel = 0;
 	let branchLevel = 0;
 	const done = () => ({
-		text: joinPowerlineSegments(current, config, trueColor),
+		text: joinPowerlineSegments(current, config, chrome, trueColor),
 		names: current.map((segment) => segment.name).join(","),
 	});
 	for (let step = 0; step < 64; step += 1) {
-		const rendered = joinPowerlineSegments(current, config, trueColor);
+		const rendered = joinPowerlineSegments(current, config, chrome, trueColor);
 		if (visibleWidth(rendered) <= budget) return { text: rendered, names: current.map((segment) => segment.name).join(",") };
 		const target = widestShrinkableIndex(current, cwdLevel, modelLevel, branchLevel);
 		if (target) {
@@ -272,8 +278,9 @@ function fitSegmentsToBudget(
 		}
 		return {
 			text: joinPowerlineSegments(
-				[hardTruncateSegment(current[0] as RenderSegment, budget, config, trueColor)],
+				[hardTruncateSegment(current[0] as RenderSegment, budget, config, chrome, trueColor)],
 				config,
+				chrome,
 				trueColor,
 			),
 			names: (current[0] as RenderSegment).name,
@@ -317,10 +324,11 @@ function hardTruncateSegment(
 	segment: RenderSegment,
 	budget: number,
 	config: RailConfig,
+	chrome: RailChrome,
 	trueColor: boolean,
 ): RenderSegment {
 	const overhead = visibleWidth(
-		joinPowerlineSegments([{ ...segment, text: "" }], config, trueColor),
+		joinPowerlineSegments([{ ...segment, text: "" }], config, chrome, trueColor),
 	);
 	return { ...segment, text: truncateToWidthWithEllipsis(segment.text, Math.max(0, budget - overhead)) };
 }
@@ -355,13 +363,22 @@ export function powerlineExtensionSeparator(
 function joinPowerlineSegments(
 	segments: RenderSegment[],
 	config: RailConfig,
+	chrome: RailChrome,
 	trueColor: boolean,
 ): string {
 	const preset = resolvePreset(config.palettePreset);
 	const blocks = contiguousBlocks(segments, preset, config.palettePreset, config.palette);
 	let line = "";
 
-	for (const block of blocks) {
+	for (const [index, block] of blocks.entries()) {
+		// 段间箭头：站在导轨底色上把相邻色块切开，分隔明显。
+		if (index > 0) {
+			line += ansiStyle(
+				` ${BLOCK_DIVIDER} `,
+				{ fg: chrome.dividerFg, bg: chrome.fillBg },
+				trueColor,
+			);
+		}
 		line += ansiStyle(formatBlockText(block, config), block.colors, trueColor);
 	}
 	return line;

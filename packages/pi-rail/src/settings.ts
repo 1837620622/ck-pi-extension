@@ -23,6 +23,7 @@ import { DEFAULT_EXTENSION_STATUS_ICONS, DEFAULT_SEGMENT_PREFIX, isForbiddenKey 
 
 export const SETTINGS_FILE_NAME = "ck-pi-rail.json";
 const LEGACY_SETTINGS_FILE_NAME = "pi-statusline.json";
+const MAX_SETTINGS_DOCUMENT_LENGTH = 1024 * 1024;
 
 export { DEFAULT_EXTENSION_STATUS_ICONS };
 
@@ -35,7 +36,7 @@ const LEGACY_STATUS_ICON_KEYS = {
 	"unknown-error-retry": "retry",
 } as const;
 
-const DEFAULT_SEGMENTS: SegmentName[] = [...INFORMATION_PROFILES.balanced];
+const DEFAULT_SEGMENTS: SegmentName[] = [...INFORMATION_PROFILES.full];
 
 export const DEFAULT_STATUSLINE_CONFIG: StatuslineConfig = {
 	palettePreset: "custom",
@@ -239,10 +240,13 @@ export function normalizeStatuslineConfig(value: unknown): {
 		} else {
 			for (const [key, icon] of Object.entries(value.extensionStatusIcons)) {
 				if (isForbiddenKey(key)) continue;
+				const iconPath = `extensionStatusIcons.${key}`;
 				if (typeof icon !== "string") {
-					diagnostics.push(invalidDiagnostic(`extensionStatusIcons.${key}`, "Expected a string"));
+					diagnostics.push(invalidDiagnostic(iconPath, "Expected a string"));
 					continue;
 				}
+				// M-1：图标与前后缀同标准，拒绝 Emoji/控制字符/Bidi，防止终端转义注入。
+				if (!isSafeSegmentText(icon, iconPath, diagnostics)) continue;
 				Object.defineProperty(config.extensionStatusIcons, key, {
 					value: icon,
 					enumerable: true,
@@ -289,6 +293,16 @@ export function loadStatuslineSettings(settingsPath: string): LoadedStatuslineSe
 		return builtInSettings(settingsPath, [
 			diagnostic("error", "io", "", `Unable to read settings: ${formatError(error)}`),
 		]);
+	}
+
+	// D3：自有配置文件也封顶 1MB，超大文件回退内置默认。
+	if (rawDocument.length > MAX_SETTINGS_DOCUMENT_LENGTH) {
+		return {
+			...builtInSettings(settingsPath, [
+				diagnostic("error", "io", "", "Settings file exceeds 1MB and was ignored"),
+			]),
+			rawDocument,
+		};
 	}
 
 	let parsed: unknown;
@@ -562,6 +576,10 @@ function isSafeSegmentText(
 		diagnostics.push(invalidDiagnostic(path, "Control characters are not allowed"));
 		return false;
 	}
+	if (hasBidiControl(value)) {
+		diagnostics.push(invalidDiagnostic(path, "Bidirectional controls are not allowed"));
+		return false;
+	}
 	if (/\p{Extended_Pictographic}/u.test(value)) {
 		diagnostics.push(invalidDiagnostic(path, "Emoji is not allowed"));
 		return false;
@@ -624,6 +642,23 @@ function hasControlCharacter(value: string): boolean {
 	for (const character of value) {
 		const codePoint = character.codePointAt(0) ?? 0;
 		if (codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f)) return true;
+	}
+	return false;
+}
+
+/** 双向覆盖符（视觉欺骗），与 sanitizeTerminalText 的 Bidi 语义对齐。 */
+function hasBidiControl(value: string): boolean {
+	for (const character of value) {
+		const codePoint = character.codePointAt(0) ?? 0;
+		if (
+			codePoint === 0x061c ||
+			codePoint === 0x200e ||
+			codePoint === 0x200f ||
+			(codePoint >= 0x202a && codePoint <= 0x202e) ||
+			(codePoint >= 0x2066 && codePoint <= 0x2069)
+		) {
+			return true;
+		}
 	}
 	return false;
 }

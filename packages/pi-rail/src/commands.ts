@@ -90,7 +90,8 @@ export async function handleStatuslineCommand(
 	}
 
 	const tokens = normalized.split(/\s+/u);
-	const subcommand = tokens[0]?.toLowerCase() ?? "";
+	// L-2：回显用户输入前先去终端转义，防止转义欺骗通知栏。
+	const subcommand = sanitizeTerminalText(tokens[0]?.toLowerCase() ?? "").slice(0, 64);
 	if (tokens.length > 1) {
 		if (canNotify(ctx)) {
 			ctx.ui.notify(`/statusline ${subcommand} does not accept trailing arguments.`, "warning");
@@ -877,7 +878,7 @@ function showStatus(ctx: ExtensionCommandContext, options: StatuslineCommandOpti
 	const loaded = options.getLoaded();
 	const diagnostics = loaded.diagnostics
 		.slice(0, 5)
-		.map((item) => `${item.path || "root"}: ${item.message}`)
+		.map((item) => sanitizeTerminalText(`${item.path || "root"}: ${item.message}`))
 		.join("; ");
 	ctx.ui.notify(
 		[
@@ -904,7 +905,7 @@ function showHelp(ctx: ExtensionCommandContext, settingsPath: string) {
 			"/statusline status — show source, path, information level, and warnings",
 			"/statusline help — show this help",
 			"Menu actions: Appearance, Information, Advanced, Status, Help.",
-			"Information levels: minimal, balanced, detailed; any other segment array is custom.",
+			"Information levels: minimal, balanced, detailed, full; any other segment array is custom.",
 			"Advanced actions: Custom layout, Edit settings JSON, Back.",
 			`Settings: ${settingsPath}`,
 			"Fields: palettePreset, palette, density, separator, segments, segmentText, extensionStatusIcons",

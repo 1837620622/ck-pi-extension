@@ -57,6 +57,11 @@ export const FILL_FG_LIGHT = "#475569";
 export const LEAD_GLYPH = "┃";
 export const LEAD_FG = "#22d3ee";
 export const LEAD_FG_LIGHT = "#0891b2";
+/**
+ * 段间箭头分隔 U+203A：WGL4 字形，全终端等宽字体标配，
+ * 放在导轨底色上把相邻色块切开，分隔比 │ 更醒目。
+ */
+export const BLOCK_DIVIDER = "›";
 export const RIGHT_DIVIDER = "│";
 export const RIGHT_DIVIDER_FG = "#45475a";
 export const RIGHT_DIVIDER_FG_LIGHT = "#94a3b8";
