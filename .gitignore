@@ -11,3 +11,4 @@ AGENTS.md
 *.key
 *token*
 *secret*
+packages/pi-redkit/
