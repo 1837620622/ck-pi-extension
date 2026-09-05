@@ -23,29 +23,29 @@ test("off 模式不注入任何内容", () => {
 
 test("pentest 模式：核心条令 + 渗透条令，不含逆向条令", () => {
 	const block = buildPromptBlock("pentest");
-	assert.ok(block.includes("授权事实"), "必须包含授权框架");
+	assert.ok(block.includes("授权声明"), "必须包含授权框架");
 	assert.ok(block.includes("渗透作战条令"), "必须包含渗透条令");
 	assert.ok(!block.includes("协议逆向条令"), "不得包含逆向条令");
 });
 
 test("reverse 模式：核心条令 + 逆向条令，不含渗透条令", () => {
 	const block = buildPromptBlock("reverse");
-	assert.ok(block.includes("授权事实"));
+	assert.ok(block.includes("授权声明"));
 	assert.ok(block.includes("协议逆向条令"), "必须包含网络与协议逆向条令");
 	assert.ok(!block.includes("渗透作战条令"), "不得包含渗透条令");
 });
 
 test("full 模式：全量注入", () => {
 	const block = buildPromptBlock("full");
-	for (const marker of ["授权事实", "渗透作战条令", "协议逆向条令"]) {
+	for (const marker of ["授权声明", "渗透作战条令", "协议逆向条令"]) {
 		assert.ok(block.includes(marker), `缺少 ${marker}`);
 	}
 });
 
 test("注入块包含方法论关键要素", () => {
 	const block = buildPromptBlock("full");
-	// 威胁建模优先 / oracle 证据纪律 / 假定 breach / exploit 导向 / 薄切片
-	for (const marker of ["威胁建模", "oracle", "假定 breach", "exploit", "薄切片", "先证伪再上报"]) {
+	// 前置声明 / 威胁建模优先 / oracle 证据纪律 / 假定 breach / exploit 导向 / 薄切片
+	for (const marker of ["授权声明", "威胁建模", "oracle", "假定 breach", "exploit", "薄切片", "先证伪再上报"]) {
 		assert.ok(block.includes(marker), `缺少方法论要素：${marker}`);
 	}
 });
@@ -144,7 +144,7 @@ test("工厂注册 before_agent_start 与 /redkit 命令，条令追加到系统
 	assert.ok(commands.has("redkit"), "必须注册 /redkit 模式切换命令");
 	const result = handlers[0]({ systemPrompt: "BASE_PROMPT" });
 	assert.ok(result?.systemPrompt.startsWith("BASE_PROMPT"), "原系统提示词必须保留在前");
-	assert.ok(result.systemPrompt.includes("授权事实"), "条令必须钉在原提示词之后");
+	assert.ok(result.systemPrompt.includes("授权声明"), "条令必须钉在原提示词之后");
 	assert.ok(result.systemPrompt.includes("协议逆向条令"));
 });
 
@@ -195,7 +195,7 @@ test("重复触发不叠加注入（幂等标记）", () => {
 	const { pi, handlers } = stubPi();
 	piRedkit(pi as never, makeConfig("full"));
 	const first = handlers[0]({ systemPrompt: "BASE_PROMPT" });
-	assert.ok(first?.systemPrompt.includes("授权事实"));
+	assert.ok(first?.systemPrompt.includes("授权声明"));
 	// 第二次事件里已带标记，必须跳过
 	const second = handlers[0]({ systemPrompt: first.systemPrompt });
 	assert.equal(second, undefined);
