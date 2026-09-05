@@ -1,0 +1,48 @@
+{
+  "name": "ck-pi-extension",
+  "version": "0.1.0",
+  "description": "CK Pi extensions. Currently ships pi-rail: a no-emoji, full-width adaptive statusline for the Pi coding agent.",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "pi-coding-agent",
+    "statusline",
+    "tui",
+    "footer"
+  ],
+  "license": "MIT",
+  "author": "传康Kk <1837620622@qq.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/1837620622/ck-pi-extension.git"
+  },
+  "homepage": "https://github.com/1837620622/ck-pi-extension",
+  "bugs": {
+    "url": "https://github.com/1837620622/ck-pi-extension/issues"
+  },
+  "type": "module",
+  "files": [
+    "packages/pi-rail/src",
+    "README.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./packages/pi-rail/src/index.ts"
+    ]
+  },
+  "scripts": {
+    "test": "esbuild packages/pi-rail/src/layout.test.ts --bundle --packages=external --platform=node --format=esm --outfile=.test-dist/ck-pi-rail-test.mjs --log-level=warning && node --test .test-dist/ck-pi-rail-test.mjs"
+  },
+  "dependencies": {
+    "@narumitw/pi-tui-kit": "^0.59.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.85.0",
+    "@earendil-works/pi-tui": "^0.85.0"
+  }
+}
