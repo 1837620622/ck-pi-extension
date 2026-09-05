@@ -1,6 +1,6 @@
 {
   "name": "ck-pi-extension",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "CK Pi extensions. Currently ships pi-rail: a no-emoji, full-width adaptive statusline for the Pi coding agent.",
   "keywords": [
     "pi-package",
