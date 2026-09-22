@@ -76,6 +76,15 @@ export async function fetchZenFreeModels(apiKey: string): Promise<string[]> {
  * 读取当前系统中已配置的 OpenCode Zen API Key
  */
 export function getStoredZenApiKey(authPath = defaultAuthPath(), modelsPath = defaultModelsPath()): string | null {
+	// 优先读取环境变量，支持免配置直接启动
+	const envKey =
+		process.env.OPENCODE_API_KEY ||
+		process.env.OPENCODE_ZEN_API_KEY ||
+		process.env.ZEN_API_KEY;
+	if (envKey && envKey.trim()) {
+		return envKey.trim();
+	}
+
 	try {
 		if (existsSync(authPath)) {
 			const auth = JSON.parse(readFileSync(authPath, "utf8")) as Record<string, { key?: string }>;

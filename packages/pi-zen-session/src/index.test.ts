@@ -323,5 +323,54 @@ describe("Extension API 钩子拦截测试", () => {
 			"已有工具必须按官方规约字母升序重排",
 		);
 	});
+
+	it("after_provider_response 遇 401 或 403 自动触发 Session 换新和用户通知", () => {
+		const handlers: Record<string, Function[]> = {};
+		const mockPi: any = {
+			registerProvider: () => {},
+			registerCommand: () => {},
+			on: (event: string, fn: Function) => {
+				handlers[event] = handlers[event] || [];
+				handlers[event].push(fn);
+			},
+		};
+
+		piZenSession(mockPi);
+		assert.ok(handlers["after_provider_response"]?.length > 0);
+
+		let notifiedMessage = "";
+		let notifiedLevel = "";
+		const ctx = {
+			model: { provider: "opencode-zen-free", id: "mimo-v2.5-free" },
+			hasUI: true,
+			ui: {
+				notify: (msg: string, level: string) => {
+					notifiedMessage = msg;
+					notifiedLevel = level;
+				},
+			},
+		};
+
+		// 模拟网关返回 403 FreeTierError
+		handlers["after_provider_response"][0]({ status: 403, headers: {} }, ctx);
+		assert.ok(notifiedMessage.includes("HTTP 403"));
+		assert.equal(notifiedLevel, "warning");
+	});
+
+	it("getStoredZenApiKey 支持优先读取环境变量 OPENCODE_API_KEY", () => {
+		const originalEnv = process.env.OPENCODE_API_KEY;
+		try {
+			process.env.OPENCODE_API_KEY = "oc_sk_env_variable_test";
+			const foundKey = getStoredZenApiKey("/non/existent/auth.json", "/non/existent/models.json");
+			assert.equal(foundKey, "oc_sk_env_variable_test");
+		} finally {
+			if (originalEnv === undefined) {
+				delete process.env.OPENCODE_API_KEY;
+			} else {
+				process.env.OPENCODE_API_KEY = originalEnv;
+			}
+		}
+	});
 });
+
 

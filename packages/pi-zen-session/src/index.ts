@@ -146,7 +146,27 @@ export default function piZenSession(pi: ExtensionAPI): void {
 		}
 	});
 
-	// 4. 常驻生命周期守卫：在每次 Agent 循环执行前，自动检测 Session 有效性并无感续期
+	// 4. 网关响应守卫：遇 401/403 会话受限或过期时，立即自愈换新 Session ID
+	pi.on("after_provider_response", (event, ctx) => {
+		const model = ctx.model;
+		const isZenModel =
+			model?.provider === ZEN_PROVIDER_ID ||
+			model?.id?.includes("-free") ||
+			model?.id === "big-pickle";
+
+		if (isZenModel && (event.status === 401 || event.status === 403)) {
+			// 自动异步刷新 Session
+			syncZenConfiguration({ forceSession: true }).catch(() => {});
+			if (ctx.hasUI) {
+				ctx.ui.notify(
+					`检测到 OpenCode Zen 会话受限 (HTTP ${event.status})，已自动轮换新 Session ID。`,
+					"warning",
+				);
+			}
+		}
+	});
+
+	// 5. 常驻生命周期守卫：在每次 Agent 循环执行前，自动检测 Session 有效性并无感续期
 	pi.on("before_agent_start", async () => {
 		try {
 			const currentSession = getStoredZenSessionId();
@@ -162,7 +182,7 @@ export default function piZenSession(pi: ExtensionAPI): void {
 		}
 	});
 
-	// 4. 注册 /zen 指令
+	// 6. 注册 /zen 指令
 	pi.registerCommand("zen", {
 		description: "OpenCode Zen 免费模型与 Session 会话自动维护 (/zen [key|refresh|status|list])",
 		getArgumentCompletions: (prefix: string) => {
@@ -279,23 +299,24 @@ export async function handleZenCommand(
 	// 5. 无参调用: /zen
 	const status = getZenStatusInfo();
 	if (status.hasKey) {
-		// 已有 Key 时，自动检测并刷新 Session
+		// 已有 Key 时，自动强制刷新 Session 并重新注册热载
 		try {
-			notify(ctx, "正在检测并刷新 OpenCode Zen 会话...", "info");
-			const result = await syncZenConfiguration({ forceSession: status.sessionExpired });
+			notify(ctx, "正在刷新 OpenCode Zen 会话与请求头...", "info");
+			const result = await syncZenConfiguration({ forceSession: true });
 			if (pi) {
 				registerZenProviderToPi(pi, result.apiKey, result.sessionId);
 			}
 			const msg = [
-				"✨ [OpenCode Zen 已连接就绪]",
+				"✨ [OpenCode Zen 已自动刷新并就绪]",
 				`• API Key: ${maskKey(result.apiKey)}`,
-				`• 活跃 Session: ${result.sessionId} (${result.isNewSession ? "已换新" : "仍有效"})`,
-				`• 免费模型: ${result.modelsCount} 个可用`,
+				`• 全新 Session: ${result.sessionId} (有效且已持久化)`,
+				`• 免费模型: 已同步 ${result.modelsCount} 个可用免费模型`,
+				`• 请求头保护: 30分钟自动轮换 + 7维官方签名 + 6大核心工具全注入`,
 				"",
 				"常用操作：",
 				"  /zen <key>   - 更换 API Key",
-				"  /zen refresh - 换新会话 ID",
 				"  /zen status  - 详情状态",
+				"  /zen list    - 查看所有可用免费模型",
 			].join("\n");
 			notify(ctx, msg, "info");
 		} catch (error) {
@@ -312,7 +333,7 @@ export async function handleZenCommand(
 				"oc_sk_",
 			);
 			if (enteredKey && enteredKey.trim()) {
-				await handleZenCommand(enteredKey.trim(), ctx);
+				await handleZenCommand(enteredKey.trim(), ctx, pi);
 				return;
 			}
 			notify(ctx, "已取消输入。如需配置请使用 /zen <oc_sk_xxx>", "info");

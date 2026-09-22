@@ -17,6 +17,8 @@ OpenCode Zen 免费模型同步、请求头伪装与 Session 会话自动维护�
   - `x-session-affinity`: 与 session 严格同步
   - `X-Session-Id`: 与 session 严格同步
 - ⏱️ **30 分钟无感前置平滑轮换**：官方后端限制免费会话时长约为 1 小时（超时直接 403 `FreeTierError`）。本插件在底层请求拦截器（`before_provider_headers`）和 Agent 循环守卫（`before_agent_start`）中设置 30 分钟主动换新阈值，兼顾会话上下文平滑与长期高频调用稳定性，确保永不触碰 1 小时硬限制。
+- 🚑 **网关异常自愈守卫 (`after_provider_response`)**：新增底层响应拦截，一旦检测到远端网关返回 401 或 403 `FreeTierError`，立即当场触发 Session 换新与后台持久化，并提示用户，彻底终结会话失效死锁。
+- 🔑 **多源凭据自适应感知**：支持优先读取 `OPENCODE_API_KEY`、`OPENCODE_ZEN_API_KEY` 环境变量，亦可直接使用 `/zen <key>` 配置，无缝兼容各类容器与终端环境。
 - 🧰 **官方全套 6 大核心工具链守卫与字母序规约**：OpenCode Zen 免费端点对工具集有硬性要求（无工具直接拒绝）。插件在 `before_provider_request` 钩子中实时监控请求体：
   - 若用户处于纯文本或无工具模式，自动补齐官方完整的 6 大核心工具（`bash`, `edit`, `glob`, `grep`, `read`, `write`）与 `tool_choice: "auto"`，彻底根除 403 拦截；
   - 若请求已有工具，严格按照官方客户端规约（`localeCompare`）按函数名升序重排；
@@ -50,7 +52,7 @@ pi install git:github.com/1837620622/ck-pi-extension
 | 指令 | 说明 |
 | --- | --- |
 | `/zen <oc_sk_xxx>` | 设置/更新 API Key，自动在线验证并全量同步模型与全套请求头 |
-| `/zen` | 智能检查当前会话状态；若会话临近过期自动换新；若未配置 Key 则弹出交互输入框 |
+| `/zen` | 立即一键强制换新 Session 并全面刷新所有请求头；若未配置 Key 则弹出交互输入框 |
 | `/zen refresh` | 强制生成全新的合法降序 Session ID 并更新所有请求头与落盘配置 |
 | `/zen status` | 查看当前 API Key 掩码、活跃会话精确存活时间及模型就绪状态 |
 | `/zen list`（或 `/zen models`） | 查看当前已激活的所有免费模型列表 |
