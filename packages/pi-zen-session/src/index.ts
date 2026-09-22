@@ -11,15 +11,87 @@
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import {
+	KNOWN_ZEN_FREE_MODELS,
+	ZEN_BASE_URL,
+	ZEN_PROVIDER_ID,
+	ZEN_USER_AGENT,
+} from "./models-registry.js";
+import {
 	getStoredZenApiKey,
 	getStoredZenSessionId,
 	getZenStatusInfo,
 	syncZenConfiguration,
 } from "./sync.js";
-import { isZenSessionExpired } from "./session.js";
+import {
+	generateZenSessionId,
+	isZenSessionExpired,
+	isValidZenSessionId,
+} from "./session.js";
+
+export function registerZenProviderToPi(
+	pi: ExtensionAPI,
+	apiKey: string,
+	sessionId: string = getStoredZenSessionId() || generateZenSessionId(),
+): void {
+	try {
+		pi.registerProvider(ZEN_PROVIDER_ID, {
+			name: "OpenCode Zen (Free)",
+			baseUrl: ZEN_BASE_URL,
+			apiKey: apiKey,
+			api: "openai-completions",
+			headers: {
+				"User-Agent": ZEN_USER_AGENT,
+				"x-opencode-session": sessionId,
+			},
+			compat: {
+				maxTokensField: "max_tokens",
+				requiresReasoningContentOnAssistantMessages: true,
+				supportsDeveloperRole: false,
+				supportsStore: false,
+			},
+			models: Object.values(KNOWN_ZEN_FREE_MODELS),
+		});
+	} catch {
+		// 忽略重复注册
+	}
+}
 
 export default function piZenSession(pi: ExtensionAPI): void {
-	// 1. 常驻生命周期守卫：在每次 Agent 循环执行前，自动检测 Session 有效性并无感续期
+	// 1. 若本地已配置 Key，启动时即刻注册独立供应商 opencode-zen-free
+	// 独立命名空间，彻底避开并兼容用户自带的官方登录 opencode / opencode-zen 套餐
+	const existingKey = getStoredZenApiKey();
+	if (existingKey) {
+		registerZenProviderToPi(pi, existingKey);
+	}
+
+	// 2. 核心请求头拦截钩子：在每一次请求发往 Provider 前拦截请求头
+	pi.on("before_provider_headers", (event, ctx) => {
+		const model = ctx.model;
+		const isZenModel =
+			model?.provider === ZEN_PROVIDER_ID ||
+			model?.id?.includes("-free") ||
+			model?.id === "big-pickle";
+
+		if (isZenModel) {
+			// 确保注入伪装 User-Agent
+			event.headers["User-Agent"] = ZEN_USER_AGENT;
+
+			// 检查 x-opencode-session 是否过期 (>12h) 或缺失
+			const currentSession = event.headers["x-opencode-session"];
+			if (
+				typeof currentSession !== "string" ||
+				!isValidZenSessionId(currentSession) ||
+				isZenSessionExpired(currentSession, 12 * 3600 * 1000)
+			) {
+				const freshSession = generateZenSessionId();
+				event.headers["x-opencode-session"] = freshSession;
+				// 异步落盘，保持配置同步
+				syncZenConfiguration({ forceSession: true }).catch(() => {});
+			}
+		}
+	});
+
+	// 3. 常驻生命周期守卫：在每次 Agent 循环执行前，自动检测 Session 有效性并无感续期
 	pi.on("before_agent_start", async () => {
 		try {
 			const currentSession = getStoredZenSessionId();
@@ -35,7 +107,7 @@ export default function piZenSession(pi: ExtensionAPI): void {
 		}
 	});
 
-	// 2. 注册 /zen 指令
+	// 4. 注册 /zen 指令
 	pi.registerCommand("zen", {
 		description: "OpenCode Zen 免费模型与 Session 会话自动维护 (/zen [key|refresh|status|list])",
 		getArgumentCompletions: (prefix: string) => {
@@ -45,12 +117,16 @@ export default function piZenSession(pi: ExtensionAPI): void {
 			return candidates.length > 0 ? candidates : null;
 		},
 		handler: async (args, ctx) => {
-			await handleZenCommand(args, ctx);
+			await handleZenCommand(args, ctx, pi);
 		},
 	});
 }
 
-export async function handleZenCommand(args: string, ctx: ExtensionCommandContext): Promise<void> {
+export async function handleZenCommand(
+	args: string,
+	ctx: ExtensionCommandContext,
+	pi?: ExtensionAPI,
+): Promise<void> {
 	const rawArg = args.trim();
 	const command = rawArg.toLowerCase();
 
@@ -106,6 +182,9 @@ export async function handleZenCommand(args: string, ctx: ExtensionCommandContex
 		try {
 			notify(ctx, "正在生成全新 OpenCode Zen 会话 ID 并同步...", "info");
 			const result = await syncZenConfiguration({ forceSession: true });
+			if (pi) {
+				registerZenProviderToPi(pi, result.apiKey, result.sessionId);
+			}
 			const successMsg = [
 				"✓ OpenCode Zen Session 已成功刷新！",
 				`• 全新 Session: ${result.sessionId}`,
@@ -124,6 +203,9 @@ export async function handleZenCommand(args: string, ctx: ExtensionCommandContex
 		try {
 			notify(ctx, "正在验证 OpenCode Zen API Key 并探测免费模型...", "info");
 			const result = await syncZenConfiguration({ apiKey: rawArg, forceSession: true });
+			if (pi) {
+				registerZenProviderToPi(pi, result.apiKey, result.sessionId);
+			}
 			const msg = [
 				"🎉 OpenCode Zen 配置成功！免费套餐与请求头已全部就绪：",
 				`• API Key: ${maskKey(result.apiKey)} (已验证并保存)`,
@@ -146,6 +228,9 @@ export async function handleZenCommand(args: string, ctx: ExtensionCommandContex
 		try {
 			notify(ctx, "正在检测并刷新 OpenCode Zen 会话...", "info");
 			const result = await syncZenConfiguration({ forceSession: status.sessionExpired });
+			if (pi) {
+				registerZenProviderToPi(pi, result.apiKey, result.sessionId);
+			}
 			const msg = [
 				"✨ [OpenCode Zen 已连接就绪]",
 				`• API Key: ${maskKey(result.apiKey)}`,

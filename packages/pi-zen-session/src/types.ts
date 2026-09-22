@@ -8,13 +8,13 @@ export interface ZenModelDefinition {
 	contextWindow: number;
 	maxTokens: number;
 	reasoning: boolean;
-	input: string[];
-	thinkingLevelMap?: Record<string, string | null>;
-	cost?: {
+	input: ("text" | "image")[];
+	thinkingLevelMap?: Partial<Record<"off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", string | null>>;
+	cost: {
 		input: number;
 		output: number;
 		cacheRead: number;
-		cacheWrite?: number;
+		cacheWrite: number;
 	};
 }
 

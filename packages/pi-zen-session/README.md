@@ -4,11 +4,10 @@ OpenCode Zen 免费模型同步与 Session 会话自动维护插件，专为 [Pi
 
 ---
 
-## 核心特性
-
 - ⚡ **/zen 指令一键配置**：输入一次 API Key，全自动在线探测可用免费模型并注入。
 - 🔄 **官方算法逆向对齐**：完整复现 OpenCode 客户端 `Identifier.descending("ses")` 算法，生成 30 位降序会话 ID，时间戳毫秒级精确反解。
-- 🛡️ **合规伪装请求头**：自动配置 `User-Agent` 与 `x-opencode-session` 请求头，彻底解决服务端 403 `FreeTierError` 拦截。
+- 🛡️ **合规伪装请求头**：自动配置 `User-Agent` 与 `x-opencode-session` 请求头，并在每次底层请求（`before_provider_headers`）动态拦截校验，彻底解决服务端 403 `FreeTierError` 拦截。
+- 🌐 **独立供应商命名空间**：采用独立 Provider ID `opencode-zen-free`，彻底避开并与官方 `pi auth login opencode` 套餐完全隔离，二者并行不悖、互不冲突。
 - 🧠 **精准上下文与思维链**：精确对齐 9 款免费模型的 `contextWindow`、`maxTokens` 与 `thinkingLevelMap`（含小米 MiMo、英伟达 Nemotron、Meta Muse Spark 等）。
 - 🔌 **双端自动同步**：自动写入 Pi 配置（`~/.pi/agent/models.json` 和 `auth.json`），并无缝同步 CC-Switch 本地数据库（`~/.cc-switch/cc-switch.db`）。
 - ⏳ **后台无感自动续期**：常驻 `before_agent_start` 钩子，当会话使用超过 12 小时自动后台换新，永不中断编码交互。
