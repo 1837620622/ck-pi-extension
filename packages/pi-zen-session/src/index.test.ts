@@ -85,12 +85,12 @@ describe("OpenCode Zen Session 算法单元测试", () => {
 		assert.equal(extracted, now, "提取的时间戳必须与生成时间完全吻合");
 	});
 
-	it("精准检测 Session 45分钟有效期与过期逻辑", () => {
+	it("精准检测 Session 30分钟有效期与过期逻辑", () => {
 		const now = Date.now();
 		const freshId = generateZenSessionId(now - 10 * 60 * 1000); // 10分钟前
 		assert.equal(isZenSessionExpired(freshId, DEFAULT_SESSION_MAX_AGE_MS, now), false);
 
-		const oldId = generateZenSessionId(now - 50 * 60 * 1000); // 50分钟前 (>45m)
+		const oldId = generateZenSessionId(now - 35 * 60 * 1000); // 35分钟前 (>30m)
 		assert.equal(isZenSessionExpired(oldId, DEFAULT_SESSION_MAX_AGE_MS, now), true);
 
 		assert.equal(isZenSessionExpired(null), true);

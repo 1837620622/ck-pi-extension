@@ -78,7 +78,7 @@ export default function piZenSession(pi: ExtensionAPI): void {
 			model?.id === "big-pickle";
 
 		if (isZenModel) {
-			// 检查 x-opencode-session 是否过期 (>45分钟) 或缺失
+			// 检查 x-opencode-session 是否过期 (>30分钟) 或缺失
 			let currentSession = event.headers["x-opencode-session"];
 			if (
 				typeof currentSession !== "string" ||
@@ -155,7 +155,7 @@ export default function piZenSession(pi: ExtensionAPI): void {
 	pi.on("before_agent_start", async () => {
 		try {
 			const currentSession = getStoredZenSessionId();
-			// 若当前会话不存在或已使用超过 45 分钟，后台自动续期
+			// 若当前会话不存在或已使用超过 30 分钟，后台自动续期
 			if (!currentSession || isZenSessionExpired(currentSession, DEFAULT_SESSION_MAX_AGE_MS)) {
 				const apiKey = getStoredZenApiKey();
 				if (apiKey) {

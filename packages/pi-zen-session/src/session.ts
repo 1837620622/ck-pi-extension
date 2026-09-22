@@ -139,14 +139,14 @@ export function extractZenSessionTimestamp(
 
 /**
  * 官方 OpenCode Zen 后端对会话生命周期严格限制（超 1 小时即报 403 FreeTierError）
- * 默认设定为 45 分钟，确保在达到 1 小时硬限制前无感平滑轮换
+ * 设定为 30 分钟无感前置轮换，兼顾会话上下文平滑与长期高频调用稳定性
  */
-export const DEFAULT_SESSION_MAX_AGE_MS = 45 * 60 * 1000;
+export const DEFAULT_SESSION_MAX_AGE_MS = 30 * 60 * 1000;
 
 /**
  * 判断指定 Session ID 是否已过期
  * @param sessionId 会话 ID
- * @param maxAgeMs 最大允许有效时长（默认 45 分钟）
+ * @param maxAgeMs 最大允许有效时长（默认 30 分钟）
  * @param nowMs 当前时间戳
  */
 export function isZenSessionExpired(

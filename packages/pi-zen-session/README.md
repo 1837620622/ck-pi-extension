@@ -15,7 +15,7 @@ OpenCode Zen 免费模型同步、请求头伪装与 Session 会话自动维护�
   - `x-session-affinity`: 与 session 严格同步
   - `X-Session-Id`: 与 session 严格同步
   - `x-opencode-request`: `msg_<12位升序时间戳十六进制><14位Base62>`（每次 HTTP 请求唯一）
-- ⏱️ **45 分钟无感前置平滑轮换**：官方后端限制免费会话时长约为 1 小时（超时直接 403 `FreeTierError`）。本插件在底层请求拦截器（`before_provider_headers`）和 Agent 循环守卫（`before_agent_start`）中设置 45 分钟主动换新阈值，确保永不触碰 1 小时硬限制。
+- ⏱️ **30 分钟无感前置平滑轮换**：官方后端限制免费会话时长约为 1 小时（超时直接 403 `FreeTierError`）。本插件在底层请求拦截器（`before_provider_headers`）和 Agent 循环守卫（`before_agent_start`）中设置 30 分钟主动换新阈值，兼顾会话上下文平滑与长期高频调用稳定性，确保永不触碰 1 小时硬限制。
 - 🧰 **Agent 工具链兼容性守卫**：OpenCode Zen 免费端点对工具集有硬性要求（无工具直接拒绝）。插件在 `before_provider_request` 钩子中实时监控请求体，若用户处于无工具或纯文本问答模式，自动补齐兼容性工具定义，彻底根除 403 拦截。
 - 🌐 **独立供应商隔离命名空间**：注册为独立供应商 `opencode-zen-free`，彻底避开并兼容用户自带的官方登录 `opencode` / `opencode-zen` 套餐，互不干扰、平稳共存。
 - 🧠 **精准上下文与思维链适配**：严格对齐 9 款免费模型的 `contextWindow`、`maxTokens` 与 `thinkingLevelMap`（涵盖小米 MiMo、英伟达 Nemotron、Meta Muse Spark、Ling、Jev 等）。
