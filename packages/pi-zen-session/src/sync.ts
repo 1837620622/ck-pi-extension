@@ -24,6 +24,7 @@ import {
 import {
 	DEFAULT_SESSION_MAX_AGE_MS,
 	extractZenSessionTimestamp,
+	generateZenProjectId,
 	generateZenSessionId,
 	isZenSessionExpired,
 	isValidZenSessionId,
@@ -225,6 +226,7 @@ export async function syncZenConfiguration(options: ZenSyncOptions = {}): Promis
 			"User-Agent": ZEN_USER_AGENT,
 			"x-opencode-client": "cli",
 			"x-opencode-session": targetSession,
+			"x-opencode-project": generateZenProjectId(),
 			"x-session-affinity": targetSession,
 			"X-Session-Id": targetSession,
 		},
@@ -233,6 +235,7 @@ export async function syncZenConfiguration(options: ZenSyncOptions = {}): Promis
 			requiresReasoningContentOnAssistantMessages: true,
 			supportsDeveloperRole: false,
 			supportsStore: false,
+			supportsUsageInStreaming: true,
 		},
 		models: resolvedModels,
 	};
@@ -306,6 +309,7 @@ export function updateCcSwitchDb(
 						headers["User-Agent"] = ZEN_USER_AGENT;
 						headers["x-opencode-client"] = "cli";
 						headers["x-opencode-session"] = sessionId;
+						headers["x-opencode-project"] = generateZenProjectId();
 						headers["x-session-affinity"] = sessionId;
 						headers["X-Session-Id"] = sessionId;
 						cfg.headers = headers;
@@ -317,6 +321,7 @@ export function updateCcSwitchDb(
 						headers["User-Agent"] = ZEN_USER_AGENT;
 						headers["x-opencode-client"] = "cli";
 						headers["x-opencode-session"] = sessionId;
+						headers["x-opencode-project"] = generateZenProjectId();
 						headers["x-session-affinity"] = sessionId;
 						headers["X-Session-Id"] = sessionId;
 						opts.headers = headers;

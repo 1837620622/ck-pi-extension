@@ -168,3 +168,143 @@ export function resolveModelDefinitions(discoveredIds: string[]): ZenModelDefini
 
 	return list;
 }
+
+/**
+ * OpenCode 官方 6 大核心内置工具规范与 Schema 定义
+ * 严格对齐 OpenCode 客户端源码（按字母顺序排序：bash, edit, glob, grep, read, write）
+ */
+export const OPENCODE_OFFICIAL_TOOLS = [
+	{
+		type: "function",
+		function: {
+			name: "bash",
+			description: "Execute bash commands in the workspace environment",
+			parameters: {
+				type: "object",
+				properties: {
+					command: { type: "string", description: "Shell command string to execute" },
+					workdir: {
+						type: "string",
+						description:
+							"Working directory. Defaults to the active Location; relative paths resolve within it.",
+					},
+				},
+				required: ["command"],
+			},
+		},
+	},
+	{
+		type: "function",
+		function: {
+			name: "edit",
+			description: "Edit a file by replacing text",
+			parameters: {
+				type: "object",
+				properties: {
+					path: {
+						type: "string",
+						description:
+							"File path to edit. Relative paths resolve within the active Location.",
+					},
+					oldString: { type: "string", description: "The string in the file to be replaced" },
+					newString: { type: "string", description: "The string to replace oldString with" },
+					replaceAll: {
+						type: "boolean",
+						description: "Replace all occurrences of oldString (default false)",
+					},
+				},
+				required: ["path", "oldString", "newString"],
+			},
+		},
+	},
+	{
+		type: "function",
+		function: {
+			name: "glob",
+			description: "Find files matching a glob pattern",
+			parameters: {
+				type: "object",
+				properties: {
+					pattern: {
+						type: "string",
+						description: 'File pattern to include in the search (e.g. "*.js", "*.{ts,tsx}")',
+					},
+					path: {
+						type: "string",
+						description: "Relative directory to search in. Defaults to the active Location.",
+					},
+				},
+				required: ["pattern"],
+			},
+		},
+	},
+	{
+		type: "function",
+		function: {
+			name: "grep",
+			description: "Search file contents using regular expressions",
+			parameters: {
+				type: "object",
+				properties: {
+					pattern: {
+						type: "string",
+						description: "Regex pattern to search for in file contents",
+					},
+					path: {
+						type: "string",
+						description: "Relative directory to search in. Defaults to the active Location.",
+					},
+				},
+				required: ["pattern"],
+			},
+		},
+	},
+	{
+		type: "function",
+		function: {
+			name: "read",
+			description: "Read file contents",
+			parameters: {
+				type: "object",
+				properties: {
+					path: {
+						type: "string",
+						description:
+							"File path to read. Relative paths resolve within the active Location.",
+					},
+					offset: {
+						type: "number",
+						description: "The 1-based directory entry or text line offset",
+					},
+					limit: {
+						type: "number",
+						description: "The maximum number of lines to read (defaults to 2000)",
+					},
+				},
+				required: ["path"],
+			},
+		},
+	},
+	{
+		type: "function",
+		function: {
+			name: "write",
+			description: "Write or overwrite file contents",
+			parameters: {
+				type: "object",
+				properties: {
+					path: {
+						type: "string",
+						description:
+							"File path to write. Relative paths resolve within the active Location.",
+					},
+					content: {
+						type: "string",
+						description: "Content to write to the file",
+					},
+				},
+				required: ["path", "content"],
+			},
+		},
+	},
+];

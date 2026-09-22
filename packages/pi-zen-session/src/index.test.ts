@@ -240,7 +240,7 @@ describe("配置同步与落盘逻辑测试", () => {
 });
 
 describe("Extension API 钩子拦截测试", () => {
-	it("before_provider_headers 自动补全 6 个伪装请求头", () => {
+	it("before_provider_headers 自动补全 7 个伪装请求头 (含 x-opencode-project)", () => {
 		const handlers: Record<string, Function[]> = {};
 		const mockPi: any = {
 			registerProvider: () => {},
@@ -265,6 +265,7 @@ describe("Extension API 钩子拦截测试", () => {
 		);
 		assert.equal(headerEvent.headers["x-opencode-client"], "cli");
 		assert.ok(headerEvent.headers["x-opencode-session"].startsWith("ses_"));
+		assert.ok(headerEvent.headers["x-opencode-project"].startsWith("prj_"));
 		assert.equal(
 			headerEvent.headers["x-session-affinity"],
 			headerEvent.headers["x-opencode-session"],
@@ -276,7 +277,7 @@ describe("Extension API 钩子拦截测试", () => {
 		assert.ok(headerEvent.headers["x-opencode-request"].startsWith("msg_"));
 	});
 
-	it("before_provider_request 当缺失 tools 时自动注入 bash 与 read 兼容工具", () => {
+	it("before_provider_request 当缺失 tools 时注入官方 6 件套，已有 tools 时严格字母重排", () => {
 		const handlers: Record<string, Function[]> = {};
 		const mockPi: any = {
 			registerProvider: () => {},
@@ -292,22 +293,35 @@ describe("Extension API 钩子拦截测试", () => {
 
 		const ctx = { model: { provider: "opencode-zen-free", id: "mimo-v2.5-free" } };
 
-		// 1. 无 tools
-		const emptyPayloadEvent = { payload: { model: "mimo-v2.5-free", messages: [] } };
+		// 1. 无 tools 时补齐官方 6 大核心工具，并补充 stream_options
+		const emptyPayloadEvent = { payload: { model: "mimo-v2.5-free", messages: [], stream: true } };
 		const transformed = handlers["before_provider_request"][0](emptyPayloadEvent, ctx);
 		assert.ok(transformed);
 		assert.ok(Array.isArray(transformed.tools));
-		assert.equal(transformed.tools.length, 2);
-		assert.equal(transformed.tools[0].function.name, "bash");
-		assert.equal(transformed.tools[1].function.name, "read");
+		assert.equal(transformed.tools.length, 6);
+		assert.deepEqual(
+			transformed.tools.map((t: any) => t.function.name),
+			["bash", "edit", "glob", "grep", "read", "write"],
+		);
+		assert.equal(transformed.tool_choice, "auto");
+		assert.deepEqual(transformed.stream_options, { include_usage: true });
 
-		// 2. 已有 tools 则保持不变
-		const existingTools = [{ type: "function", function: { name: "custom_tool" } }];
+		// 2. 已有 tools 时严格按照函数名升序重排
+		const disorderedTools = [
+			{ type: "function", function: { name: "write" } },
+			{ type: "function", function: { name: "bash" } },
+			{ type: "function", function: { name: "read" } },
+		];
 		const withToolsEvent = {
-			payload: { model: "mimo-v2.5-free", messages: [], tools: existingTools },
+			payload: { model: "mimo-v2.5-free", messages: [], tools: disorderedTools },
 		};
-		const untouched = handlers["before_provider_request"][0](withToolsEvent, ctx);
-		assert.equal(untouched, undefined, "已有 tools 时不得篡改");
+		const sortedResult = handlers["before_provider_request"][0](withToolsEvent, ctx);
+		assert.ok(sortedResult);
+		assert.deepEqual(
+			sortedResult.tools.map((t: any) => t.function.name),
+			["bash", "read", "write"],
+			"已有工具必须按官方规约字母升序重排",
+		);
 	});
 });
 

@@ -37,7 +37,7 @@ GitHub 源安装：`pi install git:github.com/1837620622/ck-pi-extension`。
 
 ## 更新日志
 
-- `ck-pi-zen-session 0.1.1`：新增 OpenCode Zen 免费模型探测、全套 6 维伪装请求头、降序会话逆向、30分钟主动轮换与兼容性工具链守卫
+- `ck-pi-zen-session 0.1.2`：深度对齐 OpenCode 官方请求体结构，补齐官方全套 6 大核心工具链守卫、工具字母序严格升序重排规约、`stream_options` 用量元数据与 7 维全套伪装请求头（含 `x-opencode-project`）
 - `ck-pi-rail 0.1.0` / `ck-pi-redkit 0.1.0`：monorepo 拆分首发，各自独立版本与依赖
 - 旧合集包 `ck-pi-extension 0.1.1`：自适应导轨、主题跟随、无表情、安全加固
 

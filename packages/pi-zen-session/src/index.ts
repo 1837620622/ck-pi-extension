@@ -12,6 +12,7 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import {
 	KNOWN_ZEN_FREE_MODELS,
+	OPENCODE_OFFICIAL_TOOLS,
 	ZEN_BASE_URL,
 	ZEN_PROVIDER_ID,
 	ZEN_USER_AGENT,
@@ -24,6 +25,7 @@ import {
 } from "./sync.js";
 import {
 	DEFAULT_SESSION_MAX_AGE_MS,
+	generateZenProjectId,
 	generateZenRequestId,
 	generateZenSessionId,
 	isZenSessionExpired,
@@ -45,6 +47,7 @@ export function registerZenProviderToPi(
 				"User-Agent": ZEN_USER_AGENT,
 				"x-opencode-client": "cli",
 				"x-opencode-session": sessionId,
+				"x-opencode-project": generateZenProjectId(),
 				"x-session-affinity": sessionId,
 				"X-Session-Id": sessionId,
 			},
@@ -53,6 +56,7 @@ export function registerZenProviderToPi(
 				requiresReasoningContentOnAssistantMessages: true,
 				supportsDeveloperRole: false,
 				supportsStore: false,
+				supportsUsageInStreaming: true,
 			},
 			models: Object.values(KNOWN_ZEN_FREE_MODELS),
 		});
@@ -69,7 +73,7 @@ export default function piZenSession(pi: ExtensionAPI): void {
 		registerZenProviderToPi(pi, existingKey);
 	}
 
-	// 2. 核心请求头拦截钩子：在每一次请求发往 Provider 前注入完整伪装请求头
+	// 2. 核心请求头拦截钩子：在每一次请求发往 Provider 前注入完整官方客户端对齐请求头
 	pi.on("before_provider_headers", (event, ctx) => {
 		const model = ctx.model;
 		const isZenModel =
@@ -91,17 +95,18 @@ export default function piZenSession(pi: ExtensionAPI): void {
 				syncZenConfiguration({ forceSession: true }).catch(() => {});
 			}
 
-			// 注入全部官方客户端对齐请求头
+			// 注入全部官方客户端 7 维对齐请求头
 			event.headers["User-Agent"] = ZEN_USER_AGENT;
 			event.headers["x-opencode-client"] = "cli";
 			event.headers["x-opencode-session"] = currentSession;
+			event.headers["x-opencode-project"] = generateZenProjectId();
 			event.headers["x-session-affinity"] = currentSession;
 			event.headers["X-Session-Id"] = currentSession;
 			event.headers["x-opencode-request"] = generateZenRequestId();
 		}
 	});
 
-	// 3. 核心请求体守卫钩子：OpenCode Zen 免费端点对工具集有硬性要求，若缺失工具会报 403 FreeTierError
+	// 3. 核心请求体守卫钩子：深度对齐 OpenCode 官方请求体结构与工具集
 	pi.on("before_provider_request", (event, ctx) => {
 		const model = ctx.model;
 		const isZenModel =
@@ -112,41 +117,31 @@ export default function piZenSession(pi: ExtensionAPI): void {
 		if (isZenModel && event.payload && typeof event.payload === "object") {
 			const payload = event.payload as Record<string, unknown>;
 			const tools = payload.tools;
-			// 若当前请求没有附带任何工具定义（如纯文本问答模式），自动补齐兼容性工具定义以规避 403 拦截
+			let modified = false;
+			const transformed = { ...payload };
+
+			// A. 工具规范对齐：无工具时补齐官方 6 大核心工具；已有工具时按字母升序严格重排 (localeCompare)
 			if (!Array.isArray(tools) || tools.length === 0) {
-				return {
-					...payload,
-					tools: [
-						{
-							type: "function",
-							function: {
-								name: "bash",
-								description: "Execute bash command in the terminal",
-								parameters: {
-									type: "object",
-									properties: {
-										command: { type: "string", description: "Command to execute" },
-									},
-									required: ["command"],
-								},
-							},
-						},
-						{
-							type: "function",
-							function: {
-								name: "read",
-								description: "Read contents of a file",
-								parameters: {
-									type: "object",
-									properties: {
-										path: { type: "string", description: "Path to file" },
-									},
-									required: ["path"],
-								},
-							},
-						},
-					],
-				};
+				transformed.tools = OPENCODE_OFFICIAL_TOOLS;
+				transformed.tool_choice = "auto";
+				modified = true;
+			} else {
+				transformed.tools = [...tools].sort((a: any, b: any) => {
+					const nameA = a.function?.name || a.name || "";
+					const nameB = b.function?.name || b.name || "";
+					return nameA.localeCompare(nameB);
+				});
+				modified = true;
+			}
+
+			// B. 流式元数据对齐：补充 stream_options: { include_usage: true }
+			if (transformed.stream === true && !transformed.stream_options) {
+				transformed.stream_options = { include_usage: true };
+				modified = true;
+			}
+
+			if (modified) {
+				return transformed;
 			}
 		}
 	});

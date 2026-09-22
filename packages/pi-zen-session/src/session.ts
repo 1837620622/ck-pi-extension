@@ -10,12 +10,21 @@
  * 3. 降序特性（descending）：时间越晚，按字典序排序越靠前。
  */
 
-import { webcrypto } from "node:crypto";
+import { createHash, webcrypto } from "node:crypto";
 
 const B62_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
 let lastTimestamp = 0;
 let sequenceCounter = 0;
+
+/**
+ * 生成符合 OpenCode 官方规约的项目标识符 (前缀 prj_)
+ * 基于工作目录哈希，保持确定性与隔离性
+ */
+export function generateZenProjectId(cwd: string = process.cwd()): string {
+	const hash = createHash("sha256").update(cwd).digest("hex").slice(0, 16);
+	return `prj_${hash}`;
+}
 
 /**
  * 生成符合 OpenCode 官方规约的 Session ID (前缀 ses_)
