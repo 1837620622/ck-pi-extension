@@ -10,7 +10,21 @@
  */
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+export {
+	formatModelCard,
+	formatThinkingSummary,
+	formatTokens,
+	inferModelCapabilities,
+	KNOWN_ZEN_FREE_MODELS,
+	OPENCODE_OFFICIAL_TOOLS,
+	ZEN_BASE_URL,
+	ZEN_PROVIDER_ID,
+	ZEN_USER_AGENT,
+} from "./models-registry.js";
 import {
+	formatModelCard,
+	formatThinkingSummary,
+	formatTokens,
 	KNOWN_ZEN_FREE_MODELS,
 	OPENCODE_OFFICIAL_TOOLS,
 	ZEN_BASE_URL,
@@ -83,11 +97,20 @@ export function isZenModelTarget(model?: { provider?: string; id?: string }): bo
 }
 
 export default function piZenSession(pi: ExtensionAPI): void {
-	// 1. 若本地已配置 Key，启动时即刻注册独立供应商 opencode-zen-free
-	// 独立命名空间，彻底避开并兼容用户自带的官方登录 opencode / opencode-zen 套餐
 	const existingKey = getStoredZenApiKey();
 	if (existingKey) {
-		registerZenProviderToPi(pi, existingKey);
+		const storedSession = getStoredZenSessionId();
+		const storedModels = getStoredZenModels();
+		registerZenProviderToPi(pi, existingKey, storedSession || generateZenSessionId(), storedModels);
+
+		// 若已有 Key 但还没有持久化模型列表，后台静默自动探测一次
+		if (!storedModels || storedModels.length === 0) {
+			syncZenConfiguration()
+				.then((res) => {
+					registerZenProviderToPi(pi, res.apiKey, res.sessionId, res.resolvedModels);
+				})
+				.catch(() => {});
+		}
 	}
 
 	// 2. 核心请求头拦截钩子：在每一次请求发往 Provider 前注入完整官方客户端对齐请求头
@@ -219,16 +242,21 @@ export async function handleZenCommand(
 			? `${status.sessionAgeMinutes} 分钟`
 			: `${(status.sessionAgeMinutes / 60).toFixed(1)} 小时`;
 
+		const storedModels = getStoredZenModels();
+		const reasoningCount = storedModels.filter((m) => m.reasoning).length;
+		const visionCount = storedModels.filter((m) => m.input.includes("image")).length;
+
 		const msg = [
 			"✨ [OpenCode Zen 运行状态]",
 			`• API Key: ${status.maskedKey}`,
 			`• Session: ${status.sessionId || "未生成"} (${status.sessionExpired ? "已过期" : `有效，创建于 ${ageDesc}前`})`,
-			`• 模型库: 已激活 ${status.modelsCount} 个免费模型`,
+			`• 模型库: 已激活 ${storedModels.length} 款 0 额度模型 (${reasoningCount} 款支持思考推理，${visionCount} 款支持多模态)`,
+			`• 请求头保护: 7维官方客户端签名 + 30分钟降序时间戳自愈`,
 			"",
 			"常用指令：",
-			"  /zen <key>   - 更新 Key 并全量重新同步",
+			"  /zen <key>   - 更新 Key 并全自动识别免费模型/上下文/思考等级",
 			"  /zen refresh - 强制换新 Session ID",
-			"  /zen list    - 查看所有可用免费模型规格",
+			"  /zen list    - 查看所有可用免费模型详细规格卡片",
 		].join("\n");
 
 		notify(ctx, msg, "info");
@@ -237,17 +265,20 @@ export async function handleZenCommand(
 
 	// 2. 查看模型清单: /zen list 或 /zen models
 	if (command === "list" || command === "models") {
-		const status = getZenStatusInfo();
-		if (status.modelIds.length === 0) {
+		const storedModels = getStoredZenModels();
+		if (storedModels.length === 0) {
 			notify(ctx, "当前尚未同步任何模型，请先运行 /zen <key>。", "warning");
 			return;
 		}
 
+		const modelCards = storedModels.map((m, idx) => formatModelCard(m, idx + 1));
 		const listMsg = [
-			`✨ [OpenCode Zen 免费模型列表 (${status.modelIds.length} 个)]`,
-			...status.modelIds.map((id) => `  • ${id}`),
+			`✨ [OpenCode Zen 免费模型列表 (${storedModels.length} 款)]`,
+			"智能识别精确上下文上限（Context）、最大输出（Max Tokens）及推理思考等级（Thinking）：",
 			"",
-			"提示：这些模型已就绪，可在 Pi 中直接切换使用！",
+			...modelCards,
+			"",
+			"提示：这些模型已全量注册至 Pi，使用 /model 或快捷键随时切换！",
 		].join("\n");
 
 		notify(ctx, listMsg, "info");
@@ -262,10 +293,16 @@ export async function handleZenCommand(
 			if (pi) {
 				registerZenProviderToPi(pi, result.apiKey, result.sessionId, result.resolvedModels);
 			}
+			if ((ctx as { modelRegistry?: { refresh?: (arg: unknown) => Promise<unknown> } }).modelRegistry?.refresh) {
+				await (ctx as { modelRegistry: { refresh: (arg: unknown) => Promise<unknown> } }).modelRegistry
+					.refresh({ providers: [ZEN_PROVIDER_ID] })
+					.catch(() => {});
+			}
+			const reasoningCount = result.resolvedModels.filter((m) => m.reasoning).length;
 			const successMsg = [
 				"✓ OpenCode Zen Session 已成功刷新！",
 				`• 全新 Session: ${result.sessionId}`,
-				`• 免费模型: 已对齐 ${result.modelsCount} 款 0 额度消耗模型`,
+				`• 免费模型: 已对齐 ${result.modelsCount} 款 0 额度模型 (${reasoningCount} 款支持思考推理)`,
 				`• 请求头伪装: 7 维官方客户端签名已注入`,
 				`• 同步状态: models.json ✓ | CC-Switch ${result.ccSwitchUpdated ? "✓" : "-(未安装或无此条目)"}`,
 			].join("\n");
@@ -279,19 +316,31 @@ export async function handleZenCommand(
 	// 4. 输入了具体的 API Key: /zen oc_sk_... 或其它 key
 	if (rawArg.length > 0 && !["status", "refresh", "list", "models"].includes(command)) {
 		try {
-			notify(ctx, "正在验证 OpenCode Zen API Key 并探测免费与零额度模型...", "info");
+			notify(ctx, "正在验证 OpenCode Zen API Key 并智能探测免费模型上下文与思考等级...", "info");
 			const result = await syncZenConfiguration({ apiKey: rawArg, forceSession: true });
 			if (pi) {
 				registerZenProviderToPi(pi, result.apiKey, result.sessionId, result.resolvedModels);
 			}
+			if ((ctx as { modelRegistry?: { refresh?: (arg: unknown) => Promise<unknown> } }).modelRegistry?.refresh) {
+				await (ctx as { modelRegistry: { refresh: (arg: unknown) => Promise<unknown> } }).modelRegistry
+					.refresh({ providers: [ZEN_PROVIDER_ID] })
+					.catch(() => {});
+			}
+
+			const modelCards = result.resolvedModels.map((m, idx) => formatModelCard(m, idx + 1));
+			const reasoningCount = result.resolvedModels.filter((m) => m.reasoning).length;
+
 			const msg = [
-				"🎉 OpenCode Zen 配置成功！免费套餐与零额度模型已自动识别并全量对接：",
+				"🎉 OpenCode Zen 配置成功！免费套餐与零额度模型已全自动识别并对接：",
 				`• API Key: ${maskKey(result.apiKey)} (已验证并保存)`,
-				`• 会话 Session: ${result.sessionId} (官方降序时间戳逆向算法)`,
-				`• 自动对接免费模型 (${result.modelsCount} 款，全部标记 0 额度消耗)：`,
-				...result.models.map((id) => `  • ${id}`),
+				`• 会话 Session: ${result.sessionId} (官方降序时间戳逆向算法，30分钟自动轮换自愈)`,
+				`• 识别到 ${result.modelsCount} 款 0 额度免费模型 (${reasoningCount} 款支持深度推理/思考)：`,
+				"",
+				...modelCards,
+				"",
 				`• 同步路径: ${result.modelsPath}`,
 				result.ccSwitchUpdated ? "• CC-Switch: 本地数据库已同步更新" : "",
+				"提示：全部模型参数已热载入 Pi，输入 /model 或在模型选择器中可即刻选用！",
 			].filter(Boolean).join("\n");
 			notify(ctx, msg, "info");
 		} catch (error) {
@@ -310,17 +359,23 @@ export async function handleZenCommand(
 			if (pi) {
 				registerZenProviderToPi(pi, result.apiKey, result.sessionId, result.resolvedModels);
 			}
+			if ((ctx as { modelRegistry?: { refresh?: (arg: unknown) => Promise<unknown> } }).modelRegistry?.refresh) {
+				await (ctx as { modelRegistry: { refresh: (arg: unknown) => Promise<unknown> } }).modelRegistry
+					.refresh({ providers: [ZEN_PROVIDER_ID] })
+					.catch(() => {});
+			}
+			const reasoningCount = result.resolvedModels.filter((m) => m.reasoning).length;
 			const msg = [
 				"✨ [OpenCode Zen 已自动刷新并就绪]",
 				`• API Key: ${maskKey(result.apiKey)}`,
 				`• 全新 Session: ${result.sessionId} (有效且已持久化)`,
-				`• 自动对接免费模型: 已同步 ${result.modelsCount} 个 0 额度消耗模型`,
+				`• 自动对接免费模型: 已同步 ${result.modelsCount} 个 0 额度消耗模型 (${reasoningCount} 款支持思考推理)`,
 				`• 请求头保护: 30分钟自动轮换 + 7维官方签名 + 6大核心工具全注入`,
 				"",
 				"常用操作：",
-				"  /zen <key>   - 更换 API Key",
+				"  /zen <key>   - 更换 API Key (自动重识免费模型/上下文/思考等级)",
 				"  /zen status  - 详情状态",
-				"  /zen list    - 查看所有可用免费模型",
+				"  /zen list    - 查看所有可用免费模型详细规格",
 			].join("\n");
 			notify(ctx, msg, "info");
 		} catch (error) {

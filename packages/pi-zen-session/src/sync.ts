@@ -15,12 +15,16 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import {
+	formatModelCard,
+	formatThinkingSummary,
+	formatTokens,
 	KNOWN_ZEN_FREE_MODELS,
 	resolveModelDefinitions,
 	ZEN_BASE_URL,
 	ZEN_PROVIDER_ID,
 	ZEN_USER_AGENT,
 } from "./models-registry.js";
+export { formatModelCard, formatThinkingSummary, formatTokens };
 import {
 	DEFAULT_SESSION_MAX_AGE_MS,
 	extractZenSessionTimestamp,
@@ -44,9 +48,17 @@ export function defaultCcSwitchDbPath(): string {
 }
 
 /**
- * 校验 API Key 并拉取 OpenCode Zen 在线模型清单，自动识别所有免费与零额度模型
+ * 校验 API Key 并拉取 OpenCode Zen 在线模型清单，自动识别所有免费与零额度模型 ID
  */
 export async function fetchZenFreeModels(apiKey: string): Promise<string[]> {
+	const catalog = await fetchZenModelCatalog(apiKey);
+	return catalog.map((m) => m.id);
+}
+
+/**
+ * 校验 API Key 并拉取 OpenCode Zen 完整免费模型目录，深度解析上下文与思考等级
+ */
+export async function fetchZenModelCatalog(apiKey: string): Promise<ZenModelDefinition[]> {
 	const res = await fetch(`${ZEN_BASE_URL}/models`, {
 		method: "GET",
 		headers: {
@@ -62,23 +74,38 @@ export async function fetchZenFreeModels(apiKey: string): Promise<string[]> {
 
 	const data = (await res.json()) as { data?: Array<{ id: string; [key: string]: unknown }> };
 	if (!data || !Array.isArray(data.data)) {
-		return Object.keys(KNOWN_ZEN_FREE_MODELS);
+		return Object.values(KNOWN_ZEN_FREE_MODELS);
 	}
 
-	// 自动识别所有带 free / zero / pickle 标识的零额度消耗免费模型
-	const freeIds = data.data
-		.map((item) => String(item.id))
-		.filter((id) => {
-			const lower = id.toLowerCase();
-			return (
-				lower.includes("free") ||
-				lower.includes("pickle") ||
-				lower.includes("zero") ||
-				lower.endsWith("-free")
-			);
-		});
+	// 自动识别所有带 free / zero / pickle / trial / demo / community 标识或零额度的免费模型
+	const freeItems = data.data.filter((item) => {
+		const id = String(item.id || "");
+		const lower = id.toLowerCase();
+		const isFreeByKeyword =
+			lower.includes("free") ||
+			lower.includes("pickle") ||
+			lower.includes("zero") ||
+			lower.includes("trial") ||
+			lower.includes("demo") ||
+			lower.includes("community") ||
+			lower.endsWith("-free");
 
-	return freeIds.length > 0 ? freeIds : Object.keys(KNOWN_ZEN_FREE_MODELS);
+		const isFreeByMetadata =
+			(item as { free?: boolean }).free === true ||
+			(item as { is_free?: boolean }).is_free === true ||
+			(item as { tier?: string }).tier === "free" ||
+			((item as { cost?: { input?: number; output?: number } }).cost &&
+				(item as { cost: { input: number; output: number } }).cost.input === 0 &&
+				(item as { cost: { input: number; output: number } }).cost.output === 0) ||
+			((item as { pricing?: { input?: number } }).pricing &&
+				(item as { pricing: { input: number } }).pricing.input === 0);
+
+		const isKnown = KNOWN_ZEN_FREE_MODELS[id] !== undefined;
+
+		return isFreeByKeyword || isFreeByMetadata || isKnown;
+	});
+
+	return freeItems.length > 0 ? resolveModelDefinitions(freeItems) : Object.values(KNOWN_ZEN_FREE_MODELS);
 }
 
 /**
@@ -217,21 +244,31 @@ export async function syncZenConfiguration(options: ZenSyncOptions = {}): Promis
 		throw new Error("未检测到 OpenCode Zen API Key。请指定 Key，例如：/zen oc_sk_xxx");
 	}
 
-	// 1. 在线校验 API Key 并拉取最新免费模型
-	const fetcher = options.fetchModels ?? fetchZenFreeModels;
-	let freeModelIds: string[] = [];
-	try {
-		freeModelIds = await fetcher(resolvedApiKey);
-	} catch (error) {
-		// 若因网络波动失败但已有已知列表，允许回退
-		if (!options.apiKey || options.fetchModels) {
-			freeModelIds = Object.keys(KNOWN_ZEN_FREE_MODELS);
-		} else {
-			throw error;
+	// 1. 在线校验 API Key 并拉取最新免费模型及精确能力规格
+	let resolvedModels: ZenModelDefinition[] = [];
+	if (options.fetchModels) {
+		try {
+			const fetched = await options.fetchModels(resolvedApiKey);
+			resolvedModels = resolveModelDefinitions(fetched);
+		} catch (error) {
+			if (!options.apiKey) {
+				resolvedModels = Object.values(KNOWN_ZEN_FREE_MODELS);
+			} else {
+				throw error;
+			}
+		}
+	} else {
+		try {
+			resolvedModels = await fetchZenModelCatalog(resolvedApiKey);
+		} catch (error) {
+			if (!options.apiKey) {
+				resolvedModels = Object.values(KNOWN_ZEN_FREE_MODELS);
+			} else {
+				throw error;
+			}
 		}
 	}
-
-	const resolvedModels = resolveModelDefinitions(freeModelIds);
+	const freeModelIds = resolvedModels.map((m) => m.id);
 
 	// 2. 确定 Session ID：若显式强制更新或当前已过期，则生成全新合规 Session
 	const currentSession = getStoredZenSessionId(modelsPath);

@@ -43,7 +43,7 @@ export interface ZenSyncOptions {
 	modelsPath?: string;
 	authPath?: string;
 	dbPath?: string;
-	fetchModels?: (apiKey: string) => Promise<string[]>;
+	fetchModels?: (apiKey: string) => Promise<Array<string | { id: string; [key: string]: unknown }>>;
 }
 
 export interface ZenSyncResult {

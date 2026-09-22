@@ -12,6 +12,10 @@ import {
 	KNOWN_ZEN_FREE_MODELS,
 	resolveModelDefinitions,
 	buildFallbackModelDefinition,
+	inferModelCapabilities,
+	formatTokens,
+	formatThinkingSummary,
+	formatModelCard,
 	ZEN_PROVIDER_ID,
 } from "./models-registry.js";
 import { DatabaseSync } from "node:sqlite";
@@ -130,6 +134,67 @@ describe("OpenCode Zen 模型库与参数注册表测试", () => {
 		assert.equal(fallback.id, "quantum-9-free");
 		assert.equal(fallback.reasoning, true);
 		assert.ok(fallback.name.includes("Quantum 9 Free"));
+	});
+
+	it("深度自适应识别不同模型家族的上下文窗口、输出上限与思考等级", () => {
+		// DeepSeek 家族
+		const ds = inferModelCapabilities("deepseek-v4-flash-free");
+		assert.equal(ds.contextWindow, 1000000, "DeepSeek 默认上下文 1M");
+		assert.equal(ds.maxTokens, 65536, "DeepSeek V4 输出上限 64K");
+		assert.equal(ds.reasoning, true);
+		assert.ok(ds.name.startsWith("DeepSeek"));
+		assert.deepEqual(ds.thinkingLevelMap?.low, "low");
+
+		// Gemini 家族
+		const gemini = inferModelCapabilities("gemini-3.7-flash-free");
+		assert.equal(gemini.contextWindow, 1048576, "Gemini 默认上下文 1M (1048576)");
+		assert.equal(gemini.maxTokens, 65536, "Gemini 输出上限 64K");
+		assert.equal(gemini.reasoning, true);
+		assert.ok(gemini.input.includes("image"), "Gemini 支持视觉图像输入");
+		assert.ok(gemini.name.startsWith("Google Gemini"));
+		assert.equal(gemini.thinkingLevelMap?.minimal, "low");
+
+		// Claude 家族
+		const claude = inferModelCapabilities("claude-sonnet-4-5-free");
+		assert.equal(claude.contextWindow, 200000, "Claude 默认上下文 200K");
+		assert.equal(claude.maxTokens, 65536, "Claude Sonnet 输出上限 64K (65536)");
+		assert.equal(claude.reasoning, true);
+		assert.ok(claude.input.includes("image"));
+
+		// 快反无思考模型
+		const reflex = inferModelCapabilities("fast-system-1-instruct-free");
+		assert.equal(reflex.reasoning, false, "system-1 / reflex / instruct 为快反无思考模型");
+		assert.equal(reflex.thinkingLevelMap, undefined);
+
+		// 在线接口显式元数据覆盖优先级最高
+		const custom = inferModelCapabilities("custom-ai-model-free", {
+			context_window: 524288,
+			max_output_tokens: 16384,
+			reasoning: true,
+			modalities: ["text", "image"],
+		});
+		assert.equal(custom.contextWindow, 524288, "显式 context_window 覆盖");
+		assert.equal(custom.maxTokens, 16384, "显式 max_output_tokens 覆盖");
+		assert.equal(custom.reasoning, true);
+		assert.ok(custom.input.includes("image"));
+	});
+
+	it("格式化工具输出易读且精确的 Token 数量与思考等级卡片", () => {
+		assert.equal(formatTokens(1048576), "1M (1,048,576 tokens)");
+		assert.equal(formatTokens(262144), "256K (262,144 tokens)");
+		assert.equal(formatTokens(32000), "31K (32,000 tokens)");
+
+		const museCard = formatThinkingSummary(KNOWN_ZEN_FREE_MODELS["muse-spark-1.3-contributor-free"]);
+		assert.ok(museCard.includes("6档深度思考"));
+
+		const jevCard = formatThinkingSummary(KNOWN_ZEN_FREE_MODELS["jev-1.13-free"]);
+		assert.ok(jevCard.includes("不支持"));
+
+		const card = formatModelCard(KNOWN_ZEN_FREE_MODELS["mimo-v2.6-flash-free"], 1);
+		assert.ok(card.includes("1. Xiaomi Mimo v2.6 Flash Free"));
+		assert.ok(card.includes("上下文: 195K (200,000 tokens)"));
+		assert.ok(card.includes("模态: 文本 + 视觉 (多模态)"));
+		assert.ok(card.includes("额度: 0免费"));
 	});
 });
 
