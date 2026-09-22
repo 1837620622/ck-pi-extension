@@ -404,6 +404,24 @@ describe("Extension API 钩子拦截测试", () => {
 		assert.equal(registeredConfig.models[0].id, "custom-vision-free");
 		assert.equal(registeredConfig.models[0].cost.input, 0);
 	});
+
+	it("严格隔离：isZenModelTarget 对 relayhub、onerouter、deepseek、apmix 完全返回 false，钩子绝不干涉其他供应商", () => {
+		const { isZenModelTarget } = require("./index.js");
+
+		// 必须为 true 的场景
+		assert.equal(isZenModelTarget({ provider: "opencode-zen-free", id: "mimo-v2.5-free" }), true);
+		assert.equal(isZenModelTarget({ provider: "opencode-zen-free", id: "big-pickle" }), true);
+		assert.equal(isZenModelTarget({ provider: "opencode", id: "mimo-v2.5-free" }), true);
+		assert.equal(isZenModelTarget({ provider: "opencode", id: "big-pickle" }), true);
+
+		// 必须为 false 的场景：绝不能干涉用户在 CC 里的其他供应商
+		assert.equal(isZenModelTarget(undefined), false);
+		assert.equal(isZenModelTarget({ provider: "relayhub", id: "deepseek-v4.1-flash" }), false);
+		assert.equal(isZenModelTarget({ provider: "deepseek", id: "deepseek-flash" }), false);
+		assert.equal(isZenModelTarget({ provider: "onerouter", id: "deepseek/deepseek-v4.1-flash:free" }), false);
+		assert.equal(isZenModelTarget({ provider: "apmix", id: "deepseek-v4-flash-free" }), false);
+		assert.equal(isZenModelTarget({ provider: "anthropic", id: "claude-3-7-sonnet" }), false);
+	});
 });
 
 

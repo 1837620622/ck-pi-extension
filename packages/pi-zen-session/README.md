@@ -24,7 +24,7 @@ OpenCode Zen 免费模型同步、请求头伪装与 Session 会话自动维护�
   - 若用户处于纯文本或无工具模式，自动补齐官方完整的 6 大核心工具（`bash`, `edit`, `glob`, `grep`, `read`, `write`）与 `tool_choice: "auto"`，彻底根除 403 拦截；
   - 若请求已有工具，严格按照官方客户端规约（`localeCompare`）按函数名升序重排；
   - 自动对齐流式用量元数据 `stream_options: { include_usage: true }`。
-- 🌐 **独立供应商隔离命名空间**：注册为独立供应商 `opencode-zen-free`，彻底避开并兼容用户自带的官方登录 `opencode` / `opencode-zen` 套餐，互不干扰、平稳共存。
+- 🌐 **独立供应商隔离与零干扰保障 (`isZenModelTarget`)**：严格将生命周期守卫、请求头与请求体拦截限制在 `opencode-zen-free` 命名空间内，对 `relayhub`、`deepseek`、`anthropic`、`openai`、`onerouter`、`apmix` 等其他任何模型及 Claude Code（`pi-cc-extensions`）插件 100% 保持完全静默放行，零副作用、零冲突。
 - 🧠 **精准上下文与思维链适配**：严格对齐免费模型的 `contextWindow`、`maxTokens` 与 `thinkingLevelMap`（涵盖小米 MiMo、英伟达 Nemotron、Meta Muse Spark、Ling、Jev 等）。
 - 🔌 **全自动多端持久化同步**：自动双写 Pi 本地配置（`~/.pi/agent/models.json` 和 `~/.pi/agent/auth.json`），若检测到 CC-Switch 亦无缝同步其 SQLite 数据库。
 

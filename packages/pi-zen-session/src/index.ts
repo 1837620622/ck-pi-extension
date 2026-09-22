@@ -166,8 +166,11 @@ export default function piZenSession(pi: ExtensionAPI): void {
 	});
 
 	// 5. 常驻生命周期守卫：在每次 Agent 循环执行前，自动检测 Session 有效性并无感续期
-	pi.on("before_agent_start", async () => {
+	pi.on("before_agent_start", async (_event, ctx) => {
 		try {
+			// 严格隔离：仅在当前激活/选择的是 Zen 模型时才触发轮换检测，绝不干扰其他模型或 CC 插件
+			if (!isZenModelTarget(ctx.model)) return;
+
 			const currentSession = getStoredZenSessionId();
 			// 若当前会话不存在或已使用超过 30 分钟，后台自动续期
 			if (!currentSession || isZenSessionExpired(currentSession, DEFAULT_SESSION_MAX_AGE_MS)) {
