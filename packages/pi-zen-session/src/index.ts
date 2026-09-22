@@ -68,6 +68,20 @@ export function registerZenProviderToPi(
 	}
 }
 
+export function isZenModelTarget(model?: { provider?: string; id?: string }): boolean {
+	if (!model) return false;
+	// 严格隔离：仅处理 opencode-zen-free 或明确属于 opencode 官方的免费模型
+	// 绝不干涉 relayhub、deepseek、anthropic、openai 等其他任何供应商或 CC 插件
+	if (model.provider === ZEN_PROVIDER_ID) return true;
+	if (
+		model.provider === "opencode" &&
+		(model.id?.includes("-free") || model.id === "big-pickle")
+	) {
+		return true;
+	}
+	return false;
+}
+
 export default function piZenSession(pi: ExtensionAPI): void {
 	// 1. 若本地已配置 Key，启动时即刻注册独立供应商 opencode-zen-free
 	// 独立命名空间，彻底避开并兼容用户自带的官方登录 opencode / opencode-zen 套餐
@@ -78,13 +92,7 @@ export default function piZenSession(pi: ExtensionAPI): void {
 
 	// 2. 核心请求头拦截钩子：在每一次请求发往 Provider 前注入完整官方客户端对齐请求头
 	pi.on("before_provider_headers", (event, ctx) => {
-		const model = ctx.model;
-		const isZenModel =
-			model?.provider === ZEN_PROVIDER_ID ||
-			model?.id?.includes("-free") ||
-			model?.id === "big-pickle";
-
-		if (isZenModel) {
+		if (isZenModelTarget(ctx.model)) {
 			// 检查 x-opencode-session 是否过期 (>30分钟) 或缺失
 			let currentSession = event.headers["x-opencode-session"];
 			if (
@@ -111,13 +119,7 @@ export default function piZenSession(pi: ExtensionAPI): void {
 
 	// 3. 核心请求体守卫钩子：深度对齐 OpenCode 官方请求体结构与工具集
 	pi.on("before_provider_request", (event, ctx) => {
-		const model = ctx.model;
-		const isZenModel =
-			model?.provider === ZEN_PROVIDER_ID ||
-			model?.id?.includes("-free") ||
-			model?.id === "big-pickle";
-
-		if (isZenModel && event.payload && typeof event.payload === "object") {
+		if (isZenModelTarget(ctx.model) && event.payload && typeof event.payload === "object") {
 			const payload = event.payload as Record<string, unknown>;
 			const tools = payload.tools;
 			let modified = false;
@@ -151,13 +153,7 @@ export default function piZenSession(pi: ExtensionAPI): void {
 
 	// 4. 网关响应守卫：遇 401/403 会话受限或过期时，立即自愈换新 Session ID
 	pi.on("after_provider_response", (event, ctx) => {
-		const model = ctx.model;
-		const isZenModel =
-			model?.provider === ZEN_PROVIDER_ID ||
-			model?.id?.includes("-free") ||
-			model?.id === "big-pickle";
-
-		if (isZenModel && (event.status === 401 || event.status === 403)) {
+		if (isZenModelTarget(ctx.model) && (event.status === 401 || event.status === 403)) {
 			// 自动异步刷新 Session
 			syncZenConfiguration({ forceSession: true }).catch(() => {});
 			if (ctx.hasUI) {
