@@ -19,6 +19,7 @@ import {
 } from "./models-registry.js";
 import {
 	getStoredZenApiKey,
+	getStoredZenModels,
 	getStoredZenSessionId,
 	getZenStatusInfo,
 	syncZenConfiguration,
@@ -31,11 +32,13 @@ import {
 	isZenSessionExpired,
 	isValidZenSessionId,
 } from "./session.js";
+import type { ZenModelDefinition } from "./types.js";
 
 export function registerZenProviderToPi(
 	pi: ExtensionAPI,
 	apiKey: string,
 	sessionId: string = getStoredZenSessionId() || generateZenSessionId(),
+	models: ZenModelDefinition[] = getStoredZenModels(),
 ): void {
 	try {
 		pi.registerProvider(ZEN_PROVIDER_ID, {
@@ -58,7 +61,7 @@ export function registerZenProviderToPi(
 				supportsStore: false,
 				supportsUsageInStreaming: true,
 			},
-			models: Object.values(KNOWN_ZEN_FREE_MODELS),
+			models: models && models.length > 0 ? models : Object.values(KNOWN_ZEN_FREE_MODELS),
 		});
 	} catch {
 		// 忽略重复注册
@@ -258,12 +261,13 @@ export async function handleZenCommand(
 			notify(ctx, "正在生成全新 OpenCode Zen 会话 ID 并同步...", "info");
 			const result = await syncZenConfiguration({ forceSession: true });
 			if (pi) {
-				registerZenProviderToPi(pi, result.apiKey, result.sessionId);
+				registerZenProviderToPi(pi, result.apiKey, result.sessionId, result.resolvedModels);
 			}
 			const successMsg = [
 				"✓ OpenCode Zen Session 已成功刷新！",
 				`• 全新 Session: ${result.sessionId}`,
-				`• 请求头伪装: User-Agent, x-opencode-session 已注入`,
+				`• 免费模型: 已对齐 ${result.modelsCount} 款 0 额度消耗模型`,
+				`• 请求头伪装: 7 维官方客户端签名已注入`,
 				`• 同步状态: models.json ✓ | CC-Switch ${result.ccSwitchUpdated ? "✓" : "-(未安装或无此条目)"}`,
 			].join("\n");
 			notify(ctx, successMsg, "info");
@@ -276,16 +280,17 @@ export async function handleZenCommand(
 	// 4. 输入了具体的 API Key: /zen oc_sk_... 或其它 key
 	if (rawArg.length > 0 && !["status", "refresh", "list", "models"].includes(command)) {
 		try {
-			notify(ctx, "正在验证 OpenCode Zen API Key 并探测免费模型...", "info");
+			notify(ctx, "正在验证 OpenCode Zen API Key 并探测免费与零额度模型...", "info");
 			const result = await syncZenConfiguration({ apiKey: rawArg, forceSession: true });
 			if (pi) {
-				registerZenProviderToPi(pi, result.apiKey, result.sessionId);
+				registerZenProviderToPi(pi, result.apiKey, result.sessionId, result.resolvedModels);
 			}
 			const msg = [
-				"🎉 OpenCode Zen 配置成功！免费套餐与请求头已全部就绪：",
+				"🎉 OpenCode Zen 配置成功！免费套餐与零额度模型已自动识别并全量对接：",
 				`• API Key: ${maskKey(result.apiKey)} (已验证并保存)`,
 				`• 会话 Session: ${result.sessionId} (官方降序时间戳逆向算法)`,
-				`• 发现免费模型: ${result.modelsCount} 个已自动配置 (含思维链 thinkingLevelMap 适配)`,
+				`• 自动对接免费模型 (${result.modelsCount} 款，全部标记 0 额度消耗)：`,
+				...result.models.map((id) => `  • ${id}`),
 				`• 同步路径: ${result.modelsPath}`,
 				result.ccSwitchUpdated ? "• CC-Switch: 本地数据库已同步更新" : "",
 			].filter(Boolean).join("\n");
@@ -304,13 +309,13 @@ export async function handleZenCommand(
 			notify(ctx, "正在刷新 OpenCode Zen 会话与请求头...", "info");
 			const result = await syncZenConfiguration({ forceSession: true });
 			if (pi) {
-				registerZenProviderToPi(pi, result.apiKey, result.sessionId);
+				registerZenProviderToPi(pi, result.apiKey, result.sessionId, result.resolvedModels);
 			}
 			const msg = [
 				"✨ [OpenCode Zen 已自动刷新并就绪]",
 				`• API Key: ${maskKey(result.apiKey)}`,
 				`• 全新 Session: ${result.sessionId} (有效且已持久化)`,
-				`• 免费模型: 已同步 ${result.modelsCount} 个可用免费模型`,
+				`• 自动对接免费模型: 已同步 ${result.modelsCount} 个 0 额度消耗模型`,
 				`• 请求头保护: 30分钟自动轮换 + 7维官方签名 + 6大核心工具全注入`,
 				"",
 				"常用操作：",

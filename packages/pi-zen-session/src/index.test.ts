@@ -371,6 +371,39 @@ describe("Extension API 钩子拦截测试", () => {
 			}
 		}
 	});
+
+	it("registerZenProviderToPi 支持动态注入发现的零额度免费模型", () => {
+		let registeredConfig: any = null;
+		const mockPi: any = {
+			registerProvider: (_id: string, config: any) => {
+				registeredConfig = config;
+			},
+			registerCommand: () => {},
+			on: () => {},
+		};
+
+		const customFreeModels = [
+			{
+				id: "custom-vision-free",
+				name: "Custom Vision Free",
+				contextWindow: 128000,
+				maxTokens: 16000,
+				reasoning: true,
+				input: ["text", "image"] as ("text" | "image")[],
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			},
+		];
+
+		const { registerZenProviderToPi } = require("./index.js");
+		registerZenProviderToPi(mockPi, "oc_sk_test", "ses_test_session_id", customFreeModels);
+
+		assert.ok(registeredConfig);
+		assert.equal(registeredConfig.apiKey, "oc_sk_test");
+		assert.equal(registeredConfig.headers["x-opencode-session"], "ses_test_session_id");
+		assert.equal(registeredConfig.models.length, 1);
+		assert.equal(registeredConfig.models[0].id, "custom-vision-free");
+		assert.equal(registeredConfig.models[0].cost.input, 0);
+	});
 });
 
 

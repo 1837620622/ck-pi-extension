@@ -6,7 +6,7 @@ OpenCode Zen 免费模型同步、请求头伪装与 Session 会话自动维护�
 
 ## 🌟 核心特性
 
-- ⚡ **/zen 指令一键激活**：输入一次 API Key (`/zen oc_sk_...`)，全自动验证、探测 9 款可用免费模型并注入 Pi 与 CC-Switch。
+- ⚡ **/zen 指令一键激活与动态免费模型全量探测**：输入一次 API Key (`/zen oc_sk_...`)，全自动在线探测所有带有 `free` / `zero` / `pickle` 标识的模型，全量标记 0 额度消耗 (`cost: { input: 0, output: 0 }`) 并动态热挂载进 Pi 与 CC-Switch。
 - 🔄 **官方算法深度逆向**：完整对齐 OpenCode 客户端 `Identifier.descending("ses")` 与 `Identifier.ascending("msg")` 算法，生成 30 位降序会话 ID 与升序请求 ID，支持毫秒级时间戳反解。
 - 🛡️ **全套官方级伪装请求头**：自动注入全部 7 个官方客户端对齐请求头：
   - `User-Agent`: `opencode/1.18.32 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14`
@@ -19,12 +19,13 @@ OpenCode Zen 免费模型同步、请求头伪装与 Session 会话自动维护�
 - ⏱️ **30 分钟无感前置平滑轮换**：官方后端限制免费会话时长约为 1 小时（超时直接 403 `FreeTierError`）。本插件在底层请求拦截器（`before_provider_headers`）和 Agent 循环守卫（`before_agent_start`）中设置 30 分钟主动换新阈值，兼顾会话上下文平滑与长期高频调用稳定性，确保永不触碰 1 小时硬限制。
 - 🚑 **网关异常自愈守卫 (`after_provider_response`)**：新增底层响应拦截，一旦检测到远端网关返回 401 或 403 `FreeTierError`，立即当场触发 Session 换新与后台持久化，并提示用户，彻底终结会话失效死锁。
 - 🔑 **多源凭据自适应感知**：支持优先读取 `OPENCODE_API_KEY`、`OPENCODE_ZEN_API_KEY` 环境变量，亦可直接使用 `/zen <key>` 配置，无缝兼容各类容器与终端环境。
+- 🌐 **原生代理支持解除限速与额度**：由于 OpenCode 端点受 Cloudflare WAF 保护，在 HTTP 头部伪造假 IP 无法欺骗底层 TCP 握手并会招致 WAF 封禁；如需轮换出口解除 IP 限制，直接配置标准网络代理（如 `export HTTPS_PROXY=http://127.0.0.1:7890`）即可让物理连接从新节点发起，安全解除限速与额度。
 - 🧰 **官方全套 6 大核心工具链守卫与字母序规约**：OpenCode Zen 免费端点对工具集有硬性要求（无工具直接拒绝）。插件在 `before_provider_request` 钩子中实时监控请求体：
   - 若用户处于纯文本或无工具模式，自动补齐官方完整的 6 大核心工具（`bash`, `edit`, `glob`, `grep`, `read`, `write`）与 `tool_choice: "auto"`，彻底根除 403 拦截；
   - 若请求已有工具，严格按照官方客户端规约（`localeCompare`）按函数名升序重排；
   - 自动对齐流式用量元数据 `stream_options: { include_usage: true }`。
 - 🌐 **独立供应商隔离命名空间**：注册为独立供应商 `opencode-zen-free`，彻底避开并兼容用户自带的官方登录 `opencode` / `opencode-zen` 套餐，互不干扰、平稳共存。
-- 🧠 **精准上下文与思维链适配**：严格对齐 9 款免费模型的 `contextWindow`、`maxTokens` 与 `thinkingLevelMap`（涵盖小米 MiMo、英伟达 Nemotron、Meta Muse Spark、Ling、Jev 等）。
+- 🧠 **精准上下文与思维链适配**：严格对齐免费模型的 `contextWindow`、`maxTokens` 与 `thinkingLevelMap`（涵盖小米 MiMo、英伟达 Nemotron、Meta Muse Spark、Ling、Jev 等）。
 - 🔌 **全自动多端持久化同步**：自动双写 Pi 本地配置（`~/.pi/agent/models.json` 和 `~/.pi/agent/auth.json`），若检测到 CC-Switch 亦无缝同步其 SQLite 数据库。
 
 ---

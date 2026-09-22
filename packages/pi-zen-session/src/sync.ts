@@ -29,7 +29,7 @@ import {
 	isZenSessionExpired,
 	isValidZenSessionId,
 } from "./session.js";
-import type { ZenStatusInfo, ZenSyncOptions, ZenSyncResult } from "./types.js";
+import type { ZenModelDefinition, ZenStatusInfo, ZenSyncOptions, ZenSyncResult } from "./types.js";
 
 export function defaultModelsPath(): string {
 	return join(homedir(), ".pi", "agent", "models.json");
@@ -44,7 +44,7 @@ export function defaultCcSwitchDbPath(): string {
 }
 
 /**
- * 校验 API Key 并拉取 OpenCode Zen 在线模型清单
+ * 校验 API Key 并拉取 OpenCode Zen 在线模型清单，自动识别所有免费与零额度模型
  */
 export async function fetchZenFreeModels(apiKey: string): Promise<string[]> {
 	const res = await fetch(`${ZEN_BASE_URL}/models`, {
@@ -60,16 +60,45 @@ export async function fetchZenFreeModels(apiKey: string): Promise<string[]> {
 		throw new Error(`OpenCode Zen API 验证失败 (HTTP ${res.status}): ${text || res.statusText}`);
 	}
 
-	const data = (await res.json()) as { data?: Array<{ id: string }> };
+	const data = (await res.json()) as { data?: Array<{ id: string; [key: string]: unknown }> };
 	if (!data || !Array.isArray(data.data)) {
 		return Object.keys(KNOWN_ZEN_FREE_MODELS);
 	}
 
+	// 自动识别所有带 free / zero / pickle 标识的零额度消耗免费模型
 	const freeIds = data.data
-		.map((item) => item.id)
-		.filter((id) => id.includes("free") || id === "big-pickle" || id.includes("pickle"));
+		.map((item) => String(item.id))
+		.filter((id) => {
+			const lower = id.toLowerCase();
+			return (
+				lower.includes("free") ||
+				lower.includes("pickle") ||
+				lower.includes("zero") ||
+				lower.endsWith("-free")
+			);
+		});
 
 	return freeIds.length > 0 ? freeIds : Object.keys(KNOWN_ZEN_FREE_MODELS);
+}
+
+/**
+ * 读取当前系统已持久化配置的 OpenCode Zen 模型清单
+ */
+export function getStoredZenModels(modelsPath = defaultModelsPath()): ZenModelDefinition[] {
+	try {
+		if (existsSync(modelsPath)) {
+			const modelsDoc = JSON.parse(readFileSync(modelsPath, "utf8")) as {
+				providers?: Record<string, { models?: ZenModelDefinition[] }>;
+			};
+			const list = modelsDoc.providers?.[ZEN_PROVIDER_ID]?.models;
+			if (Array.isArray(list) && list.length > 0) {
+				return list;
+			}
+		}
+	} catch {
+		// 忽略读取错误
+	}
+	return Object.values(KNOWN_ZEN_FREE_MODELS);
 }
 
 /**
@@ -282,6 +311,7 @@ export async function syncZenConfiguration(options: ZenSyncOptions = {}): Promis
 		isNewSession,
 		modelsCount: resolvedModels.length,
 		models: resolvedModels.map((m) => m.id),
+		resolvedModels,
 		modelsPath,
 		ccSwitchUpdated,
 	};

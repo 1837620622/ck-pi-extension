@@ -52,6 +52,7 @@ export interface ZenSyncResult {
 	isNewSession: boolean;
 	modelsCount: number;
 	models: string[];
+	resolvedModels: ZenModelDefinition[];
 	modelsPath: string;
 	ccSwitchUpdated: boolean;
 }
