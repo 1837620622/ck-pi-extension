@@ -1,0 +1,365 @@
+/**
+ * OpenCode Zen 模型发现、Session 维护与配置同步服务
+ *
+ * 负责：
+ * 1. 验证 OpenCode Zen API Key 并在线获取最新可用免费模型清单；
+ * 2. 依据官方 Identifier.descending 规约生成/刷新合规 Session ID；
+ * 3. 自动注入伪装请求头 (User-Agent 与 x-opencode-session)；
+ * 4. 同步更新 ~/.pi/agent/models.json 与 ~/.pi/agent/auth.json；
+ * 5. 若已安装 CC-Switch，自动无缝同步更新 ~/.cc-switch/cc-switch.db。
+ */
+
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import {
+	KNOWN_ZEN_FREE_MODELS,
+	resolveModelDefinitions,
+	ZEN_BASE_URL,
+	ZEN_PROVIDER_ID,
+	ZEN_USER_AGENT,
+} from "./models-registry.js";
+import {
+	extractZenSessionTimestamp,
+	generateZenSessionId,
+	isZenSessionExpired,
+	isValidZenSessionId,
+} from "./session.js";
+import type { ZenStatusInfo, ZenSyncOptions, ZenSyncResult } from "./types.js";
+
+export function defaultModelsPath(): string {
+	return join(homedir(), ".pi", "agent", "models.json");
+}
+
+export function defaultAuthPath(): string {
+	return join(homedir(), ".pi", "agent", "auth.json");
+}
+
+export function defaultCcSwitchDbPath(): string {
+	return join(homedir(), ".cc-switch", "cc-switch.db");
+}
+
+/**
+ * 校验 API Key 并拉取 OpenCode Zen 在线模型清单
+ */
+export async function fetchZenFreeModels(apiKey: string): Promise<string[]> {
+	const res = await fetch(`${ZEN_BASE_URL}/models`, {
+		method: "GET",
+		headers: {
+			Authorization: `Bearer ${apiKey.trim()}`,
+			"User-Agent": ZEN_USER_AGENT,
+		},
+	});
+
+	if (!res.ok) {
+		const text = await res.text().catch(() => "");
+		throw new Error(`OpenCode Zen API 验证失败 (HTTP ${res.status}): ${text || res.statusText}`);
+	}
+
+	const data = (await res.json()) as { data?: Array<{ id: string }> };
+	if (!data || !Array.isArray(data.data)) {
+		return Object.keys(KNOWN_ZEN_FREE_MODELS);
+	}
+
+	const freeIds = data.data
+		.map((item) => item.id)
+		.filter((id) => id.includes("free") || id === "big-pickle" || id.includes("pickle"));
+
+	return freeIds.length > 0 ? freeIds : Object.keys(KNOWN_ZEN_FREE_MODELS);
+}
+
+/**
+ * 读取当前系统中已配置的 OpenCode Zen API Key
+ */
+export function getStoredZenApiKey(authPath = defaultAuthPath(), modelsPath = defaultModelsPath()): string | null {
+	try {
+		if (existsSync(authPath)) {
+			const auth = JSON.parse(readFileSync(authPath, "utf8")) as Record<string, { key?: string }>;
+			if (auth[ZEN_PROVIDER_ID]?.key) {
+				return auth[ZEN_PROVIDER_ID].key;
+			}
+		}
+	} catch {
+		// 忽略读取错误
+	}
+
+	try {
+		if (existsSync(modelsPath)) {
+			const models = JSON.parse(readFileSync(modelsPath, "utf8")) as {
+				providers?: Record<string, { apiKey?: string }>;
+			};
+			if (models.providers?.[ZEN_PROVIDER_ID]?.apiKey) {
+				return models.providers[ZEN_PROVIDER_ID].apiKey;
+			}
+		}
+	} catch {
+		// 忽略读取错误
+	}
+
+	return null;
+}
+
+/**
+ * 读取当前已配置的 Session ID
+ */
+export function getStoredZenSessionId(modelsPath = defaultModelsPath()): string | null {
+	try {
+		if (existsSync(modelsPath)) {
+			const models = JSON.parse(readFileSync(modelsPath, "utf8")) as {
+				providers?: Record<string, { headers?: { "x-opencode-session"?: string } }>;
+			};
+			const ses = models.providers?.[ZEN_PROVIDER_ID]?.headers?.["x-opencode-session"];
+			if (isValidZenSessionId(ses)) return ses;
+		}
+	} catch {
+		// 忽略错误
+	}
+	return null;
+}
+
+/**
+ * 获取 OpenCode Zen 的运行状态摘要
+ */
+export function getZenStatusInfo(
+	modelsPath = defaultModelsPath(),
+	authPath = defaultAuthPath(),
+): ZenStatusInfo {
+	const key = getStoredZenApiKey(authPath, modelsPath);
+	const sessionId = getStoredZenSessionId(modelsPath) ?? "";
+	const ts = sessionId ? extractZenSessionTimestamp(sessionId) : null;
+	const now = Date.now();
+	const ageMinutes = ts ? Math.max(0, Math.round((now - ts) / 60000)) : 999999;
+	const expired = isZenSessionExpired(sessionId, 24 * 3600 * 1000, now);
+
+	let modelIds: string[] = [];
+	try {
+		if (existsSync(modelsPath)) {
+			const models = JSON.parse(readFileSync(modelsPath, "utf8")) as {
+				providers?: Record<string, { models?: Array<{ id: string }> }>;
+			};
+			const list = models.providers?.[ZEN_PROVIDER_ID]?.models;
+			if (Array.isArray(list)) {
+				modelIds = list.map((m) => m.id);
+			}
+		}
+	} catch {
+		// ignore
+	}
+
+	let maskedKey = "未配置";
+	if (key) {
+		maskedKey = key.length > 12 ? `${key.slice(0, 8)}...${key.slice(-4)}` : "******";
+	}
+
+	return {
+		hasKey: Boolean(key),
+		maskedKey,
+		sessionId,
+		sessionAgeMinutes: ageMinutes,
+		sessionExpired: expired,
+		modelsCount: modelIds.length,
+		modelIds,
+	};
+}
+
+/**
+ * 执行 OpenCode Zen 全量同步（Key 校验、模型拉取、Session 生成、文件落盘、CC-Switch 数据库同步）
+ */
+export async function syncZenConfiguration(options: ZenSyncOptions = {}): Promise<ZenSyncResult> {
+	const modelsPath = options.modelsPath ?? defaultModelsPath();
+	const authPath = options.authPath ?? defaultAuthPath();
+	const dbPath = options.dbPath ?? defaultCcSwitchDbPath();
+
+	const resolvedApiKey = options.apiKey?.trim() || getStoredZenApiKey(authPath, modelsPath);
+	if (!resolvedApiKey) {
+		throw new Error("未检测到 OpenCode Zen API Key。请指定 Key，例如：/zen oc_sk_xxx");
+	}
+
+	// 1. 在线校验 API Key 并拉取最新免费模型
+	const fetcher = options.fetchModels ?? fetchZenFreeModels;
+	let freeModelIds: string[] = [];
+	try {
+		freeModelIds = await fetcher(resolvedApiKey);
+	} catch (error) {
+		// 若因网络波动失败但已有已知列表，允许回退
+		if (!options.apiKey || options.fetchModels) {
+			freeModelIds = Object.keys(KNOWN_ZEN_FREE_MODELS);
+		} else {
+			throw error;
+		}
+	}
+
+	const resolvedModels = resolveModelDefinitions(freeModelIds);
+
+	// 2. 确定 Session ID：若显式强制更新或当前已过期，则生成全新合规 Session
+	const currentSession = getStoredZenSessionId(modelsPath);
+	let targetSession = currentSession;
+	let isNewSession = false;
+
+	if (options.forceSession || !currentSession || isZenSessionExpired(currentSession, 24 * 3600 * 1000)) {
+		targetSession = generateZenSessionId();
+		isNewSession = true;
+	}
+
+	// 3. 更新 ~/.pi/agent/models.json
+	let modelsDoc: { providers?: Record<string, unknown> } = {};
+	try {
+		if (existsSync(modelsPath)) {
+			modelsDoc = JSON.parse(readFileSync(modelsPath, "utf8")) as { providers?: Record<string, unknown> };
+		}
+	} catch {
+		modelsDoc = {};
+	}
+	if (!modelsDoc.providers || typeof modelsDoc.providers !== "object") {
+		modelsDoc.providers = {};
+	}
+
+	modelsDoc.providers[ZEN_PROVIDER_ID] = {
+		baseUrl: ZEN_BASE_URL,
+		api: "openai-completions",
+		apiKey: resolvedApiKey,
+		headers: {
+			"User-Agent": ZEN_USER_AGENT,
+			"x-opencode-session": targetSession,
+		},
+		compat: {
+			maxTokensField: "max_tokens",
+			requiresReasoningContentOnAssistantMessages: true,
+			supportsDeveloperRole: false,
+			supportsStore: false,
+		},
+		models: resolvedModels,
+	};
+
+	mkdirSync(dirname(modelsPath), { recursive: true });
+	writeFileSync(modelsPath, `${JSON.stringify(modelsDoc, null, 2)}\n`, "utf8");
+
+	// 4. 更新 ~/.pi/agent/auth.json
+	let authDoc: Record<string, unknown> = {};
+	try {
+		if (existsSync(authPath)) {
+			authDoc = JSON.parse(readFileSync(authPath, "utf8")) as Record<string, unknown>;
+		}
+	} catch {
+		authDoc = {};
+	}
+	authDoc[ZEN_PROVIDER_ID] = {
+		type: "api_key",
+		key: resolvedApiKey,
+	};
+	mkdirSync(dirname(authPath), { recursive: true });
+	writeFileSync(authPath, `${JSON.stringify(authDoc, null, 2)}\n`, "utf8");
+
+	// 5. 同步 CC-Switch 数据库
+	let ccSwitchUpdated = false;
+	try {
+		ccSwitchUpdated = updateCcSwitchDb(dbPath, resolvedApiKey, targetSession, resolvedModels);
+	} catch {
+		ccSwitchUpdated = false;
+	}
+
+	return {
+		apiKey: resolvedApiKey,
+		sessionId: targetSession,
+		isNewSession,
+		modelsCount: resolvedModels.length,
+		models: resolvedModels.map((m) => m.id),
+		modelsPath,
+		ccSwitchUpdated,
+	};
+}
+
+/**
+ * 同步 CC-Switch 数据库中的 opencode-zen-free 配置
+ */
+export function updateCcSwitchDb(
+	dbPath: string,
+	apiKey: string,
+	sessionId: string,
+	models: unknown[],
+): boolean {
+	if (!existsSync(dbPath)) return false;
+
+	// 优先使用 Node 22+ 内置的 node:sqlite
+	try {
+		const db = new DatabaseSync(dbPath);
+		const selectStmt = db.prepare("SELECT app_type, settings_config FROM providers WHERE id = ?");
+		const rows = selectStmt.all(ZEN_PROVIDER_ID) as Array<{ app_type: string; settings_config: string }>;
+
+		if (rows.length > 0) {
+			const updateStmt = db.prepare(
+				"UPDATE providers SET settings_config = ? WHERE id = ? AND app_type = ?",
+			);
+
+			for (const row of rows) {
+				try {
+					const cfg = JSON.parse(row.settings_config) as Record<string, unknown>;
+					if (row.app_type === "pi") {
+						cfg.apiKey = apiKey;
+						const headers = (cfg.headers ?? {}) as Record<string, string>;
+						headers["User-Agent"] = ZEN_USER_AGENT;
+						headers["x-opencode-session"] = sessionId;
+						cfg.headers = headers;
+						cfg.models = models;
+					} else if (row.app_type === "opencode") {
+						const opts = (cfg.options ?? {}) as Record<string, unknown>;
+						opts.apiKey = apiKey;
+						const headers = (opts.headers ?? {}) as Record<string, string>;
+						headers["User-Agent"] = ZEN_USER_AGENT;
+						headers["x-opencode-session"] = sessionId;
+						opts.headers = headers;
+						cfg.options = opts;
+					}
+					updateStmt.run(JSON.stringify(cfg), ZEN_PROVIDER_ID, row.app_type);
+				} catch {
+					// 忽略单行解析失败
+				}
+			}
+			db.close();
+			return true;
+		}
+		db.close();
+	} catch {
+		// 若 node:sqlite 不可用，尝试调用 Python3 脚本无痛回退
+		try {
+			const script = `
+import sqlite3, json, sys
+conn = sqlite3.connect('${dbPath}')
+c = conn.cursor()
+c.execute("SELECT app_type, settings_config FROM providers WHERE id = '${ZEN_PROVIDER_ID}'")
+rows = c.fetchall()
+if rows:
+    for app, cfg_str in rows:
+        try:
+            cfg = json.loads(cfg_str)
+            if app == 'pi':
+                cfg['apiKey'] = '${apiKey}'
+                headers = cfg.get('headers', {})
+                headers['User-Agent'] = '${ZEN_USER_AGENT}'
+                headers['x-opencode-session'] = '${sessionId}'
+                cfg['headers'] = headers
+            elif app == 'opencode':
+                opts = cfg.get('options', {})
+                opts['apiKey'] = '${apiKey}'
+                headers = opts.get('headers', {})
+                headers['User-Agent'] = '${ZEN_USER_AGENT}'
+                headers['x-opencode-session'] = '${sessionId}'
+                opts['headers'] = headers
+                cfg['options'] = opts
+            c.execute("UPDATE providers SET settings_config = ? WHERE id = ? AND app_type = ?", (json.dumps(cfg), '${ZEN_PROVIDER_ID}', app))
+        except Exception:
+            pass
+    conn.commit()
+conn.close()
+`;
+			execFileSync("python3", ["-c", script], { timeout: 3000 });
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
+	return false;
+}

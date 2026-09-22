@@ -1,0 +1,43 @@
+{
+  "name": "ck-pi-zen-session",
+  "version": "0.1.0",
+  "description": "OpenCode Zen session auto-refresh and free-tier model catalog synchronization for the Pi coding agent.",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "pi-coding-agent",
+    "opencode",
+    "zen",
+    "session",
+    "free-tier"
+  ],
+  "license": "MIT",
+  "author": "传康Kk <1837620622@qq.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/1837620622/ck-pi-extension.git",
+    "directory": "packages/pi-zen-session"
+  },
+  "homepage": "https://github.com/1837620622/ck-pi-extension#pi-zen-session",
+  "bugs": {
+    "url": "https://github.com/1837620622/ck-pi-extension/issues"
+  },
+  "type": "module",
+  "files": [
+    "src",
+    "!src/*.test.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.85.0"
+  },
+  "scripts": {
+    "test": "esbuild src/index.test.ts --bundle --packages=external --platform=node --format=esm --outfile=.test-dist/test.mjs --log-level=warning && node --test .test-dist/test.mjs"
+  }
+}
