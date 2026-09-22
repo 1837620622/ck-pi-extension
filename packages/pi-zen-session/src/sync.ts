@@ -22,6 +22,7 @@ import {
 	ZEN_USER_AGENT,
 } from "./models-registry.js";
 import {
+	DEFAULT_SESSION_MAX_AGE_MS,
 	extractZenSessionTimestamp,
 	generateZenSessionId,
 	isZenSessionExpired,
@@ -131,7 +132,7 @@ export function getZenStatusInfo(
 	const ts = sessionId ? extractZenSessionTimestamp(sessionId) : null;
 	const now = Date.now();
 	const ageMinutes = ts ? Math.max(0, Math.round((now - ts) / 60000)) : 999999;
-	const expired = isZenSessionExpired(sessionId, 24 * 3600 * 1000, now);
+	const expired = isZenSessionExpired(sessionId, DEFAULT_SESSION_MAX_AGE_MS, now);
 
 	let modelIds: string[] = [];
 	try {
@@ -198,7 +199,7 @@ export async function syncZenConfiguration(options: ZenSyncOptions = {}): Promis
 	let targetSession = currentSession;
 	let isNewSession = false;
 
-	if (options.forceSession || !currentSession || isZenSessionExpired(currentSession, 24 * 3600 * 1000)) {
+	if (options.forceSession || !currentSession || isZenSessionExpired(currentSession, DEFAULT_SESSION_MAX_AGE_MS)) {
 		targetSession = generateZenSessionId();
 		isNewSession = true;
 	}
@@ -222,7 +223,10 @@ export async function syncZenConfiguration(options: ZenSyncOptions = {}): Promis
 		apiKey: resolvedApiKey,
 		headers: {
 			"User-Agent": ZEN_USER_AGENT,
+			"x-opencode-client": "cli",
 			"x-opencode-session": targetSession,
+			"x-session-affinity": targetSession,
+			"X-Session-Id": targetSession,
 		},
 		compat: {
 			maxTokensField: "max_tokens",
@@ -300,7 +304,10 @@ export function updateCcSwitchDb(
 						cfg.apiKey = apiKey;
 						const headers = (cfg.headers ?? {}) as Record<string, string>;
 						headers["User-Agent"] = ZEN_USER_AGENT;
+						headers["x-opencode-client"] = "cli";
 						headers["x-opencode-session"] = sessionId;
+						headers["x-session-affinity"] = sessionId;
+						headers["X-Session-Id"] = sessionId;
 						cfg.headers = headers;
 						cfg.models = models;
 					} else if (row.app_type === "opencode") {
@@ -308,7 +315,10 @@ export function updateCcSwitchDb(
 						opts.apiKey = apiKey;
 						const headers = (opts.headers ?? {}) as Record<string, string>;
 						headers["User-Agent"] = ZEN_USER_AGENT;
+						headers["x-opencode-client"] = "cli";
 						headers["x-opencode-session"] = sessionId;
+						headers["x-session-affinity"] = sessionId;
+						headers["X-Session-Id"] = sessionId;
 						opts.headers = headers;
 						cfg.options = opts;
 					}

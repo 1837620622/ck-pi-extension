@@ -60,6 +60,44 @@ export function generateZenSessionId(timestampMs: number = Date.now()): string {
 }
 
 /**
+ * 生成符合 OpenCode 官方规约的 Request 请求唯一标识符 (前缀 msg_, 升序 ascending)
+ * @param timestampMs 毫秒时间戳，默认为 Date.now()
+ */
+export function generateZenRequestId(timestampMs: number = Date.now()): string {
+	if (timestampMs !== lastTimestamp) {
+		lastTimestamp = timestampMs;
+		sequenceCounter = 0;
+	}
+	sequenceCounter++;
+
+	const combined = BigInt(timestampMs) * 0x1000n + BigInt(sequenceCounter);
+	// 升序直接编码，不取反
+	let hex = "";
+	for (let i = 0; i < 6; i++) {
+		const byte = Number((combined >> BigInt(40 - 8 * i)) & 0xffn);
+		hex += byte.toString(16).padStart(2, "0");
+	}
+
+	const randBytes = new Uint8Array(14);
+	if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+		crypto.getRandomValues(randBytes);
+	} else if (webcrypto && webcrypto.getRandomValues) {
+		webcrypto.getRandomValues(randBytes);
+	} else {
+		for (let i = 0; i < 14; i++) {
+			randBytes[i] = Math.floor(Math.random() * 256);
+		}
+	}
+
+	let randStr = "";
+	for (let i = 0; i < 14; i++) {
+		randStr += B62_CHARS[randBytes[i] % 62];
+	}
+
+	return `msg_${hex}${randStr}`;
+}
+
+/**
  * 校验字符串是否为标准 OpenCode Zen Session ID
  */
 export function isValidZenSessionId(id: string | null | undefined): boolean {
@@ -100,14 +138,20 @@ export function extractZenSessionTimestamp(
 }
 
 /**
+ * 官方 OpenCode Zen 后端对会话生命周期严格限制（超 1 小时即报 403 FreeTierError）
+ * 默认设定为 45 分钟，确保在达到 1 小时硬限制前无感平滑轮换
+ */
+export const DEFAULT_SESSION_MAX_AGE_MS = 45 * 60 * 1000;
+
+/**
  * 判断指定 Session ID 是否已过期
  * @param sessionId 会话 ID
- * @param maxAgeMs 最大允许有效时长（默认 24 小时）
+ * @param maxAgeMs 最大允许有效时长（默认 45 分钟）
  * @param nowMs 当前时间戳
  */
 export function isZenSessionExpired(
 	sessionId: string | null | undefined,
-	maxAgeMs: number = 24 * 3600 * 1000,
+	maxAgeMs: number = DEFAULT_SESSION_MAX_AGE_MS,
 	nowMs: number = Date.now(),
 ): boolean {
 	if (!sessionId) return true;

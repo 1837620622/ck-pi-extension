@@ -16,7 +16,9 @@ import {
 } from "./models-registry.js";
 import { DatabaseSync } from "node:sqlite";
 import {
+	DEFAULT_SESSION_MAX_AGE_MS,
 	extractZenSessionTimestamp,
+	generateZenRequestId,
 	generateZenSessionId,
 	isZenSessionExpired,
 	isValidZenSessionId,
@@ -27,12 +29,26 @@ import {
 	syncZenConfiguration,
 	updateCcSwitchDb,
 } from "./sync.js";
+import piZenSession from "./index.js";
 
 describe("OpenCode Zen Session 算法单元测试", () => {
 	it("生成合规且长度恰好为 30 字符的 Session ID", () => {
 		const id = generateZenSessionId();
 		assert.equal(id.length, 30, "ID 总长必须严格为 30 字符");
 		assert.ok(isValidZenSessionId(id), "必须匹配 ses_[0-9a-f]{12}[0-9A-Za-z]{14} 正则");
+	});
+
+	it("生成合规升序 Request ID (msg_ 开头，长度 30 字符)", () => {
+		const reqId = generateZenRequestId();
+		assert.equal(reqId.length, 30);
+		assert.ok(/^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/.test(reqId));
+
+		const earlier = 1790000000000;
+		const later = 1790000100000;
+		const reqEarlier = generateZenRequestId(earlier);
+		const reqLater = generateZenRequestId(later);
+		// 升序：更晚的时间戳，十六进制数值更大
+		assert.ok(reqLater.slice(4, 16) > reqEarlier.slice(4, 16));
 	});
 
 	it("同一毫秒内连续生成不会冲突，序列自增", () => {
@@ -69,13 +85,13 @@ describe("OpenCode Zen Session 算法单元测试", () => {
 		assert.equal(extracted, now, "提取的时间戳必须与生成时间完全吻合");
 	});
 
-	it("精准检测 Session 有效期与过期逻辑", () => {
+	it("精准检测 Session 45分钟有效期与过期逻辑", () => {
 		const now = Date.now();
 		const freshId = generateZenSessionId(now - 10 * 60 * 1000); // 10分钟前
-		assert.equal(isZenSessionExpired(freshId, 24 * 3600 * 1000, now), false);
+		assert.equal(isZenSessionExpired(freshId, DEFAULT_SESSION_MAX_AGE_MS, now), false);
 
-		const oldId = generateZenSessionId(now - 25 * 3600 * 1000); // 25小时前
-		assert.equal(isZenSessionExpired(oldId, 24 * 3600 * 1000, now), true);
+		const oldId = generateZenSessionId(now - 50 * 60 * 1000); // 50分钟前 (>45m)
+		assert.equal(isZenSessionExpired(oldId, DEFAULT_SESSION_MAX_AGE_MS, now), true);
 
 		assert.equal(isZenSessionExpired(null), true);
 		assert.equal(isZenSessionExpired("invalid_id"), true);
@@ -220,6 +236,78 @@ describe("配置同步与落盘逻辑测试", () => {
 		} finally {
 			rmSync(tempDir, { recursive: true, force: true });
 		}
+	});
+});
+
+describe("Extension API 钩子拦截测试", () => {
+	it("before_provider_headers 自动补全 6 个伪装请求头", () => {
+		const handlers: Record<string, Function[]> = {};
+		const mockPi: any = {
+			registerProvider: () => {},
+			registerCommand: () => {},
+			on: (event: string, fn: Function) => {
+				handlers[event] = handlers[event] || [];
+				handlers[event].push(fn);
+			},
+		};
+
+		piZenSession(mockPi);
+		assert.ok(handlers["before_provider_headers"]?.length > 0);
+
+		const headerEvent = { headers: {} as Record<string, string> };
+		const ctx = { model: { provider: "opencode-zen-free", id: "mimo-v2.5-free" } };
+
+		handlers["before_provider_headers"][0](headerEvent, ctx);
+
+		assert.equal(
+			headerEvent.headers["User-Agent"],
+			"opencode/1.18.32 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14",
+		);
+		assert.equal(headerEvent.headers["x-opencode-client"], "cli");
+		assert.ok(headerEvent.headers["x-opencode-session"].startsWith("ses_"));
+		assert.equal(
+			headerEvent.headers["x-session-affinity"],
+			headerEvent.headers["x-opencode-session"],
+		);
+		assert.equal(
+			headerEvent.headers["X-Session-Id"],
+			headerEvent.headers["x-opencode-session"],
+		);
+		assert.ok(headerEvent.headers["x-opencode-request"].startsWith("msg_"));
+	});
+
+	it("before_provider_request 当缺失 tools 时自动注入 bash 与 read 兼容工具", () => {
+		const handlers: Record<string, Function[]> = {};
+		const mockPi: any = {
+			registerProvider: () => {},
+			registerCommand: () => {},
+			on: (event: string, fn: Function) => {
+				handlers[event] = handlers[event] || [];
+				handlers[event].push(fn);
+			},
+		};
+
+		piZenSession(mockPi);
+		assert.ok(handlers["before_provider_request"]?.length > 0);
+
+		const ctx = { model: { provider: "opencode-zen-free", id: "mimo-v2.5-free" } };
+
+		// 1. 无 tools
+		const emptyPayloadEvent = { payload: { model: "mimo-v2.5-free", messages: [] } };
+		const transformed = handlers["before_provider_request"][0](emptyPayloadEvent, ctx);
+		assert.ok(transformed);
+		assert.ok(Array.isArray(transformed.tools));
+		assert.equal(transformed.tools.length, 2);
+		assert.equal(transformed.tools[0].function.name, "bash");
+		assert.equal(transformed.tools[1].function.name, "read");
+
+		// 2. 已有 tools 则保持不变
+		const existingTools = [{ type: "function", function: { name: "custom_tool" } }];
+		const withToolsEvent = {
+			payload: { model: "mimo-v2.5-free", messages: [], tools: existingTools },
+		};
+		const untouched = handlers["before_provider_request"][0](withToolsEvent, ctx);
+		assert.equal(untouched, undefined, "已有 tools 时不得篡改");
 	});
 });
 

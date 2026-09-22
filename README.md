@@ -6,7 +6,7 @@ Pi 插件 monorepo：一个 GitHub 仓库，多个彼此独立的 npm 包，用�
 | --- | --- | --- | --- |
 | Pi Rail | `ck-pi-rail` | 无表情、自适应满宽状态栏 | [README](packages/pi-rail/README.md) |
 | Pi Redkit | `ck-pi-redkit` | 授权交战条令注入（渗透/逆向） | [README](packages/pi-redkit/README.md) |
-| Pi Zen Session | `ck-pi-zen-session` | OpenCode Zen 免费模型与会话自动维护 | [README](packages/pi-zen-session/README.md) |
+| Pi Zen Session | `ck-pi-zen-session` | OpenCode Zen 免费模型、全套请求头伪装与会话自动轮换 | [README](packages/pi-zen-session/README.md) |
 
 ## 安装
 
@@ -18,11 +18,10 @@ pi install npm:ck-pi-redkit      # 只要条令注入
 pi install npm:ck-pi-zen-session # 只要 OpenCode Zen 免费模型与 Session 自动维护
 ```
 
-旧合集包 `ck-pi-extension` 已废弃（不再更新），新用户请装上面两个单包。
-GitHub 源安装：`pi install git:github.com/1837620622/ck-pi-extension`（会同时拿到两个插件源码）。
+旧合集包 `ck-pi-extension` 已废弃（不再更新），新用户请装上面单包。
+GitHub 源安装：`pi install git:github.com/1837620622/ck-pi-extension`。
 
-冲突说明：`pi-rail` 不要和 `@narumitw/pi-statusline`、`pi-starline`、`pi-zentui`
-同时开，它们都会抢同一条页脚。
+冲突说明：`pi-rail` 不要和 `@narumitw/pi-statusline`、`pi-starline`、`pi-zentui` 同时开，它们都会抢同一条页脚。
 
 ## 快速开始
 
@@ -30,14 +29,15 @@ GitHub 源安装：`pi install git:github.com/1837620622/ck-pi-extension`（会�
 /statusline          状态栏设置菜单（外观 / 信息 / 高级 / 状态 / 帮助）
 /redkit status       查看条令注入状态
 /redkit full         切换条令模式（full/pentest/reverse/off，即时生效）
-/zen <key>           配置 OpenCode Zen API Key 并全量同步 9 款免费模型与会话
+/zen <key>           配置 OpenCode Zen API Key 并全量同步 9 款免费模型、全套伪装请求头与降序会话
 /zen status          查看 Zen 会话年龄与在线模型状态
 /zen refresh         强制生成全新 Session ID 并刷新请求头
+/zen list            查看所有已激活的 Zen 免费模型清单
 ```
 
 ## 更新日志
 
-- `ck-pi-zen-session 0.1.0`：新增 OpenCode Zen 免费模型探测与 Session 降序逆向自动刷新插件
+- `ck-pi-zen-session 0.1.0`：新增 OpenCode Zen 免费模型探测、全套 6 维伪装请求头、降序会话逆向、45分钟主动轮换与兼容性工具链守卫
 - `ck-pi-rail 0.1.0` / `ck-pi-redkit 0.1.0`：monorepo 拆分首发，各自独立版本与依赖
 - 旧合集包 `ck-pi-extension 0.1.1`：自适应导轨、主题跟随、无表情、安全加固
 
