@@ -67,14 +67,14 @@ pi install git:github.com/1837620622/ck-pi-extension
 
 | 模型 ID | 上下文窗口 | 最大输出 | 推理思考等级 (thinkingLevelMap) | 支持模态 |
 | --- | --- | --- | --- | --- |
-| `mimo-v2.5-free` | 200,000 | 32,000 | low / high / max | 文本、图像 |
-| `mimo-v2.6-flash-free` | 200,000 | 32,000 | low / high / max | 文本、图像 |
-| `nemotron-3.5-lightning-free` | 262,144 | 262,144 | low / high / max | 文本 |
-| `nemotron-3-ultra-free` | 1,000,000 (1M) | 128,000 | low / high / max | 文本 |
-| `ling-3.0-flash-fin-free` | 262,144 | 32,768 | low / high / max | 文本 |
-| `big-pickle` | 200,000 | 32,000 | low / high / max | 文本 |
-| `muse-spark-1.3-contributor-free` | 1,048,576 (1M) | 131,072 | minimal / low / medium / high / xhigh | 文本、图像 |
-| `muse-spark-1.2-contributor-free` | 1,048,576 (1M) | 131,072 | minimal / low / medium / high / xhigh | 文本、图像 |
+| `mimo-v2.5-free` | 200,000 | 32,000 | 全档位支持 (自动对齐 OpenAI low/medium/high) | 文本、图像 |
+| `mimo-v2.6-flash-free` | 200,000 | 32,000 | 全档位支持 (自动对齐 OpenAI low/medium/high) | 文本、图像 |
+| `nemotron-3.5-lightning-free` | 262,144 | 262,144 | 全档位支持 (自动对齐 OpenAI low/medium/high) | 文本 |
+| `nemotron-3-ultra-free` | 1,000,000 (1M) | 128,000 | 全档位支持 (自动对齐 OpenAI low/medium/high) | 文本 |
+| `ling-3.0-flash-fin-free` | 262,144 | 32,768 | 全档位支持 (自动对齐 OpenAI low/medium/high) | 文本 |
+| `big-pickle` | 200,000 | 32,000 | 全档位支持 (自动对齐 OpenAI low/medium/high) | 文本 |
+| `muse-spark-1.3-contributor-free` | 1,048,576 (1M) | 131,072 | 全档位支持 (自动对齐 OpenAI low/medium/high) | 文本、图像 |
+| `muse-spark-1.2-contributor-free` | 1,048,576 (1M) | 131,072 | 全档位支持 (自动对齐 OpenAI low/medium/high) | 文本、图像 |
 | `jev-1.13-free` | 128,000 | 16,384 | 基础模型（无 reasoning） | 文本 |
 
 > 若 OpenCode 后端未来发布新免费模型，插件将自动探测发现并使用安全的自适应参数接入。
