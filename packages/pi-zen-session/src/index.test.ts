@@ -454,6 +454,11 @@ describe("Extension API 钩子拦截测试", () => {
 		handlers["after_provider_response"][0]({ status: 403, headers: {} }, ctx);
 		assert.ok(notifiedMessage.includes("HTTP 403"));
 		assert.equal(notifiedLevel, "warning");
+
+		// 模拟网关返回 503 远端服务不可用
+		handlers["after_provider_response"][0]({ status: 503, headers: {} }, ctx);
+		assert.ok(notifiedMessage.includes("HTTP 503"));
+		assert.equal(notifiedLevel, "warning");
 	});
 
 	it("getStoredZenApiKey 支持优先读取环境变量 OPENCODE_API_KEY", () => {

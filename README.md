@@ -37,6 +37,7 @@ GitHub 源安装：`pi install git:github.com/1837620622/ck-pi-extension`。
 
 ## 更新日志
 
+- `ck-pi-zen-session 0.1.10`：远端网关健康感知守卫升级。实时感知上游 502/503/504 等端点离线与维护状态并发出友好通知，阻断死循环；进一步优化 Session 自动轮换与全系 9 款免费模型稳定性。
 - `ck-pi-zen-session 0.1.9`：彻底根除 `[400] Invalid request parameters`。将思考档位映射与请求拦截守卫严格对齐 OpenAI 标准（`low`/`medium`/`high`），自动安全规约 `max` / `xhigh` / `minimal` 档位，确保小米 MiMo、英伟达 Nemotron 等全系免费模型在 Pi 默认思考模式下 100% 稳定高频可用。
 - `ck-pi-zen-session 0.1.7`：高精智能模型能力与参数解析引擎，在线自动探测任意新免费模型与上下文窗口/输出/思考等级。
 - `ck-pi-zen-session 0.1.2`：深度对齐 OpenCode 官方请求体结构，补齐官方全套 6 大核心工具链守卫、工具字母序严格升序重排规约、`stream_options` 用量元数据与 7 维全套伪装请求头（含 `x-opencode-project`）。

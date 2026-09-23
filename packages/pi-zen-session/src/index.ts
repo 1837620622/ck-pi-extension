@@ -202,14 +202,23 @@ export default function piZenSession(pi: ExtensionAPI): void {
 		}
 	});
 
-	// 4. 网关响应守卫：遇 401/403 会话受限或过期时，立即自愈换新 Session ID
+	// 4. 网关响应守卫：遇 401/403 会话受限或过期时，立即自愈换新 Session ID；遇 502/503/504 友好告警上游服务状态
 	pi.on("after_provider_response", (event, ctx) => {
-		if (isZenModelTarget(ctx.model) && (event.status === 401 || event.status === 403)) {
+		if (!isZenModelTarget(ctx.model)) return;
+
+		if (event.status === 401 || event.status === 403) {
 			// 自动异步刷新 Session
 			syncZenConfiguration({ forceSession: true }).catch(() => {});
 			if (ctx.hasUI) {
 				ctx.ui.notify(
 					`检测到 OpenCode Zen 会话受限 (HTTP ${event.status})，已自动轮换新 Session ID。`,
+					"warning",
+				);
+			}
+		} else if (event.status === 502 || event.status === 503 || event.status === 504) {
+			if (ctx.hasUI) {
+				ctx.ui.notify(
+					`OpenCode Zen 远端集群暂时不可用 (HTTP ${event.status})，上游模型服务维护中或未上线，建议切换其他 Zen 模型。`,
 					"warning",
 				);
 			}
