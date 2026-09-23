@@ -421,6 +421,22 @@ describe("Extension API 钩子拦截测试", () => {
 		};
 		const sanitizedMinimal = handlers["before_provider_request"][0](minimalEffortEvent, ctx);
 		assert.equal(sanitizedMinimal.reasoning_effort, "low", "minimal 必须被规范化为 low");
+
+		// 非思考模型（如 jev-1.13-free）如果附带了 reasoning_effort，必须被彻底移除
+		const nonReasoningEvent = {
+			payload: {
+				model: "jev-1.13-free",
+				messages: [],
+				tools: [{ type: "function", function: { name: "bash" } }],
+				reasoning_effort: "high",
+				thinking: { type: "adaptive" },
+			},
+		};
+		const sanitizedNonReasoning = handlers["before_provider_request"][0](nonReasoningEvent, {
+			model: { provider: "opencode-zen-free", id: "jev-1.13-free", reasoning: false },
+		});
+		assert.equal(sanitizedNonReasoning.reasoning_effort, undefined, "非思考模型必须剔除 reasoning_effort");
+		assert.equal(sanitizedNonReasoning.thinking, undefined, "必须剔除顶层 thinking 对象");
 	});
 
 	it("after_provider_response 遇 401 或 403 自动触发 Session 换新和用户通知", () => {

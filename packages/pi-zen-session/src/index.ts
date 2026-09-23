@@ -181,8 +181,16 @@ export default function piZenSession(pi: ExtensionAPI): void {
 			}
 
 			// C. 规范化 reasoning_effort：OpenCode Zen 上游端点仅支持 "low", "medium", "high"
+			// 若模型本身为非思考模型 (如 jev-1.13-free)，直接移除 reasoning_effort 避免 400
 			// 若为 "max" 或 "xhigh"，降级映射为 "high"；若为 "minimal" 映射为 "low"，彻底根除 400 Invalid request parameters
-			if (typeof transformed.reasoning_effort === "string") {
+			const isNonReasoningModel =
+				ctx.model?.reasoning === false ||
+				(typeof payloadModel === "string" && (payloadModel.startsWith("jev-") || payloadModel.startsWith("ling-2.6-flash")));
+
+			if (isNonReasoningModel && "reasoning_effort" in transformed) {
+				delete transformed.reasoning_effort;
+				modified = true;
+			} else if (typeof transformed.reasoning_effort === "string") {
 				const effort = transformed.reasoning_effort.toLowerCase();
 				if (effort === "max" || effort === "xhigh") {
 					transformed.reasoning_effort = "high";
@@ -190,10 +198,19 @@ export default function piZenSession(pi: ExtensionAPI): void {
 				} else if (effort === "minimal") {
 					transformed.reasoning_effort = "low";
 					modified = true;
+				} else if (effort === "off" || effort === "none" || effort === "") {
+					delete transformed.reasoning_effort;
+					modified = true;
 				} else if (!["low", "medium", "high"].includes(effort)) {
 					transformed.reasoning_effort = "high";
 					modified = true;
 				}
+			}
+
+			// D. 移除 OpenAI 兼容接口不识别的额外 thinking 顶层对象 (如 Anthropic 遗留字段)
+			if ("thinking" in transformed && typeof transformed.thinking === "object") {
+				delete transformed.thinking;
+				modified = true;
 			}
 
 			if (modified) {
