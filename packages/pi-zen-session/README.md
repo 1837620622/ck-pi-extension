@@ -26,6 +26,7 @@ OpenCode Zen 免费模型同步、请求头伪装与 Session 会话自动维护�
   - 自动对齐流式用量元数据 `stream_options: { include_usage: true }`。
 - 🌐 **独立供应商隔离与零干扰保障 (`isZenModelTarget`)**：严格将生命周期守卫、请求头与请求体拦截限制在 `opencode-zen-free` 命名空间内，对 `relayhub`、`deepseek`、`anthropic`、`openai`、`onerouter`、`apmix` 等其他任何模型及 Claude Code（`pi-cc-extensions`）插件 100% 保持完全静默放行，零副作用、零冲突。
 - 🧠 **高精智能模型能力与参数解析引擎 (v0.1.7)**：无论输入新 Key 还是 OpenCode Zen 官方端点动态上线任何新免费/零额度模型，自动深度识别其上下文窗口（Context Window，如 1M, 256K, 200K, 128K）、最大输出（Max Tokens，如 128K, 64K, 32K, 16K）、推理思考能力与思考等级映射（thinkingLevelMap，涵盖 6 档深度推理 [minimal..xhigh]、3 档标准推理 [low, high, max] 或快反模式）以及视觉多模态支持，并在 `/zen <key>` 和 `/zen list` 中呈现精美结构化卡片。
+- 🛡️ **OpenAI 标准思考档位全链路映射与双重防线 (v0.1.8)**：彻底修复 OpenCode Zen 上游端点不支持 `max` / `xhigh` 思考档位导致抛出 `[400] Invalid request parameters` 的致命问题。全面将思考档位映射对齐 OpenAI 标准 `reasoning_effort`（`low` / `medium` / `high`），并在 `before_provider_request` 请求体守卫中设立兜底防线，自动将非标准或溢出档位降级规约为合法参数，确保小米 MiMo、英伟达 Nemotron、Meta Muse Spark 等全系模型在任意 Pi 默认思考模式下 100% 稳定响应。
 - 🔌 **全自动多端持久化同步**：自动双写 Pi 本地配置（`~/.pi/agent/models.json` 和 `~/.pi/agent/auth.json`），若检测到 CC-Switch 亦无缝同步其 SQLite 数据库。
 
 ---

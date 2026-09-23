@@ -387,6 +387,40 @@ describe("Extension API 钩子拦截测试", () => {
 			["bash", "read", "write"],
 			"已有工具必须按官方规约字母升序重排",
 		);
+
+		// 3. reasoning_effort 规范化对齐：将 max / xhigh 降级映射为 high，将 minimal 映射为 low
+		const maxEffortEvent = {
+			payload: {
+				model: "mimo-v2.6-flash-free",
+				messages: [],
+				tools: [{ type: "function", function: { name: "bash" } }],
+				reasoning_effort: "max",
+			},
+		};
+		const sanitizedMax = handlers["before_provider_request"][0](maxEffortEvent, ctx);
+		assert.equal(sanitizedMax.reasoning_effort, "high", "max 必须被规范化为 high");
+
+		const xhighEffortEvent = {
+			payload: {
+				model: "mimo-v2.6-flash-free",
+				messages: [],
+				tools: [{ type: "function", function: { name: "bash" } }],
+				reasoning_effort: "xhigh",
+			},
+		};
+		const sanitizedXhigh = handlers["before_provider_request"][0](xhighEffortEvent, ctx);
+		assert.equal(sanitizedXhigh.reasoning_effort, "high", "xhigh 必须被规范化为 high");
+
+		const minimalEffortEvent = {
+			payload: {
+				model: "mimo-v2.6-flash-free",
+				messages: [],
+				tools: [{ type: "function", function: { name: "bash" } }],
+				reasoning_effort: "minimal",
+			},
+		};
+		const sanitizedMinimal = handlers["before_provider_request"][0](minimalEffortEvent, ctx);
+		assert.equal(sanitizedMinimal.reasoning_effort, "low", "minimal 必须被规范化为 low");
 	});
 
 	it("after_provider_response 遇 401 或 403 自动触发 Session 换新和用户通知", () => {

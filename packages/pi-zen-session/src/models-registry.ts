@@ -12,22 +12,22 @@ export const ZEN_BASE_URL = "https://opencode.ai/zen/v1";
 export const ZEN_USER_AGENT = "opencode/1.18.32 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14";
 
 export const STANDARD_THINKING_LEVELS: Record<string, string | null> = {
-	low: "low",
-	high: "high",
-	max: "max",
-	medium: null,
-	minimal: null,
-	off: null,
-	xhigh: null,
-};
-
-export const MUSE_SPARK_THINKING_LEVELS: Record<string, string | null> = {
-	minimal: "minimal",
+	minimal: "low",
 	low: "low",
 	medium: "medium",
 	high: "high",
-	xhigh: "xhigh",
-	max: "xhigh",
+	xhigh: "high",
+	max: "high",
+	off: null,
+};
+
+export const MUSE_SPARK_THINKING_LEVELS: Record<string, string | null> = {
+	minimal: "low",
+	low: "low",
+	medium: "medium",
+	high: "high",
+	xhigh: "high",
+	max: "high",
 	off: null,
 };
 
@@ -37,7 +37,7 @@ export const GRANULAR_THINKING_LEVELS: Record<string, string | null> = {
 	medium: "medium",
 	high: "high",
 	xhigh: "high",
-	max: "max",
+	max: "high",
 	off: null,
 };
 

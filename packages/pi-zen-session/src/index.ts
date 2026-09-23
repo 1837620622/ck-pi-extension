@@ -82,8 +82,18 @@ export function registerZenProviderToPi(
 	}
 }
 
-export function isZenModelTarget(model?: { provider?: string; id?: string }): boolean {
-	if (!model) return false;
+export function isZenModelTarget(model?: { provider?: string; id?: string }, payloadModel?: string): boolean {
+	if (!model) {
+		if (payloadModel) {
+			const lower = payloadModel.toLowerCase();
+			return (
+				lower.endsWith("-free") ||
+				lower === "big-pickle" ||
+				lower.includes("zen")
+			);
+		}
+		return false;
+	}
 	// 严格隔离：仅处理 opencode-zen-free 或明确属于 opencode 官方的免费模型
 	// 绝不干涉 relayhub、deepseek、anthropic、openai 等其他任何供应商或 CC 插件
 	if (model.provider === ZEN_PROVIDER_ID) return true;
@@ -130,6 +140,7 @@ export default function piZenSession(pi: ExtensionAPI): void {
 			}
 
 			// 注入全部官方客户端 7 维对齐请求头
+			delete event.headers["user-agent"];
 			event.headers["User-Agent"] = ZEN_USER_AGENT;
 			event.headers["x-opencode-client"] = "cli";
 			event.headers["x-opencode-session"] = currentSession;
@@ -142,8 +153,9 @@ export default function piZenSession(pi: ExtensionAPI): void {
 
 	// 3. 核心请求体守卫钩子：深度对齐 OpenCode 官方请求体结构与工具集
 	pi.on("before_provider_request", (event, ctx) => {
-		if (isZenModelTarget(ctx.model) && event.payload && typeof event.payload === "object") {
-			const payload = event.payload as Record<string, unknown>;
+		const payload = event.payload as Record<string, unknown> | undefined;
+		const payloadModel = typeof payload?.model === "string" ? payload.model : undefined;
+		if (isZenModelTarget(ctx.model, payloadModel) && payload && typeof payload === "object") {
 			const tools = payload.tools;
 			let modified = false;
 			const transformed = { ...payload };
@@ -166,6 +178,22 @@ export default function piZenSession(pi: ExtensionAPI): void {
 			if (transformed.stream === true && !transformed.stream_options) {
 				transformed.stream_options = { include_usage: true };
 				modified = true;
+			}
+
+			// C. 规范化 reasoning_effort：OpenCode Zen 上游端点仅支持 "low", "medium", "high"
+			// 若为 "max" 或 "xhigh"，降级映射为 "high"；若为 "minimal" 映射为 "low"，彻底根除 400 Invalid request parameters
+			if (typeof transformed.reasoning_effort === "string") {
+				const effort = transformed.reasoning_effort.toLowerCase();
+				if (effort === "max" || effort === "xhigh") {
+					transformed.reasoning_effort = "high";
+					modified = true;
+				} else if (effort === "minimal") {
+					transformed.reasoning_effort = "low";
+					modified = true;
+				} else if (!["low", "medium", "high"].includes(effort)) {
+					transformed.reasoning_effort = "high";
+					modified = true;
+				}
 			}
 
 			if (modified) {
