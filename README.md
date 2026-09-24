@@ -37,7 +37,7 @@ GitHub 源安装：`pi install git:github.com/1837620622/ck-pi-extension`。
 
 ## 更新日志
 
-- `ck-pi-zen-session 0.1.12`：全局 Fetch 守卫与会话压缩（Compaction/Summarization）403 根治防御。拦截 Pi 绕过 Agent 生命周期直接发起的纯文本摘要请求，自动注入官方 6 大核心工具链、毫秒级降序 Session ID 与升序 Request ID，对齐 `stream_options`，彻底根除 `403 FreeTierError`。
+- `ck-pi-zen-session 0.1.13`：全局 Fetch 守卫与会话压缩（Compaction/Summarization）403 根治防御。拦截 Pi 绕过 Agent 生命周期直接发起的纯文本摘要请求，自动注入官方 6 大核心工具链、毫秒级降序 Session ID 与升序 Request ID，对齐 `stream_options`，彻底根除 `403 FreeTierError`。
 - `ck-pi-zen-session 0.1.11`：OpenAI 兼容协议全面净化与非思考模型智能防御。针对 `jev-1.13-free` 等非思考模型自动剔除 `reasoning_effort`，并彻底清除任何非法顶层 `thinking` 冗余字段；全链路对齐 `@ai-sdk/openai-compatible` 官方规范。
 - `ck-pi-zen-session 0.1.10`：远端网关健康感知守卫升级。实时感知上游 502/503/504 等端点离线与维护状态并发出友好通知，阻断死循环；进一步优化 Session 自动轮换与全系 9 款免费模型稳定性。
 - `ck-pi-zen-session 0.1.9`：彻底根除 `[400] Invalid request parameters`。将思考档位映射与请求拦截守卫严格对齐 OpenAI 标准（`low`/`medium`/`high`），自动安全规约 `max` / `xhigh` / `minimal` 档位，确保小米 MiMo、英伟达 Nemotron 等全系免费模型在 Pi 默认思考模式下 100% 稳定高频可用。
