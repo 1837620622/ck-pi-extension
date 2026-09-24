@@ -106,7 +106,141 @@ export function isZenModelTarget(model?: { provider?: string; id?: string }, pay
 	return false;
 }
 
+export function installZenFetchInterceptor(targetGlobal: typeof globalThis = globalThis): void {
+	const ZEN_FETCH_INTERCEPTOR = Symbol.for("ck.zen.fetch.interceptor");
+	if ((targetGlobal as any)[ZEN_FETCH_INTERCEPTOR]) {
+		return;
+	}
+	(targetGlobal as any)[ZEN_FETCH_INTERCEPTOR] = true;
+
+	const originalFetch = targetGlobal.fetch;
+	targetGlobal.fetch = async function zenFetchInterceptor(
+		input: RequestInfo | URL,
+		init?: RequestInit,
+	): Promise<Response> {
+		const url =
+			typeof input === "string"
+				? input
+				: input instanceof URL
+				? input.href
+				: (input as Request)?.url;
+
+		if (!url || !url.includes("opencode.ai/zen/v1")) {
+			return originalFetch.call(this, input, init);
+		}
+
+		// 检查并获取有效 Session ID (若过期或缺失自动轮换)
+		let currentSession = getStoredZenSessionId();
+		if (
+			!currentSession ||
+			!isValidZenSessionId(currentSession) ||
+			isZenSessionExpired(currentSession, DEFAULT_SESSION_MAX_AGE_MS)
+		) {
+			currentSession = generateZenSessionId();
+			syncZenConfiguration({ forceSession: true }).catch(() => {});
+		}
+
+		const requestId = generateZenRequestId();
+
+		// 构建完整官方客户端伪装请求头
+		const headers = new Headers(init?.headers);
+		headers.set("User-Agent", ZEN_USER_AGENT);
+		headers.set("x-opencode-client", "cli");
+		if (!headers.has("x-opencode-project")) {
+			headers.set("x-opencode-project", generateZenProjectId());
+		}
+		headers.set("x-opencode-session", currentSession);
+		headers.set("x-opencode-request", requestId);
+		headers.set("x-session-affinity", currentSession);
+		headers.set("X-Session-Id", currentSession);
+
+		// 拦截并修补请求体：在 Summarization / Compaction / 非工具调用场景下强制注入官方 tools
+		let newBody = init?.body;
+		if (typeof init?.body === "string" && init.body.trim().startsWith("{")) {
+			try {
+				const payload = JSON.parse(init.body) as Record<string, unknown>;
+				let modified = false;
+
+				// A. 关键防 403 规约：OpenCode Zen 后端严格要求 tools 参数存在，缺失时立即报 403 FreeTierError
+				if (!Array.isArray(payload.tools) || payload.tools.length === 0) {
+					payload.tools = OPENCODE_OFFICIAL_TOOLS;
+					payload.tool_choice = "auto";
+					modified = true;
+				} else {
+					payload.tools = [...payload.tools].sort((a: any, b: any) => {
+						const nameA = a.function?.name || a.name || "";
+						const nameB = b.function?.name || b.name || "";
+						return nameA.localeCompare(nameB);
+					});
+					modified = true;
+				}
+
+				// B. 流式元数据对齐：补充 stream_options: { include_usage: true }
+				if (payload.stream === true && !payload.stream_options) {
+					payload.stream_options = { include_usage: true };
+					modified = true;
+				}
+
+				// C. 规范化 reasoning_effort
+				const payloadModel = typeof payload.model === "string" ? payload.model : "";
+				const isNonReasoning =
+					payloadModel.startsWith("jev-") || payloadModel.startsWith("ling-2.6-flash");
+
+				if (isNonReasoning && "reasoning_effort" in payload) {
+					delete payload.reasoning_effort;
+					modified = true;
+				} else if (typeof payload.reasoning_effort === "string") {
+					const eff = payload.reasoning_effort.toLowerCase();
+					if (eff === "max" || eff === "xhigh") {
+						payload.reasoning_effort = "high";
+						modified = true;
+					} else if (eff === "minimal") {
+						payload.reasoning_effort = "low";
+						modified = true;
+					} else if (eff === "off" || eff === "none" || eff === "") {
+						delete payload.reasoning_effort;
+						modified = true;
+					} else if (!["low", "medium", "high"].includes(eff)) {
+						payload.reasoning_effort = "high";
+						modified = true;
+					}
+				}
+
+				// D. 剔除多余 thinking 顶层对象
+				if ("thinking" in payload && typeof payload.thinking === "object") {
+					delete payload.thinking;
+					modified = true;
+				}
+
+				if (modified) {
+					newBody = JSON.stringify(payload);
+				}
+			} catch {
+				// 忽略非 JSON 请求体
+			}
+		}
+
+		const newInit: RequestInit = {
+			...init,
+			headers,
+			body: newBody,
+		};
+
+		const response = await originalFetch.call(this, input, newInit);
+
+		// 遇 401/403 自动触发 Session 自愈轮换
+		if (response.status === 401 || response.status === 403) {
+			syncZenConfiguration({ forceSession: true }).catch(() => {});
+		}
+
+		return response;
+	};
+}
+
 export default function piZenSession(pi: ExtensionAPI): void {
+	// 0. 全局 Fetch 守卫：无缝拦截包括 Pi Compaction/Summarization 在内的所有 Zen 流量，杜绝 403 FreeTierError
+	installZenFetchInterceptor();
+
 	const existingKey = getStoredZenApiKey();
 	if (existingKey) {
 		const storedSession = getStoredZenSessionId();

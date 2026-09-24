@@ -29,6 +29,7 @@ OpenCode Zen 免费模型同步、请求头伪装与 Session 会话自动维护�
 - 🛡️ **OpenAI 标准思考档位全链路映射与双重防线 (v0.1.9)**：彻底修复 OpenCode Zen 上游端点不支持 `max` / `xhigh` 思考档位导致抛出 `[400] Invalid request parameters` 的致命问题。全面将思考档位映射对齐 OpenAI 标准 `reasoning_effort`（`low` / `medium` / `high`），并在 `before_provider_request` 请求体守卫中设立兜底防线，自动将非标准或溢出档位降级规约为合法参数，确保小米 MiMo、英伟达 Nemotron、Meta Muse Spark 等全系模型在任意 Pi 默认思考模式下 100% 稳定响应。
 - 🚨 **远端集群健康状态感知与自愈告警守卫 (v0.1.10)**：新增针对 502/503/504 等网关状态码的健康感知拦截，当上游端点临时离线或集群不可用时（如 upstream 503 Endpoint unavailable），实时发出友善桌面与界面通知，避免无效死循环。
 - 🎯 **OpenAI 兼容协议全面净化与非思考模型智能防御 (v0.1.11)**：基于 OpenCode CLI 官方核心（`@ai-sdk/openai-compatible`）深度规范对齐：针对 `jev-1.13-free` 等非思考模型自动剔除 `reasoning_effort`，并彻底清除任何非法顶层 `thinking` 冗余字段；思考档位严格安全规约（`max`/`xhigh` -> `high`，`minimal` -> `low`），实现 0 错误率的完美协议传输。
+- 🛡️ **全局 Fetch 底层拦截与会话压缩 403 根治防御 (v0.1.12)**：新增 `installZenFetchInterceptor()` 全局底层 Fetch 守卫。彻底解决 Pi 在执行上下文会话压缩（Compaction/Summarization）时直接通过底层运行时发送纯文本无工具请求、绕过 Agent 生命周期钩子进而触发 OpenCode 官方网关 `403 FreeTierError`（"OpenCode's free tier can only be used from within OpenCode"）的死锁难题。底层自动捕获所有发往 `opencode.ai/zen/v1` 的直接请求，动态注入官方 6 大核心工具链、毫秒级降序 Session ID 与升序 Request ID，并对齐 `stream_options`，全自动防 403 / 401 故障自愈。
 - 🔌 **全自动多端持久化同步**：自动双写 Pi 本地配置（`~/.pi/agent/models.json` 和 `~/.pi/agent/auth.json`），若检测到 CC-Switch 亦无缝同步其 SQLite 数据库。
 
 ---

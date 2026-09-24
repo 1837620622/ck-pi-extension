@@ -542,6 +542,49 @@ describe("Extension API 钩子拦截测试", () => {
 		assert.equal(isZenModelTarget({ provider: "apmix", id: "deepseek-v4-flash-free" }), false);
 		assert.equal(isZenModelTarget({ provider: "anthropic", id: "claude-3-7-sonnet" }), false);
 	});
+
+	it("installZenFetchInterceptor: 全局 Fetch 拦截器拦截无 tools 的 Summarization 请求并补全 tools 与请求头", async () => {
+		const { installZenFetchInterceptor } = require("./index.js");
+
+		let capturedUrl: string | undefined;
+		let capturedInit: RequestInit | undefined;
+		const mockRes = new Response(JSON.stringify({ id: "mock_res" }), { status: 200 });
+
+		const mockGlobal: any = {
+			fetch: async (input: any, init: any) => {
+				capturedUrl = String(input);
+				capturedInit = init;
+				return mockRes;
+			},
+		};
+
+		installZenFetchInterceptor(mockGlobal);
+
+		const bodyWithoutTools = {
+			model: "mimo-v2.5-free",
+			messages: [{ role: "user", content: "summarize conversation" }],
+			stream: true,
+		};
+
+		await mockGlobal.fetch("https://opencode.ai/zen/v1/chat/completions", {
+			method: "POST",
+			headers: { Authorization: "Bearer test" },
+			body: JSON.stringify(bodyWithoutTools),
+		});
+
+		assert.ok(capturedInit, "全局 Fetch 必须成功拦截目标请求");
+		const headers = new Headers(capturedInit?.headers);
+		assert.equal(headers.get("User-Agent"), "opencode/1.18.32 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14");
+		assert.equal(headers.get("x-opencode-client"), "cli");
+		assert.ok(headers.get("x-opencode-session")?.startsWith("ses_"));
+		assert.ok(headers.get("x-opencode-request")?.startsWith("msg_"));
+
+		const parsedBody = JSON.parse(String(capturedInit?.body));
+		assert.ok(Array.isArray(parsedBody.tools), "拦截器必须为 Summarization 请求强制注入 tools");
+		assert.equal(parsedBody.tools.length, 6, "必须注入官方 6 大核心工具");
+		assert.equal(parsedBody.tool_choice, "auto");
+		assert.deepEqual(parsedBody.stream_options, { include_usage: true });
+	});
 });
 
 
