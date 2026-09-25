@@ -35,8 +35,14 @@ OpenCode Zen 免费模型同步、请求头伪装与 Session 会话自动维护�
   - **底层透明 SSE-to-JSON 汇聚引擎 (`assembleSseToChatCompletionResponse`)**：拦截器在接收到上游 SSE 流后，在内存中毫秒级流式聚合文本分块与 Token 用量，组装还原为标准的 OpenAI ChatCompletion JSON 响应对象，使 Pi 的非流式压缩引擎 100% 顺畅解析；
   - **切断递归闭环**：严格限定 Fetch 拦截器仅处理 `chat/completions`，绝不拦截 `/models` 等管理与元数据接口，杜绝同步与拦截间的自调用递归闭环（彻底根除 `RangeError: Maximum call stack size exceeded`）；
   - **防并发风暴单例锁**：引入 `syncInFlightPromise` 互斥单例与 30 秒防抖控制，多处并发调用自动合并，消灭重复落盘与文件冲突；
-  - **Request 原生凭证无损继承**：完善支持 `Request` 对象输入，彻底保留原始 `Authorization` 等全部 HTTP 头；
-  - **Compaction Context Guard（超长会话自愈保护）**：当上下文过大 (>50万字符) 触发会话压缩总结时，智能保留起始目标与末尾最新消息，安全截断中间冗余历史，彻底消除超大请求导致的网关连接断开 (`Connection error`) 与 400 溢出。
+  - **Request 原生凭证无损继承**：完善支持 `Request` 对象输入，彻底保留原始 `Authorization` 等全部 HTTP 头。
+- 🚀 **全面深度优化：极速压缩修剪、透明三重重试自愈与多场景护航 (v0.1.15)**：
+  - **Compaction 标签级深度修剪与极速响应 (`pruneZenContext`)**：深度定位 Pi 在执行 `/compact` 或自动压缩时将数十轮历史打包进单条 `<conversation>` 消息的底层特性。当历史累积超 100K 字符时，智能保留前 30,000 字符的任务目标与后 60,000 字符的最新上下文执行状态，安全剪除中间冗余过程并完整修复 XML 标签，使超大上下文压缩耗时从 142 秒直降至 **8~10 秒**，彻底消除 Cloudflare 网关超时与 `Connection error: fetch failed` 连接中断；
+  - **Tool 巨型输出智能截断**：单个 Tool 命令（如超长 bash 输出、cat 巨大日志）自动截断在 25,000 字符以内，杜绝单条命令撑爆上下文窗口；
+  - **底层透明三重重试循环 (Transparent Retry Loop)**：在 Fetch 拦截器内深度集成自动重试机制：遇 401/403 立即轮换生成全新的合规降序 Session ID 并重试；遇 502/503/504/524 网关超时或网络临时掉线自动指数退避重试，Pi 业务层直接接收到 200 OK，全程无感、零报错、零中断；
+  - **新开对话与会话轮换新鲜度保障**：在 `before_agent_start` 与 `before_provider_headers` 将会话续期阈值优化至 25 分钟，彻底避免踩中 30 分钟硬过期边界；对 Pi 传入的非法会话 ID 自动规范为 `ses_` 降序格式；
+  - **10 款官方免费模型完整对齐**：新增已确认上线的 `space-bunny-free`（Space Bunny Free，200K 上下文，支持视觉与深度思考）；
+  - **反序列化支持思考推理 (`reasoning_content`)**：SSE-to-JSON 汇聚引擎完整提取并输出 `reasoning_content`，完美兼容思考模型的离线总结与非流式调用。
 - 🔌 **全自动多端持久化同步**：自动双写 Pi 本地配置（`~/.pi/agent/models.json` 和 `~/.pi/agent/auth.json`），若检测到 CC-Switch 亦无缝同步其 SQLite 数据库。
 
 ---
@@ -73,7 +79,7 @@ pi install git:github.com/1837620622/ck-pi-extension
 
 ## 🤖 内置免费模型库参数
 
-插件自动同步官方 9 款免费模型并配置精准上限与思维链等级：
+插件自动同步官方 10 款免费模型并配置精准上限与思维链等级：
 
 | 模型 ID | 上下文窗口 | 最大输出 | 推理思考等级 (thinkingLevelMap) | 支持模态 |
 | --- | --- | --- | --- | --- |
@@ -85,6 +91,7 @@ pi install git:github.com/1837620622/ck-pi-extension
 | `big-pickle` | 200,000 | 32,000 | 全档位支持 (自动对齐 OpenAI low/medium/high) | 文本 |
 | `muse-spark-1.3-contributor-free` | 1,048,576 (1M) | 131,072 | 全档位支持 (自动对齐 OpenAI low/medium/high) | 文本、图像 |
 | `muse-spark-1.2-contributor-free` | 1,048,576 (1M) | 131,072 | 全档位支持 (自动对齐 OpenAI low/medium/high) | 文本、图像 |
+| `space-bunny-free` | 200,000 | 32,000 | 全档位支持 (自动对齐 OpenAI low/medium/high) | 文本、图像 |
 | `jev-1.13-free` | 128,000 | 16,384 | 基础模型（无 reasoning） | 文本 |
 
 > 若 OpenCode 后端未来发布新免费模型，插件将自动探测发现并使用安全的自适应参数接入。

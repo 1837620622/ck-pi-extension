@@ -151,6 +151,7 @@ export function extractZenSessionTimestamp(
  * 设定为 30 分钟无感前置轮换，兼顾会话上下文平滑与长期高频调用稳定性
  */
 export const DEFAULT_SESSION_MAX_AGE_MS = 30 * 60 * 1000;
+export const PROACTIVE_REFRESH_AGE_MS = 25 * 60 * 1000;
 
 /**
  * 判断指定 Session ID 是否已过期

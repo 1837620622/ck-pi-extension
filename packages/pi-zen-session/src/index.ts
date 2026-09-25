@@ -42,6 +42,7 @@ import {
 } from "./sync.js";
 import {
 	DEFAULT_SESSION_MAX_AGE_MS,
+	PROACTIVE_REFRESH_AGE_MS,
 	generateZenProjectId,
 	generateZenRequestId,
 	generateZenSessionId,
@@ -118,6 +119,127 @@ function debouncedAutoSync(forceSession = true): void {
 	syncZenConfiguration({ forceSession }).catch(() => {});
 }
 
+/**
+ * 智能判定是否为 Compaction / Summarization / 无工具压缩任务请求
+ */
+export function isCompactionOrNoToolRequest(payload: Record<string, unknown>): boolean {
+	// 1. 显式指定 tool_choice 为 "none"
+	if (payload.tool_choice === "none") return true;
+
+	// 2. 检查 messages 中是否包含压缩或总结标识 (如 Pi 的 <conversation> 标签)
+	if (Array.isArray(payload.messages)) {
+		for (const msg of payload.messages) {
+			if (msg && typeof msg === "object") {
+				const content = String((msg as any).content || "").toLowerCase();
+				if (
+					content.includes("<conversation>") ||
+					content.includes("summarize") ||
+					content.includes("summary") ||
+					content.includes("compress") ||
+					content.includes("compact")
+				) {
+					return true;
+				}
+			}
+		}
+	}
+
+	// 3. Pi completeSimple 等非流式调用通常用于总结压缩
+	if (payload.stream === false) return true;
+
+	return false;
+}
+
+/**
+ * 上下文超限全自动修剪与性能护航引擎
+ * 针对 Pi 的各种工作场景进行细粒度优化：
+ * 1. Tool 输出截断：单个 tool 输出（如巨大 bash / grep / cat 日志）截断在 25,000 字符内；
+ * 2. Compaction 压缩保护：对包含 <conversation> 的海量历史（通常单条超 100K 字符），
+ *    保留头部目标任务与尾部最新状态执行结果，修剪中间冗长执行，保证压缩在 10s 内疾速完成且杜绝网关超时断连；
+ * 3. 多轮交互修剪：当 messages 总体积超过 250,000 字符时，保留首尾关键轮次，优雅跳过中间冗余。
+ */
+export function pruneZenContext(payload: Record<string, unknown>): boolean {
+	if (!Array.isArray(payload.messages) || payload.messages.length === 0) {
+		return false;
+	}
+
+	let modified = false;
+
+	// 1. Tool 消息超大内容截断 (防止单个命令输出几兆文本撑爆上下文)
+	for (const msg of payload.messages) {
+		if (msg && typeof msg === "object") {
+			const m = msg as Record<string, unknown>;
+			if (m.role === "tool" && typeof m.content === "string" && m.content.length > 25_000) {
+				m.content =
+					m.content.slice(0, 25_000) +
+					"\n\n[... Zen Guard: Tool output truncated to 25,000 chars to avoid context overflow ...]";
+				modified = true;
+			}
+		}
+	}
+
+	// 2. Compaction / Summarization <conversation> 标签深度修剪
+	for (const msg of payload.messages) {
+		if (msg && typeof msg === "object") {
+			const m = msg as Record<string, unknown>;
+			if (typeof m.content === "string" && m.content.includes("<conversation>")) {
+				const content = m.content;
+				const startTag = "<conversation>";
+				const endTag = "</conversation>";
+				const startIndex = content.indexOf(startTag);
+				const endIndex = content.indexOf(endTag);
+
+				if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
+					const prefix = content.slice(0, startIndex + startTag.length);
+					const convoBody = content.slice(startIndex + startTag.length, endIndex);
+					const suffix = content.slice(endIndex);
+
+					// 若压缩历史主体超过 100,000 字符 (~25,000 tokens)
+					if (convoBody.length > 100_000) {
+						const headChars = 30_000;
+						const tailChars = 60_000;
+						const head = convoBody.slice(0, headChars);
+						const tail = convoBody.slice(-tailChars);
+						const omittedChars = convoBody.length - headChars - tailChars;
+						const notice = `\n\n[... Zen Compaction Guard: Omitted ${omittedChars} intermediate characters to fit context limit & optimize speed ...]\n\n`;
+
+						m.content = prefix + head + notice + tail + suffix;
+						modified = true;
+					}
+				}
+			}
+		}
+	}
+
+	// 3. 多轮交互超长上下文修剪 (针对常规 Agent 长任务对话)
+	const totalChars = JSON.stringify(payload.messages).length;
+	if (payload.messages.length > 4 && totalChars > 250_000) {
+		const head = payload.messages.slice(0, 2);
+		const tail: unknown[] = [];
+		let tailChars = 0;
+		for (let i = payload.messages.length - 1; i >= 2; i--) {
+			const m = payload.messages[i];
+			const mLen = JSON.stringify(m).length;
+			if (tailChars + mLen > 180_000 && tail.length >= 2) {
+				break;
+			}
+			tail.unshift(m);
+			tailChars += mLen;
+		}
+		const omittedCount = payload.messages.length - head.length - tail.length;
+		if (omittedCount > 0) {
+			const notice = {
+				role: "system",
+				content: `[Zen Guard: Omitted ${omittedCount} intermediate turns to fit context window & guarantee high performance]`,
+			};
+			payload.messages = [...head, notice, ...tail];
+			modified = true;
+		}
+	}
+
+	return modified;
+}
+
 export function installZenFetchInterceptor(targetGlobal: typeof globalThis = globalThis): void {
 	const ZEN_FETCH_INTERCEPTOR = Symbol.for("ck.zen.fetch.interceptor");
 	if ((targetGlobal as any)[ZEN_FETCH_INTERCEPTOR]) {
@@ -160,8 +282,8 @@ export function installZenFetchInterceptor(targetGlobal: typeof globalThis = glo
 			initHeaders.forEach((val, key) => headers.set(key, val));
 		}
 
-		// 检查并获取有效 Session ID (若过期或缺失自动轮换)
-		let currentSession = getStoredZenSessionId();
+		// 检查并获取有效 Session ID (若过期、非合法 ses_ 格式或缺失，自动轮换)
+		let currentSession = headers.get("x-opencode-session") || getStoredZenSessionId();
 		if (
 			!currentSession ||
 			!isValidZenSessionId(currentSession) ||
@@ -172,8 +294,6 @@ export function installZenFetchInterceptor(targetGlobal: typeof globalThis = glo
 			debouncedAutoSync(true);
 		}
 
-		const requestId = generateZenRequestId();
-
 		// 构建完整官方客户端伪装请求头
 		headers.set("User-Agent", ZEN_USER_AGENT);
 		headers.set("x-opencode-client", "cli");
@@ -181,7 +301,6 @@ export function installZenFetchInterceptor(targetGlobal: typeof globalThis = glo
 			headers.set("x-opencode-project", generateZenProjectId());
 		}
 		headers.set("x-opencode-session", currentSession);
-		headers.set("x-opencode-request", requestId);
 		headers.set("x-session-affinity", currentSession);
 		headers.set("X-Session-Id", currentSession);
 
@@ -197,14 +316,16 @@ export function installZenFetchInterceptor(targetGlobal: typeof globalThis = glo
 				originalStreamRequested = payload.stream === true;
 				payloadModel = typeof payload.model === "string" ? payload.model : "";
 
-				// A. 关键防 403 规约：OpenCode Zen 后端严格要求 tools 参数存在，缺失时立即报 403 FreeTierError
-				// 针对无工具场景（如 Pi Compaction / Summarization 总结），注入官方 6 件套并将 tool_choice 设为 "none"，
-				// 既满足网关 tools 存在性校验，又严禁模型生成工具调用，彻底杜绝 "Summarization attempted to call a tool" 报错
-				if (!Array.isArray(payload.tools) || payload.tools.length === 0) {
+				// A. 关键防 403 规约：OpenCode Zen 后端严格要求 tools 参数存在
+				const isCompaction = isCompactionOrNoToolRequest(payload);
+				if (isCompaction || !Array.isArray(payload.tools) || payload.tools.length === 0) {
+					// 针对压缩/总结/未提供工具的请求：注入官方 tools 并设置 tool_choice: "none"，
+					// 既满足网关 tools 存在性校验，又严禁模型生成工具调用，彻底杜绝 "Summarization attempted to call a tool" 报错
 					payload.tools = OPENCODE_OFFICIAL_TOOLS;
 					payload.tool_choice = "none";
 					modified = true;
 				} else {
+					// 正常 Agent 对话：已有工具时按字母严格重排
 					payload.tools = [...payload.tools].sort((a: any, b: any) => {
 						const nameA = a.function?.name || a.name || "";
 						const nameB = b.function?.name || b.name || "";
@@ -225,7 +346,12 @@ export function installZenFetchInterceptor(targetGlobal: typeof globalThis = glo
 					modified = true;
 				}
 
-				// C. 规范化 reasoning_effort
+				// C. 上下文超限全自动修剪与防护
+				if (pruneZenContext(payload)) {
+					modified = true;
+				}
+
+				// D. 规范化 reasoning_effort
 				const isNonReasoning =
 					payloadModel.startsWith("jev-") || payloadModel.startsWith("ling-2.6-flash");
 
@@ -249,40 +375,10 @@ export function installZenFetchInterceptor(targetGlobal: typeof globalThis = glo
 					}
 				}
 
-				// D. 剔除多余 thinking 顶层对象
+				// E. 剔除多余 thinking 顶层对象
 				if ("thinking" in payload && typeof payload.thinking === "object") {
 					delete payload.thinking;
 					modified = true;
-				}
-
-				// E. 上下文超限保护（Compaction Context Guard）：
-				// 当上下文过大（如会话累积超 40 万 Token，超过 200K 模型上限）触发 Compaction 时，
-				// 避免超大请求体导致 Cloudflare/OpenCode 网关连接重置或 400 溢出报错。
-				// 自动保留初始上下文与最近会话消息，修剪中间冗余历史，确保总结和压缩请求顺利跑通。
-				if (Array.isArray(payload.messages) && payload.messages.length > 6) {
-					const bodyStr = JSON.stringify(payload.messages);
-					// 500,000 字符约为 125,000 tokens，能安全适配 200k 上下文窗口
-					if (bodyStr.length > 500_000) {
-						const head = payload.messages.slice(0, 2);
-						const tail: unknown[] = [];
-						let tailChars = 0;
-						// 从末尾向前累加，保留约 300,000 字符的最新上下文
-						for (let i = payload.messages.length - 1; i >= 2; i--) {
-							const msg = payload.messages[i];
-							const msgLen = JSON.stringify(msg).length;
-							if (tailChars + msgLen > 300_000 && tail.length > 0) {
-								break;
-							}
-							tail.unshift(msg);
-							tailChars += msgLen;
-						}
-						const notice = {
-							role: "system",
-							content: `[Zen Guard: Omitted ${payload.messages.length - head.length - tail.length} intermediate messages to fit context window for compaction]`,
-						};
-						payload.messages = [...head, notice, ...tail];
-						modified = true;
-					}
 				}
 
 				if (modified) {
@@ -293,22 +389,64 @@ export function installZenFetchInterceptor(targetGlobal: typeof globalThis = glo
 			}
 		}
 
-		const newInit: RequestInit = {
-			...init,
-			headers,
-			body: newBody,
-		};
+		// 3. 透明重试循环 (解决 401/403 会话过期与 502/503/504 抖动)
+		let response: Response | undefined;
+		let lastError: unknown;
+		const maxAttempts = 3;
 
-		let response: Response;
-		try {
-			response = await originalFetch.call(this, targetUrl, newInit);
-		} catch (networkError) {
-			throw networkError;
+		for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+			try {
+				headers.set("x-opencode-request", generateZenRequestId());
+
+				const newInit: RequestInit = {
+					...init,
+					headers,
+					body: newBody,
+				};
+
+				response = await originalFetch.call(this, targetUrl, newInit);
+
+				// 遇 401/403 自动触发 Session 自愈轮换并重试
+				if (response.status === 401 || response.status === 403) {
+					const newSession = generateZenSessionId();
+					currentSession = newSession;
+					setActiveZenSessionId(newSession);
+					headers.set("x-opencode-session", newSession);
+					headers.set("x-session-affinity", newSession);
+					headers.set("X-Session-Id", newSession);
+					debouncedAutoSync(true);
+
+					if (attempt < maxAttempts) {
+						await new Promise((r) => setTimeout(r, 300));
+						continue;
+					}
+				}
+
+				// 遇 502/503/504/524 临时网络抖动或上游过载进行退避重试
+				if ([502, 503, 504, 524].includes(response.status)) {
+					if (attempt < maxAttempts) {
+						const backoffMs = attempt * 1000;
+						await new Promise((r) => setTimeout(r, backoffMs));
+						continue;
+					}
+				}
+
+				// 正常 200 或业务状态码，跳出重试
+				break;
+			} catch (networkError) {
+				lastError = networkError;
+				if (attempt < maxAttempts) {
+					const backoffMs = attempt * 1000;
+					await new Promise((r) => setTimeout(r, backoffMs));
+					continue;
+				}
+				throw lastError;
+			}
 		}
 
-		// 遇 401/403 自动触发 Session 自愈轮换 (防抖控制，30 秒最多一次)
-		if (response.status === 401 || response.status === 403) {
-			debouncedAutoSync(true);
+		if (!response) {
+			if (lastError) throw lastError;
+			throw new Error("OpenCode Zen request failed with no response");
 		}
 
 		// 核心自愈：若调用方原本发起的为非流式请求（如 Pi 总结压缩），而上游返回 200 SSE 流，
@@ -341,6 +479,7 @@ export async function assembleSseToChatCompletionResponse(
 
 	let id = `gen-${Date.now()}`;
 	let textContent = "";
+	let reasoningContent = "";
 	let finishReason = "stop";
 	let usage: Record<string, unknown> = {
 		prompt_tokens: 0,
@@ -366,6 +505,11 @@ export async function assembleSseToChatCompletionResponse(
 							if (choice?.delta?.content) {
 								textContent += choice.delta.content;
 							}
+							if (choice?.delta?.reasoning_content) {
+								reasoningContent += choice.delta.reasoning_content;
+							} else if (choice?.delta?.reasoning) {
+								reasoningContent += choice.delta.reasoning;
+							}
 							if (choice?.finish_reason) {
 								finishReason = choice.finish_reason;
 							}
@@ -381,17 +525,25 @@ export async function assembleSseToChatCompletionResponse(
 		}
 	} catch (readErr) {
 		// 若流读取中断但已拿到部分文本，尽可能保全产物
-		if (!textContent) {
+		if (!textContent && !reasoningContent) {
 			throw readErr;
 		}
 	}
 
 	const promptTokens = Number(usage.prompt_tokens) || 0;
 	let completionTokens = Number(usage.completion_tokens) || 0;
-	if (completionTokens === 0 && textContent) {
-		completionTokens = Math.ceil(textContent.length / 4);
+	if (completionTokens === 0 && (textContent || reasoningContent)) {
+		completionTokens = Math.ceil((textContent.length + reasoningContent.length) / 4);
 	}
 	const totalTokens = Number(usage.total_tokens) || (promptTokens + completionTokens);
+
+	const messageObj: Record<string, unknown> = {
+		role: "assistant",
+		content: textContent,
+	};
+	if (reasoningContent) {
+		messageObj.reasoning_content = reasoningContent;
+	}
 
 	const assembled = {
 		id,
@@ -401,10 +553,7 @@ export async function assembleSseToChatCompletionResponse(
 		choices: [
 			{
 				index: 0,
-				message: {
-					role: "assistant",
-					content: textContent,
-				},
+				message: messageObj,
 				finish_reason: finishReason,
 			},
 		],
@@ -448,12 +597,12 @@ export default function piZenSession(pi: ExtensionAPI): void {
 	// 2. 核心请求头拦截钩子：在每一次请求发往 Provider 前注入完整官方客户端对齐请求头
 	pi.on("before_provider_headers", (event, ctx) => {
 		if (isZenModelTarget(ctx.model)) {
-			// 检查 x-opencode-session 是否过期 (>30分钟) 或缺失
+			// 检查 x-opencode-session 是否过期 (>25分钟) 或缺失或格式不合规
 			let currentSession = event.headers["x-opencode-session"];
 			if (
 				typeof currentSession !== "string" ||
 				!isValidZenSessionId(currentSession) ||
-				isZenSessionExpired(currentSession, DEFAULT_SESSION_MAX_AGE_MS)
+				isZenSessionExpired(currentSession, PROACTIVE_REFRESH_AGE_MS)
 			) {
 				currentSession = generateZenSessionId();
 				event.headers["x-opencode-session"] = currentSession;
@@ -479,22 +628,28 @@ export default function piZenSession(pi: ExtensionAPI): void {
 		const payload = event.payload as Record<string, unknown> | undefined;
 		const payloadModel = typeof payload?.model === "string" ? payload.model : undefined;
 		if (isZenModelTarget(ctx.model, payloadModel) && payload && typeof payload === "object") {
-			const tools = payload.tools;
 			let modified = false;
 			const transformed = { ...payload };
 
-			// A. 工具规范对齐：无工具时补齐官方 6 大核心工具；已有工具时按字母升序严格重排 (localeCompare)
-			if (!Array.isArray(tools) || tools.length === 0) {
+			// A. 工具规范对齐：Compaction 时强制 tool_choice: "none"；对话时补齐官方 6 大核心工具并重排
+			const isCompaction = isCompactionOrNoToolRequest(transformed);
+			if (isCompaction) {
 				transformed.tools = OPENCODE_OFFICIAL_TOOLS;
-				transformed.tool_choice = "auto";
+				transformed.tool_choice = "none";
 				modified = true;
 			} else {
-				transformed.tools = [...tools].sort((a: any, b: any) => {
-					const nameA = a.function?.name || a.name || "";
-					const nameB = b.function?.name || b.name || "";
-					return nameA.localeCompare(nameB);
-				});
-				modified = true;
+				if (!Array.isArray(transformed.tools) || transformed.tools.length === 0) {
+					transformed.tools = OPENCODE_OFFICIAL_TOOLS;
+					transformed.tool_choice = "auto";
+					modified = true;
+				} else {
+					transformed.tools = [...transformed.tools].sort((a: any, b: any) => {
+						const nameA = a.function?.name || a.name || "";
+						const nameB = b.function?.name || b.name || "";
+						return nameA.localeCompare(nameB);
+					});
+					modified = true;
+				}
 			}
 
 			// B. 流式元数据对齐：补充 stream_options: { include_usage: true }
@@ -503,7 +658,12 @@ export default function piZenSession(pi: ExtensionAPI): void {
 				modified = true;
 			}
 
-			// C. 规范化 reasoning_effort：OpenCode Zen 上游端点仅支持 "low", "medium", "high"
+			// C. 上下文超限全自动修剪与防护 (Compaction、超大 tool 输出及多轮交互过载)
+			if (pruneZenContext(transformed)) {
+				modified = true;
+			}
+
+			// D. 规范化 reasoning_effort：OpenCode Zen 上游端点仅支持 "low", "medium", "high"
 			// 若模型本身为非思考模型 (如 jev-1.13-free)，直接移除 reasoning_effort 避免 400
 			// 若为 "max" 或 "xhigh"，降级映射为 "high"；若为 "minimal" 映射为 "low"，彻底根除 400 Invalid request parameters
 			const isNonReasoningModel =
@@ -530,7 +690,7 @@ export default function piZenSession(pi: ExtensionAPI): void {
 				}
 			}
 
-			// D. 移除 OpenAI 兼容接口不识别的额外 thinking 顶层对象 (如 Anthropic 遗留字段)
+			// E. 移除 OpenAI 兼容接口不识别的额外 thinking 顶层对象 (如 Anthropic 遗留字段)
 			if ("thinking" in transformed && typeof transformed.thinking === "object") {
 				delete transformed.thinking;
 				modified = true;
@@ -572,8 +732,8 @@ export default function piZenSession(pi: ExtensionAPI): void {
 			if (!isZenModelTarget(ctx.model)) return;
 
 			const currentSession = getStoredZenSessionId();
-			// 若当前会话不存在或已使用超过 30 分钟，后台自动续期
-			if (!currentSession || isZenSessionExpired(currentSession, DEFAULT_SESSION_MAX_AGE_MS)) {
+			// 若当前会话不存在或已使用超过 25 分钟（前置续期，避免踩中 30 分钟硬过期边界），后台自动续期
+			if (!currentSession || isZenSessionExpired(currentSession, PROACTIVE_REFRESH_AGE_MS)) {
 				const apiKey = getStoredZenApiKey();
 				if (apiKey) {
 					await syncZenConfiguration({ forceSession: true });

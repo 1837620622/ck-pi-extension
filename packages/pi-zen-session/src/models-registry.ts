@@ -134,6 +134,16 @@ export const KNOWN_ZEN_FREE_MODELS: Record<string, ZenModelDefinition> = {
 		input: ["text"],
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 	},
+	"space-bunny-free": {
+		id: "space-bunny-free",
+		name: "Space Bunny Free (OpenCode Zen)",
+		contextWindow: 200000,
+		maxTokens: 32000,
+		reasoning: true,
+		input: ["text", "image"],
+		thinkingLevelMap: STANDARD_THINKING_LEVELS,
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+	},
 };
 
 /**

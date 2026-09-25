@@ -105,7 +105,7 @@ describe("OpenCode Zen Session 算法单元测试", () => {
 });
 
 describe("OpenCode Zen 模型库与参数注册表测试", () => {
-	it("包含全部已确认的 9 款免费模型", () => {
+	it("包含全部已确认的 10 款免费模型", () => {
 		const expectedModels = [
 			"mimo-v2.5-free",
 			"mimo-v2.6-flash-free",
@@ -116,6 +116,7 @@ describe("OpenCode Zen 模型库与参数注册表测试", () => {
 			"muse-spark-1.3-contributor-free",
 			"muse-spark-1.2-contributor-free",
 			"jev-1.13-free",
+			"space-bunny-free",
 		];
 
 		for (const id of expectedModels) {
@@ -754,5 +755,200 @@ describe("Extension API 钩子拦截测试", () => {
 		assert.equal(getActiveZenSessionId(), null);
 	});
 });
+
+describe("Compaction 压缩防护、深度上下文修剪与透明重试机制测试", () => {
+	const { isCompactionOrNoToolRequest, pruneZenContext, assembleSseToChatCompletionResponse, installZenFetchInterceptor } = require("./index.js");
+
+	it("isCompactionOrNoToolRequest: 精确识别各种形式的 Compaction / 压缩总结任务", () => {
+		// 非流式请求
+		assert.equal(isCompactionOrNoToolRequest({ stream: false }), true);
+		// 显式 tool_choice: "none"
+		assert.equal(isCompactionOrNoToolRequest({ stream: true, tool_choice: "none" }), true);
+		// 含有 <conversation> 标签
+		assert.equal(
+			isCompactionOrNoToolRequest({
+				stream: true,
+				messages: [{ role: "user", content: "<conversation>\n[User]: test\n</conversation>\n\nSummarize" }],
+			}),
+			true,
+		);
+		// 含有 summarize 关键字
+		assert.equal(
+			isCompactionOrNoToolRequest({
+				stream: true,
+				messages: [{ role: "user", content: "Please summarize the conversation history" }],
+			}),
+			true,
+		);
+		// 含有 compaction 关键字
+		assert.equal(
+			isCompactionOrNoToolRequest({
+				stream: true,
+				messages: [{ role: "user", content: "Run context compaction now" }],
+			}),
+			true,
+		);
+		// 常规 Agent 对话请求，带 tools
+		assert.equal(
+			isCompactionOrNoToolRequest({
+				stream: true,
+				tools: [{ type: "function", function: { name: "bash" } }],
+				messages: [{ role: "user", content: "Fix the bug in index.ts" }],
+			}),
+			false,
+		);
+	});
+
+	it("pruneZenContext: Compaction <conversation> 标签超长内容安全修剪", () => {
+		const headText = "A".repeat(30_000);
+		const middleText = "B".repeat(60_000);
+		const tailText = "C".repeat(60_000);
+		const rawContent = `<conversation>\n${headText}${middleText}${tailText}\n</conversation>\n\nSummarize the conversation.`;
+
+		const payload: Record<string, unknown> = {
+			model: "mimo-v2.5-free",
+			messages: [{ role: "user", content: rawContent }],
+		};
+
+		const modified = pruneZenContext(payload);
+		assert.equal(modified, true);
+
+		const resultMsg = (payload.messages as any[])[0].content as string;
+		assert.ok(resultMsg.startsWith("<conversation>"), "以 conversation 标签开头");
+		assert.ok(resultMsg.includes(headText.slice(0, 20_000)), "前置任务目标完整保留");
+		assert.ok(resultMsg.includes("Zen Compaction Guard: Omitted"), "插入修剪提示");
+		assert.ok(resultMsg.includes(tailText.slice(-20_000)), "末尾最新执行状态完整保留");
+		assert.ok(resultMsg.endsWith("Summarize the conversation."), "尾部总结指令完好");
+		assert.ok(resultMsg.length < rawContent.length, "大幅精简请求体积");
+	});
+
+	it("pruneZenContext: 单个超大 Tool 输出自动截断至 25,000 字符", () => {
+		const hugeToolOutput = "LOG_LINE_DATA_".repeat(3000); // 42,000 字符
+		const payload: Record<string, unknown> = {
+			model: "mimo-v2.6-flash-free",
+			messages: [
+				{ role: "user", content: "run command" },
+				{ role: "tool", content: hugeToolOutput },
+			],
+		};
+
+		const modified = pruneZenContext(payload);
+		assert.equal(modified, true);
+
+		const toolMsg = (payload.messages as any[])[1].content as string;
+		assert.ok(toolMsg.length < 30_000, "Tool 输出被截断在合理安全范围");
+		assert.ok(toolMsg.includes("Tool output truncated to 25,000 chars"));
+	});
+
+	it("installZenFetchInterceptor: 遇 403 FreeTierError 自动轮换 Session 并透明重试成功", async () => {
+		let attempt = 0;
+		const capturedSessions: string[] = [];
+
+		const mockGlobal: any = {
+			fetch: async (_input: any, init: any) => {
+				attempt++;
+				const headers = new Headers(init?.headers);
+				capturedSessions.push(headers.get("x-opencode-session") || "");
+
+				if (attempt === 1) {
+					// 第一次模拟上游返回 403 FreeTierError
+					return new Response(JSON.stringify({ error: { type: "FreeTierError", message: "session rejected" } }), {
+						status: 403,
+						headers: { "content-type": "application/json" },
+					});
+				}
+
+				// 第二次生成了新 Session 后成功返回 SSE
+				const sseData = [
+					'data: {"id":"retry-1","model":"mimo-v2.5-free","choices":[{"index":0,"delta":{"content":"Compacted summary."}}]}',
+					'data: {"id":"retry-1","model":"mimo-v2.5-free","choices":[{"index":0,"finish_reason":"stop"}],"usage":{"total_tokens":50}}',
+					"data: [DONE]",
+				].join("\n\n");
+
+				return new Response(sseData, {
+					status: 200,
+					headers: { "content-type": "text/event-stream" },
+				});
+			},
+		};
+
+		installZenFetchInterceptor(mockGlobal);
+
+		// 模拟 Pi 发起的 compaction 请求 (非流式)
+		const res = await mockGlobal.fetch("https://opencode.ai/zen/v1/chat/completions", {
+			method: "POST",
+			headers: { Authorization: "Bearer test_key" },
+			body: JSON.stringify({
+				model: "mimo-v2.5-free",
+				messages: [{ role: "user", content: "<conversation>test</conversation>\n\nSummarize" }],
+				stream: false,
+			}),
+		});
+
+		assert.equal(res.status, 200, "Pi 最终接收到透明重试后的 200 OK，不抛 403 异常");
+		assert.equal(attempt, 2, "经历了 1 次自动透明重试");
+		assert.equal(capturedSessions.length, 2);
+		assert.notEqual(capturedSessions[0], capturedSessions[1], "重试时自动换用全新降序 Session ID");
+		assert.ok(capturedSessions[1].startsWith("ses_"), "新 Session 符合 ses_ 规范");
+
+		const json = await res.json();
+		assert.equal(json.choices[0].message.content, "Compacted summary.");
+	});
+
+	it("installZenFetchInterceptor: 遇 504 Gateway Timeout 自动退避重试成功", async () => {
+		let attempt = 0;
+
+		const mockGlobal: any = {
+			fetch: async () => {
+				attempt++;
+				if (attempt === 1) {
+					return new Response("Gateway Timeout", { status: 504 });
+				}
+				const sseData = [
+					'data: {"id":"retry-504","model":"mimo-v2.5-free","choices":[{"index":0,"delta":{"content":"Recovered from 504."}}]}',
+					'data: [DONE]',
+				].join("\n\n");
+				return new Response(sseData, { status: 200, headers: { "content-type": "text/event-stream" } });
+			},
+		};
+
+		installZenFetchInterceptor(mockGlobal);
+
+		const res = await mockGlobal.fetch("https://opencode.ai/zen/v1/chat/completions", {
+			method: "POST",
+			headers: { Authorization: "Bearer test_key" },
+			body: JSON.stringify({
+				model: "mimo-v2.5-free",
+				messages: [{ role: "user", content: "Hello" }],
+				stream: false,
+			}),
+		});
+
+		assert.equal(res.status, 200);
+		assert.equal(attempt, 2);
+		const json = await res.json();
+		assert.equal(json.choices[0].message.content, "Recovered from 504.");
+	});
+
+	it("assembleSseToChatCompletionResponse: 完整组装深度思考 reasoning_content 字段", async () => {
+		const sseData = [
+			'data: {"id":"think-1","model":"mimo-v2.5-free","choices":[{"index":0,"delta":{"reasoning_content":"Thinking step 1..."}}]}',
+			'data: {"id":"think-1","model":"mimo-v2.5-free","choices":[{"index":0,"delta":{"reasoning_content":" Step 2 complete."}}]}',
+			'data: {"id":"think-1","model":"mimo-v2.5-free","choices":[{"index":0,"delta":{"content":"Final answer."}}]}',
+			'data: {"id":"think-1","model":"mimo-v2.5-free","choices":[{"index":0,"finish_reason":"stop"}],"usage":{"prompt_tokens":30,"completion_tokens":50,"total_tokens":80}}',
+			"data: [DONE]",
+		].join("\n\n");
+
+		const sseRes = new Response(sseData, { status: 200, headers: { "content-type": "text/event-stream" } });
+		const assembled = await assembleSseToChatCompletionResponse(sseRes, "mimo-v2.5-free");
+		assert.equal(assembled.status, 200);
+
+		const json = await assembled.json();
+		assert.equal(json.choices[0].message.content, "Final answer.");
+		assert.equal(json.choices[0].message.reasoning_content, "Thinking step 1... Step 2 complete.");
+		assert.equal(json.usage.total_tokens, 80);
+	});
+});
+
 
 
