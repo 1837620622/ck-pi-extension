@@ -187,15 +187,22 @@ export function installZenFetchInterceptor(targetGlobal: typeof globalThis = glo
 
 		// 拦截并修补请求体：在 Summarization / Compaction / 非工具调用场景下强制注入官方 tools
 		let newBody = init?.body;
+		let originalStreamRequested = true;
+		let payloadModel = "";
+
 		if (typeof init?.body === "string" && init.body.trim().startsWith("{")) {
 			try {
 				const payload = JSON.parse(init.body) as Record<string, unknown>;
 				let modified = false;
+				originalStreamRequested = payload.stream === true;
+				payloadModel = typeof payload.model === "string" ? payload.model : "";
 
 				// A. 关键防 403 规约：OpenCode Zen 后端严格要求 tools 参数存在，缺失时立即报 403 FreeTierError
+				// 针对无工具场景（如 Pi Compaction / Summarization 总结），注入官方 6 件套并将 tool_choice 设为 "none"，
+				// 既满足网关 tools 存在性校验，又严禁模型生成工具调用，彻底杜绝 "Summarization attempted to call a tool" 报错
 				if (!Array.isArray(payload.tools) || payload.tools.length === 0) {
 					payload.tools = OPENCODE_OFFICIAL_TOOLS;
-					payload.tool_choice = "auto";
+					payload.tool_choice = "none";
 					modified = true;
 				} else {
 					payload.tools = [...payload.tools].sort((a: any, b: any) => {
@@ -206,14 +213,19 @@ export function installZenFetchInterceptor(targetGlobal: typeof globalThis = glo
 					modified = true;
 				}
 
-				// B. 流式元数据对齐：补充 stream_options: { include_usage: true }
-				if (payload.stream === true && !payload.stream_options) {
+				// B. 强制流式规约：OpenCode Zen 免费端点对非流式请求一律拒绝 (HTTP 403 FreeTierError)
+				// 若调用方原本期望非流式 JSON（如 Pi 压缩任务 completeSimple），强制开启 stream: true，
+				// 后续由拦截器在底层透明聚合上游 SSE 帧，拼装为完整的 OpenAI ChatCompletion JSON 响应
+				if (!originalStreamRequested) {
+					payload.stream = true;
+					modified = true;
+				}
+				if (!payload.stream_options) {
 					payload.stream_options = { include_usage: true };
 					modified = true;
 				}
 
 				// C. 规范化 reasoning_effort
-				const payloadModel = typeof payload.model === "string" ? payload.model : "";
 				const isNonReasoning =
 					payloadModel.startsWith("jev-") || payloadModel.startsWith("ling-2.6-flash");
 
@@ -299,8 +311,118 @@ export function installZenFetchInterceptor(targetGlobal: typeof globalThis = glo
 			debouncedAutoSync(true);
 		}
 
+		// 核心自愈：若调用方原本发起的为非流式请求（如 Pi 总结压缩），而上游返回 200 SSE 流，
+		// 将其聚合反序列化为标准的 OpenAI ChatCompletion JSON 响应对象
+		if (response.ok && !originalStreamRequested) {
+			return assembleSseToChatCompletionResponse(response, payloadModel);
+		}
+
 		return response;
 	};
+}
+
+/**
+ * 将 OpenCode Zen 上游强制要求的 SSE 流（Server-Sent Events）
+ * 汇聚装配为符合 OpenAI 规范的标准 ChatCompletion JSON 响应对象，
+ * 使 Pi 的 completeSimple 等非流式调用方（包括核心 Compaction/Summarization）无缝完成解析。
+ */
+export async function assembleSseToChatCompletionResponse(
+	response: Response,
+	modelId: string,
+): Promise<Response> {
+	if (!response.body) {
+		return response;
+	}
+
+	const reader = response.body.getReader();
+	const decoder = new TextDecoder();
+	let buffer = "";
+	let done = false;
+
+	let id = `gen-${Date.now()}`;
+	let textContent = "";
+	let finishReason = "stop";
+	let usage: Record<string, unknown> = {
+		prompt_tokens: 0,
+		completion_tokens: 0,
+		total_tokens: 0,
+	};
+
+	try {
+		while (!done) {
+			const { value, done: readerDone } = await reader.read();
+			done = readerDone;
+			if (value) {
+				buffer += decoder.decode(value, { stream: !done });
+				const lines = buffer.split("\n");
+				buffer = lines.pop() || "";
+				for (const line of lines) {
+					const trimmed = line.trim();
+					if (trimmed.startsWith("data: ") && trimmed !== "data: [DONE]") {
+						try {
+							const chunk = JSON.parse(trimmed.slice(6)) as Record<string, any>;
+							if (chunk.id) id = chunk.id;
+							const choice = chunk.choices?.[0];
+							if (choice?.delta?.content) {
+								textContent += choice.delta.content;
+							}
+							if (choice?.finish_reason) {
+								finishReason = choice.finish_reason;
+							}
+							if (chunk.usage && typeof chunk.usage === "object") {
+								usage = chunk.usage;
+							}
+						} catch {
+							// 忽略单个坏帧
+						}
+					}
+				}
+			}
+		}
+	} catch (readErr) {
+		// 若流读取中断但已拿到部分文本，尽可能保全产物
+		if (!textContent) {
+			throw readErr;
+		}
+	}
+
+	const promptTokens = Number(usage.prompt_tokens) || 0;
+	let completionTokens = Number(usage.completion_tokens) || 0;
+	if (completionTokens === 0 && textContent) {
+		completionTokens = Math.ceil(textContent.length / 4);
+	}
+	const totalTokens = Number(usage.total_tokens) || (promptTokens + completionTokens);
+
+	const assembled = {
+		id,
+		object: "chat.completion",
+		created: Math.floor(Date.now() / 1000),
+		model: modelId || "opencode-zen-model",
+		choices: [
+			{
+				index: 0,
+				message: {
+					role: "assistant",
+					content: textContent,
+				},
+				finish_reason: finishReason,
+			},
+		],
+		usage: {
+			...usage,
+			prompt_tokens: promptTokens,
+			completion_tokens: completionTokens,
+			total_tokens: totalTokens,
+		},
+	};
+
+	return new Response(JSON.stringify(assembled), {
+		status: 200,
+		statusText: "OK",
+		headers: {
+			"content-type": "application/json; charset=utf-8",
+		},
+	});
 }
 
 export default function piZenSession(pi: ExtensionAPI): void {

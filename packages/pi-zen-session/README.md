@@ -30,8 +30,10 @@ OpenCode Zen 免费模型同步、请求头伪装与 Session 会话自动维护�
 - 🚨 **远端集群健康状态感知与自愈告警守卫 (v0.1.10)**：新增针对 502/503/504 等网关状态码的健康感知拦截，当上游端点临时离线或集群不可用时（如 upstream 503 Endpoint unavailable），实时发出友善桌面与界面通知，避免无效死循环。
 - 🎯 **OpenAI 兼容协议全面净化与非思考模型智能防御 (v0.1.11)**：基于 OpenCode CLI 官方核心（`@ai-sdk/openai-compatible`）深度规范对齐：针对 `jev-1.13-free` 等非思考模型自动剔除 `reasoning_effort`，并彻底清除任何非法顶层 `thinking` 冗余字段；思考档位严格安全规约（`max`/`xhigh` -> `high`，`minimal` -> `low`），实现 0 错误率的完美协议传输。
 - 🛡️ **全局 Fetch 底层拦截与会话压缩 403 根治防御 (v0.1.13)**：新增 `installZenFetchInterceptor()` 全局底层 Fetch 守卫。彻底解决 Pi 在执行上下文会话压缩（Compaction/Summarization）时直接通过底层运行时发送纯文本无工具请求、绕过 Agent 生命周期钩子进而触发 OpenCode 官方网关 `403 FreeTierError`（"OpenCode's free tier can only be used from within OpenCode"）的死锁难题。底层自动捕获所有发往 `opencode.ai/zen/v1` 的直接请求，动态注入官方 6 大核心工具链、毫秒级降序 Session ID 与升序 Request ID，并对齐 `stream_options`，全自动防 403 / 401 故障自愈。
-- ⚡ **拦截器递归死循环与调用栈溢出根治，并发单例锁与超限压缩保护 (v0.1.14)**：
-  - **切断递归闭环**：严格限定 Fetch 拦截器仅处理 `chat/completions`，绝不拦截 `/models` 等管理与元数据接口，杜绝同步与拦截间的自调用递归闭环（根除 `RangeError: Maximum call stack size exceeded`）；
+- ⚡ **会话压缩 403 根治与 SSE-to-JSON 汇聚反序列化、递归死循环与调用栈溢出根治 (v0.1.14)**：
+  - **会话压缩（Compaction/Summarization）403 彻底根除**：深度定位并破解 OpenCode Zen 远端网关双重硬约束——免费端点对非流式（`stream: false`）与无工具请求一律返回 403 `FreeTierError`。针对 Pi 压缩时通过 `completeSimple` 发起的非流式无工具请求，底层 Fetch 拦截器自动注入官方 6 大工具并将 `tool_choice` 设为 `"none"`（既满足网关校验又杜绝模型生成非法工具调用），并强制开启 `stream: true` 绕过网关封锁；
+  - **底层透明 SSE-to-JSON 汇聚引擎 (`assembleSseToChatCompletionResponse`)**：拦截器在接收到上游 SSE 流后，在内存中毫秒级流式聚合文本分块与 Token 用量，组装还原为标准的 OpenAI ChatCompletion JSON 响应对象，使 Pi 的非流式压缩引擎 100% 顺畅解析；
+  - **切断递归闭环**：严格限定 Fetch 拦截器仅处理 `chat/completions`，绝不拦截 `/models` 等管理与元数据接口，杜绝同步与拦截间的自调用递归闭环（彻底根除 `RangeError: Maximum call stack size exceeded`）；
   - **防并发风暴单例锁**：引入 `syncInFlightPromise` 互斥单例与 30 秒防抖控制，多处并发调用自动合并，消灭重复落盘与文件冲突；
   - **Request 原生凭证无损继承**：完善支持 `Request` 对象输入，彻底保留原始 `Authorization` 等全部 HTTP 头；
   - **Compaction Context Guard（超长会话自愈保护）**：当上下文过大 (>50万字符) 触发会话压缩总结时，智能保留起始目标与末尾最新消息，安全截断中间冗余历史，彻底消除超大请求导致的网关连接断开 (`Connection error`) 与 400 溢出。

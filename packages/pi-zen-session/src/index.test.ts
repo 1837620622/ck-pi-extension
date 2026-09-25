@@ -584,8 +584,35 @@ describe("Extension API 钩子拦截测试", () => {
 		const parsedBody = JSON.parse(String(capturedInit?.body));
 		assert.ok(Array.isArray(parsedBody.tools), "拦截器必须为 Summarization 请求强制注入 tools");
 		assert.equal(parsedBody.tools.length, 6, "必须注入官方 6 大核心工具");
-		assert.equal(parsedBody.tool_choice, "auto");
+		assert.equal(parsedBody.tool_choice, "none", "当请求本身无工具时 tool_choice 必须为 none 保证纯文本输出");
 		assert.deepEqual(parsedBody.stream_options, { include_usage: true });
+	});
+
+	it("assembleSseToChatCompletionResponse: 将 SSE 帧流反序列化为标准 ChatCompletion JSON", async () => {
+		const { assembleSseToChatCompletionResponse } = require("./index.js");
+
+		const sseData = [
+			'data: {"id":"gen-123","model":"mimo-v2.6-flash-free","choices":[{"index":0,"delta":{"content":"Summary: "}}]}',
+			'data: {"id":"gen-123","model":"mimo-v2.6-flash-free","choices":[{"index":0,"delta":{"content":"Task completed successfully."}}]}',
+			'data: {"id":"gen-123","model":"mimo-v2.6-flash-free","choices":[{"index":0,"finish_reason":"stop"}],"usage":{"prompt_tokens":100,"completion_tokens":20,"total_tokens":120}}',
+			"data: [DONE]",
+		].join("\n\n");
+
+		const sseResponse = new Response(sseData, {
+			status: 200,
+			headers: { "content-type": "text/event-stream" },
+		});
+
+		const assembledRes = await assembleSseToChatCompletionResponse(sseResponse, "mimo-v2.6-flash-free");
+		assert.equal(assembledRes.status, 200);
+		assert.equal(assembledRes.headers.get("content-type"), "application/json; charset=utf-8");
+
+		const json = await assembledRes.json();
+		assert.equal(json.id, "gen-123");
+		assert.equal(json.model, "mimo-v2.6-flash-free");
+		assert.equal(json.choices[0].message.content, "Summary: Task completed successfully.");
+		assert.equal(json.choices[0].finish_reason, "stop");
+		assert.equal(json.usage.total_tokens, 120);
 	});
 
 	it("installZenFetchInterceptor: 绝不拦截 /models 请求，杜绝递归循环", async () => {
