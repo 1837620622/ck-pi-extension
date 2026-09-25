@@ -696,6 +696,21 @@ export default function piZenSession(pi: ExtensionAPI): void {
 				modified = true;
 			}
 
+			// F. 安全上限钳位与防死循环微调 (防止超长 max_tokens 失控)
+			const safeLimit = 32768;
+			if (typeof transformed.max_tokens === "number" && (transformed.max_tokens as number) > safeLimit) {
+				transformed.max_tokens = safeLimit;
+				modified = true;
+			}
+			if (typeof transformed.max_completion_tokens === "number" && (transformed.max_completion_tokens as number) > safeLimit) {
+				transformed.max_completion_tokens = safeLimit;
+				modified = true;
+			}
+			if (transformed.frequency_penalty === undefined) {
+				transformed.frequency_penalty = 0.05;
+				modified = true;
+			}
+
 			if (modified) {
 				return transformed;
 			}

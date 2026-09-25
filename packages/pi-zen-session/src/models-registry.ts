@@ -69,7 +69,7 @@ export const KNOWN_ZEN_FREE_MODELS: Record<string, ZenModelDefinition> = {
 		id: "nemotron-3.5-lightning-free",
 		name: "Nemotron 3.5 Lightning Free (OpenCode Zen)",
 		contextWindow: 262144,
-		maxTokens: 262144,
+		maxTokens: 32768,
 		reasoning: true,
 		input: ["text"],
 		thinkingLevelMap: STANDARD_THINKING_LEVELS,
@@ -79,7 +79,7 @@ export const KNOWN_ZEN_FREE_MODELS: Record<string, ZenModelDefinition> = {
 		id: "nemotron-3-ultra-free",
 		name: "Nemotron 3 Ultra Free (OpenCode Zen)",
 		contextWindow: 1000000,
-		maxTokens: 128000,
+		maxTokens: 32768,
 		reasoning: true,
 		input: ["text"],
 		thinkingLevelMap: STANDARD_THINKING_LEVELS,
@@ -109,7 +109,7 @@ export const KNOWN_ZEN_FREE_MODELS: Record<string, ZenModelDefinition> = {
 		id: "muse-spark-1.3-contributor-free",
 		name: "Meta Muse Spark 1.3 Free (OpenCode Zen)",
 		contextWindow: 1048576,
-		maxTokens: 131072,
+		maxTokens: 32768,
 		reasoning: true,
 		input: ["text", "image"],
 		thinkingLevelMap: MUSE_SPARK_THINKING_LEVELS,
@@ -119,7 +119,7 @@ export const KNOWN_ZEN_FREE_MODELS: Record<string, ZenModelDefinition> = {
 		id: "muse-spark-1.2-contributor-free",
 		name: "Meta Muse Spark 1.2 Free (OpenCode Zen)",
 		contextWindow: 1048576,
-		maxTokens: 131072,
+		maxTokens: 32768,
 		reasoning: true,
 		input: ["text", "image"],
 		thinkingLevelMap: MUSE_SPARK_THINKING_LEVELS,
@@ -264,6 +264,12 @@ export function inferModelCapabilities(
 		maxTokens = 32000;
 	}
 
+	// 安全上限钳位：单次输出 Token 绝不能超过 65536，坚决杜绝 384k/100万 Token 的失控死循环
+	const safeMaxLimit = 65536;
+	if (maxTokens > safeMaxLimit) {
+		maxTokens = safeMaxLimit;
+	}
+
 	// 4. 是否支持推理思考 (reasoning)
 	let reasoning = true;
 	if (typeof raw?.reasoning === "boolean") {
@@ -366,6 +372,10 @@ export function inferModelCapabilities(
 		reasoning,
 		input,
 		thinkingLevelMap,
+		samplingParams: {
+			frequency_penalty: 0.05,
+			presence_penalty: 0.05,
+		},
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 	};
 }

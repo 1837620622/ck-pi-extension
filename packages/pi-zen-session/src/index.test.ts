@@ -440,6 +440,19 @@ describe("Extension API 钩子拦截测试", () => {
 		});
 		assert.equal(sanitizedNonReasoning.reasoning_effort, undefined, "非思考模型必须剔除 reasoning_effort");
 		assert.equal(sanitizedNonReasoning.thinking, undefined, "必须剔除顶层 thinking 对象");
+
+		// 超大 max_tokens 安全上限钳位与采样惩罚微调
+		const runawayEvent = {
+			payload: {
+				model: "nemotron-3-ultra-free",
+				messages: [],
+				tools: [{ type: "function", function: { name: "bash" } }],
+				max_tokens: 384000,
+			},
+		};
+		const clampedPayload = handlers["before_provider_request"][0](runawayEvent, ctx);
+		assert.equal(clampedPayload.max_tokens, 32768, "超过 32k 的 max_tokens 必须被钳位至 32768 安全上限");
+		assert.equal(clampedPayload.frequency_penalty, 0.05, "必须注入 0.05 微弱重复惩罚防止死循环");
 	});
 
 	it("after_provider_response 遇 401 或 403 自动触发 Session 换新和用户通知", () => {
