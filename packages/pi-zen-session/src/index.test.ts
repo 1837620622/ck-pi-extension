@@ -28,8 +28,10 @@ import {
 	isValidZenSessionId,
 } from "./session.js";
 import {
+	getActiveZenSessionId,
 	getStoredZenApiKey,
 	getStoredZenSessionId,
+	setActiveZenSessionId,
 	syncZenConfiguration,
 	updateCcSwitchDb,
 } from "./sync.js";
@@ -584,6 +586,145 @@ describe("Extension API 钩子拦截测试", () => {
 		assert.equal(parsedBody.tools.length, 6, "必须注入官方 6 大核心工具");
 		assert.equal(parsedBody.tool_choice, "auto");
 		assert.deepEqual(parsedBody.stream_options, { include_usage: true });
+	});
+
+	it("installZenFetchInterceptor: 绝不拦截 /models 请求，杜绝递归循环", async () => {
+		const { installZenFetchInterceptor } = require("./index.js");
+
+		let capturedUrl: string | undefined;
+		let capturedInit: RequestInit | undefined;
+		const mockRes = new Response(JSON.stringify({ data: [] }), { status: 200 });
+
+		const mockGlobal: any = {
+			fetch: async (input: any, init: any) => {
+				capturedUrl = String(input);
+				capturedInit = init;
+				return mockRes;
+			},
+		};
+
+		installZenFetchInterceptor(mockGlobal);
+
+		await mockGlobal.fetch("https://opencode.ai/zen/v1/models", {
+			method: "GET",
+			headers: { Authorization: "Bearer key_test" },
+		});
+
+		assert.equal(capturedUrl, "https://opencode.ai/zen/v1/models");
+		assert.equal(capturedInit?.body, undefined, "/models 请求绝不注入 body");
+		const headers = new Headers(capturedInit?.headers);
+		assert.equal(headers.get("x-opencode-session"), null, "/models 请求绝不被包装 session 请求头");
+	});
+
+	it("installZenFetchInterceptor: 支持 Request 对象输入并完整保留 Authorization 凭证", async () => {
+		const { installZenFetchInterceptor } = require("./index.js");
+
+		let capturedUrl: string | undefined;
+		let capturedInit: RequestInit | undefined;
+		const mockRes = new Response(JSON.stringify({ id: "ok" }), { status: 200 });
+
+		const mockGlobal: any = {
+			fetch: async (input: any, init: any) => {
+				capturedUrl = String(input);
+				capturedInit = init;
+				return mockRes;
+			},
+		};
+
+		installZenFetchInterceptor(mockGlobal);
+
+		const requestObj = new Request("https://opencode.ai/zen/v1/chat/completions", {
+			method: "POST",
+			headers: {
+				Authorization: "Bearer oc_sk_auth_secret",
+				"X-Custom-Client": "my-client",
+			},
+			body: JSON.stringify({
+				model: "mimo-v2.6-flash-free",
+				messages: [{ role: "user", content: "hello" }],
+			}),
+		});
+
+		await mockGlobal.fetch(requestObj);
+
+		assert.equal(capturedUrl, "https://opencode.ai/zen/v1/chat/completions");
+		const headers = new Headers(capturedInit?.headers);
+		assert.equal(
+			headers.get("Authorization"),
+			"Bearer oc_sk_auth_secret",
+			"Request 对象的 Authorization 必须完整保留",
+		);
+		assert.equal(headers.get("X-Custom-Client"), "my-client");
+		assert.equal(headers.get("User-Agent"), "opencode/1.18.32 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14");
+		assert.ok(headers.get("x-opencode-session")?.startsWith("ses_"));
+	});
+
+	it("installZenFetchInterceptor: Compaction 上下文超限保护（截断中间冗余消息）", async () => {
+		const { installZenFetchInterceptor } = require("./index.js");
+
+		let capturedInit: RequestInit | undefined;
+		const mockRes = new Response(JSON.stringify({ id: "ok" }), { status: 200 });
+
+		const mockGlobal: any = {
+			fetch: async (_input: any, init: any) => {
+				capturedInit = init;
+				return mockRes;
+			},
+		};
+
+		installZenFetchInterceptor(mockGlobal);
+
+		// 构建大量超长消息 (>600k 字符)
+		const longText = "x".repeat(100_000);
+		const hugeMessages = [
+			{ role: "system", content: "You are an assistant" },
+			{ role: "user", content: "Initial goal: do task" },
+			{ role: "assistant", content: longText },
+			{ role: "user", content: longText },
+			{ role: "assistant", content: longText },
+			{ role: "user", content: longText },
+			{ role: "assistant", content: longText },
+			{ role: "user", content: "Summarize the above conversation" },
+		];
+
+		await mockGlobal.fetch("https://opencode.ai/zen/v1/chat/completions", {
+			method: "POST",
+			headers: { Authorization: "Bearer test" },
+			body: JSON.stringify({
+				model: "mimo-v2.6-flash-free",
+				messages: hugeMessages,
+			}),
+		});
+
+		const parsed = JSON.parse(String(capturedInit?.body));
+		assert.ok(parsed.messages.length < hugeMessages.length, "中间过载消息必须被适度裁剪");
+		assert.equal(parsed.messages[0].role, "system");
+		assert.equal(parsed.messages[0].content, "You are an assistant");
+		assert.equal(parsed.messages[1].content, "Initial goal: do task");
+		assert.ok(
+			parsed.messages[2].content.includes("Zen Guard"),
+			"裁剪处必须插入 Zen Guard 提示信息",
+		);
+		assert.equal(
+			parsed.messages[parsed.messages.length - 1].content,
+			"Summarize the above conversation",
+			"末尾最新总结要求必须保留",
+		);
+	});
+
+	it("setActiveZenSessionId 与 getActiveZenSessionId 内存缓存有效性", () => {
+		const testSes = generateZenSessionId();
+		setActiveZenSessionId(testSes);
+		assert.equal(getActiveZenSessionId(), testSes);
+
+		// 过期 Session 不会被作为活跃缓存返回
+		const expiredSes = generateZenSessionId(Date.now() - 35 * 60 * 1000);
+		setActiveZenSessionId(expiredSes);
+		assert.equal(getActiveZenSessionId(), null);
+
+		// 清空缓存
+		setActiveZenSessionId(null);
+		assert.equal(getActiveZenSessionId(), null);
 	});
 });
 

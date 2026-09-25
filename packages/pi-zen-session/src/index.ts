@@ -32,10 +32,12 @@ import {
 	ZEN_USER_AGENT,
 } from "./models-registry.js";
 import {
+	getActiveZenSessionId,
 	getStoredZenApiKey,
 	getStoredZenModels,
 	getStoredZenSessionId,
 	getZenStatusInfo,
+	setActiveZenSessionId,
 	syncZenConfiguration,
 } from "./sync.js";
 import {
@@ -106,6 +108,16 @@ export function isZenModelTarget(model?: { provider?: string; id?: string }, pay
 	return false;
 }
 
+let lastAutoSyncMs = 0;
+function debouncedAutoSync(forceSession = true): void {
+	const now = Date.now();
+	if (now - lastAutoSyncMs < 30_000) {
+		return;
+	}
+	lastAutoSyncMs = now;
+	syncZenConfiguration({ forceSession }).catch(() => {});
+}
+
 export function installZenFetchInterceptor(targetGlobal: typeof globalThis = globalThis): void {
 	const ZEN_FETCH_INTERCEPTOR = Symbol.for("ck.zen.fetch.interceptor");
 	if ((targetGlobal as any)[ZEN_FETCH_INTERCEPTOR]) {
@@ -118,15 +130,34 @@ export function installZenFetchInterceptor(targetGlobal: typeof globalThis = glo
 		input: RequestInfo | URL,
 		init?: RequestInit,
 	): Promise<Response> {
-		const url =
-			typeof input === "string"
-				? input
-				: input instanceof URL
-				? input.href
-				: (input as Request)?.url;
+		// 1. 严格过滤：仅拦截发往 OpenCode Zen 的 chat/completions 请求
+		// 严禁拦截 /models 等管理与元数据接口，彻底切断同步与请求拦截间的自调用递归闭环
+		let targetUrl: string;
+		const headers = new Headers();
 
-		if (!url || !url.includes("opencode.ai/zen/v1")) {
+		if (typeof input === "string") {
+			targetUrl = input;
+		} else if (input instanceof URL) {
+			targetUrl = input.href;
+		} else if (input && typeof (input as Request).url === "string") {
+			targetUrl = (input as Request).url;
+			// 继承 Request 对象上的全部原始 Headers (如 Authorization)
+			const reqHeaders = (input as Request).headers;
+			if (reqHeaders && typeof reqHeaders.forEach === "function") {
+				reqHeaders.forEach((val, key) => headers.set(key, val));
+			}
+		} else {
 			return originalFetch.call(this, input, init);
+		}
+
+		if (!targetUrl.includes("opencode.ai/zen/v1/chat/completions")) {
+			return originalFetch.call(this, input, init);
+		}
+
+		// 合并 init 中传入的 Headers
+		if (init?.headers) {
+			const initHeaders = new Headers(init.headers);
+			initHeaders.forEach((val, key) => headers.set(key, val));
 		}
 
 		// 检查并获取有效 Session ID (若过期或缺失自动轮换)
@@ -137,13 +168,13 @@ export function installZenFetchInterceptor(targetGlobal: typeof globalThis = glo
 			isZenSessionExpired(currentSession, DEFAULT_SESSION_MAX_AGE_MS)
 		) {
 			currentSession = generateZenSessionId();
-			syncZenConfiguration({ forceSession: true }).catch(() => {});
+			setActiveZenSessionId(currentSession);
+			debouncedAutoSync(true);
 		}
 
 		const requestId = generateZenRequestId();
 
 		// 构建完整官方客户端伪装请求头
-		const headers = new Headers(init?.headers);
 		headers.set("User-Agent", ZEN_USER_AGENT);
 		headers.set("x-opencode-client", "cli");
 		if (!headers.has("x-opencode-project")) {
@@ -212,6 +243,36 @@ export function installZenFetchInterceptor(targetGlobal: typeof globalThis = glo
 					modified = true;
 				}
 
+				// E. 上下文超限保护（Compaction Context Guard）：
+				// 当上下文过大（如会话累积超 40 万 Token，超过 200K 模型上限）触发 Compaction 时，
+				// 避免超大请求体导致 Cloudflare/OpenCode 网关连接重置或 400 溢出报错。
+				// 自动保留初始上下文与最近会话消息，修剪中间冗余历史，确保总结和压缩请求顺利跑通。
+				if (Array.isArray(payload.messages) && payload.messages.length > 6) {
+					const bodyStr = JSON.stringify(payload.messages);
+					// 500,000 字符约为 125,000 tokens，能安全适配 200k 上下文窗口
+					if (bodyStr.length > 500_000) {
+						const head = payload.messages.slice(0, 2);
+						const tail: unknown[] = [];
+						let tailChars = 0;
+						// 从末尾向前累加，保留约 300,000 字符的最新上下文
+						for (let i = payload.messages.length - 1; i >= 2; i--) {
+							const msg = payload.messages[i];
+							const msgLen = JSON.stringify(msg).length;
+							if (tailChars + msgLen > 300_000 && tail.length > 0) {
+								break;
+							}
+							tail.unshift(msg);
+							tailChars += msgLen;
+						}
+						const notice = {
+							role: "system",
+							content: `[Zen Guard: Omitted ${payload.messages.length - head.length - tail.length} intermediate messages to fit context window for compaction]`,
+						};
+						payload.messages = [...head, notice, ...tail];
+						modified = true;
+					}
+				}
+
 				if (modified) {
 					newBody = JSON.stringify(payload);
 				}
@@ -226,11 +287,16 @@ export function installZenFetchInterceptor(targetGlobal: typeof globalThis = glo
 			body: newBody,
 		};
 
-		const response = await originalFetch.call(this, input, newInit);
+		let response: Response;
+		try {
+			response = await originalFetch.call(this, targetUrl, newInit);
+		} catch (networkError) {
+			throw networkError;
+		}
 
-		// 遇 401/403 自动触发 Session 自愈轮换
+		// 遇 401/403 自动触发 Session 自愈轮换 (防抖控制，30 秒最多一次)
 		if (response.status === 401 || response.status === 403) {
-			syncZenConfiguration({ forceSession: true }).catch(() => {});
+			debouncedAutoSync(true);
 		}
 
 		return response;
@@ -269,8 +335,9 @@ export default function piZenSession(pi: ExtensionAPI): void {
 			) {
 				currentSession = generateZenSessionId();
 				event.headers["x-opencode-session"] = currentSession;
+				setActiveZenSessionId(currentSession);
 				// 异步落盘，保持配置同步
-				syncZenConfiguration({ forceSession: true }).catch(() => {});
+				debouncedAutoSync(true);
 			}
 
 			// 注入全部官方客户端 7 维对齐请求头
@@ -358,8 +425,8 @@ export default function piZenSession(pi: ExtensionAPI): void {
 		if (!isZenModelTarget(ctx.model)) return;
 
 		if (event.status === 401 || event.status === 403) {
-			// 自动异步刷新 Session
-			syncZenConfiguration({ forceSession: true }).catch(() => {});
+			// 自动异步刷新 Session (防抖)
+			debouncedAutoSync(true);
 			if (ctx.hasUI) {
 				ctx.ui.notify(
 					`检测到 OpenCode Zen 会话受限 (HTTP ${event.status})，已自动轮换新 Session ID。`,

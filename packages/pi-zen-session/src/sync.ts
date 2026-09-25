@@ -168,17 +168,53 @@ export function getStoredZenApiKey(authPath = defaultAuthPath(), modelsPath = de
 	return null;
 }
 
+let activeInMemorySessionId: string | null = null;
+
 /**
- * 读取当前已配置的 Session ID
+ * 设置当前进程内存中的最新活跃 Session ID
+ */
+export function setActiveZenSessionId(sessionId: string | null): void {
+	if (sessionId && isValidZenSessionId(sessionId)) {
+		activeInMemorySessionId = sessionId;
+	} else if (!sessionId) {
+		activeInMemorySessionId = null;
+	}
+}
+
+/**
+ * 获取当前内存中仍处于有效期内的活跃 Session ID
+ */
+export function getActiveZenSessionId(): string | null {
+	if (
+		activeInMemorySessionId &&
+		isValidZenSessionId(activeInMemorySessionId) &&
+		!isZenSessionExpired(activeInMemorySessionId, DEFAULT_SESSION_MAX_AGE_MS)
+	) {
+		return activeInMemorySessionId;
+	}
+	return null;
+}
+
+/**
+ * 读取当前已配置的 Session ID (优先读取内存有效会话)
  */
 export function getStoredZenSessionId(modelsPath = defaultModelsPath()): string | null {
+	if (modelsPath === defaultModelsPath()) {
+		const active = getActiveZenSessionId();
+		if (active) return active;
+	}
 	try {
 		if (existsSync(modelsPath)) {
 			const models = JSON.parse(readFileSync(modelsPath, "utf8")) as {
 				providers?: Record<string, { headers?: { "x-opencode-session"?: string } }>;
 			};
 			const ses = models.providers?.[ZEN_PROVIDER_ID]?.headers?.["x-opencode-session"];
-			if (isValidZenSessionId(ses)) return ses;
+			if (isValidZenSessionId(ses)) {
+				if (modelsPath === defaultModelsPath() && !isZenSessionExpired(ses, DEFAULT_SESSION_MAX_AGE_MS)) {
+					activeInMemorySessionId = ses;
+				}
+				return ses;
+			}
 		}
 	} catch {
 		// 忽略错误
@@ -231,10 +267,71 @@ export function getZenStatusInfo(
 	};
 }
 
+let syncInFlightPromise: Promise<ZenSyncResult> | null = null;
+let lastSyncSuccessTime = 0;
+
 /**
  * 执行 OpenCode Zen 全量同步（Key 校验、模型拉取、Session 生成、文件落盘、CC-Switch 数据库同步）
+ * 内置防并发风暴单例互斥锁，多处并发调用自动合并为单一网络/文件操作
  */
 export async function syncZenConfiguration(options: ZenSyncOptions = {}): Promise<ZenSyncResult> {
+	const isDefaultSync =
+		!options.apiKey &&
+		!options.modelsPath &&
+		!options.authPath &&
+		!options.dbPath &&
+		!options.fetchModels;
+
+	if (isDefaultSync) {
+		// 并发调用互斥：若当前已有同步在执行，直接复用正在运行的 Promise
+		if (syncInFlightPromise) {
+			return syncInFlightPromise;
+		}
+
+		// 短期防抖保护：15 秒内若未强制轮换且当前 Session 仍有效，直接复用既有配置
+		if (!options.forceSession && Date.now() - lastSyncSuccessTime < 15_000) {
+			const existingSession = getStoredZenSessionId();
+			if (existingSession && !isZenSessionExpired(existingSession, DEFAULT_SESSION_MAX_AGE_MS)) {
+				const existingKey = getStoredZenApiKey();
+				if (existingKey) {
+					const existingModels = getStoredZenModels();
+					return {
+						apiKey: existingKey,
+						sessionId: existingSession,
+						isNewSession: false,
+						modelsCount: existingModels.length,
+						models: existingModels.map((m) => m.id),
+						resolvedModels: existingModels,
+						modelsPath: defaultModelsPath(),
+						ccSwitchUpdated: false,
+					};
+				}
+			}
+		}
+	}
+
+	const executeSync = async (): Promise<ZenSyncResult> => {
+		try {
+			const result = await doSyncZenConfiguration(options);
+			lastSyncSuccessTime = Date.now();
+			setActiveZenSessionId(result.sessionId);
+			return result;
+		} finally {
+			if (isDefaultSync) {
+				syncInFlightPromise = null;
+			}
+		}
+	};
+
+	if (isDefaultSync) {
+		syncInFlightPromise = executeSync();
+		return syncInFlightPromise;
+	}
+
+	return executeSync();
+}
+
+async function doSyncZenConfiguration(options: ZenSyncOptions = {}): Promise<ZenSyncResult> {
 	const modelsPath = options.modelsPath ?? defaultModelsPath();
 	const authPath = options.authPath ?? defaultAuthPath();
 	const dbPath = options.dbPath ?? defaultCcSwitchDbPath();

@@ -30,6 +30,11 @@ OpenCode Zen 免费模型同步、请求头伪装与 Session 会话自动维护�
 - 🚨 **远端集群健康状态感知与自愈告警守卫 (v0.1.10)**：新增针对 502/503/504 等网关状态码的健康感知拦截，当上游端点临时离线或集群不可用时（如 upstream 503 Endpoint unavailable），实时发出友善桌面与界面通知，避免无效死循环。
 - 🎯 **OpenAI 兼容协议全面净化与非思考模型智能防御 (v0.1.11)**：基于 OpenCode CLI 官方核心（`@ai-sdk/openai-compatible`）深度规范对齐：针对 `jev-1.13-free` 等非思考模型自动剔除 `reasoning_effort`，并彻底清除任何非法顶层 `thinking` 冗余字段；思考档位严格安全规约（`max`/`xhigh` -> `high`，`minimal` -> `low`），实现 0 错误率的完美协议传输。
 - 🛡️ **全局 Fetch 底层拦截与会话压缩 403 根治防御 (v0.1.13)**：新增 `installZenFetchInterceptor()` 全局底层 Fetch 守卫。彻底解决 Pi 在执行上下文会话压缩（Compaction/Summarization）时直接通过底层运行时发送纯文本无工具请求、绕过 Agent 生命周期钩子进而触发 OpenCode 官方网关 `403 FreeTierError`（"OpenCode's free tier can only be used from within OpenCode"）的死锁难题。底层自动捕获所有发往 `opencode.ai/zen/v1` 的直接请求，动态注入官方 6 大核心工具链、毫秒级降序 Session ID 与升序 Request ID，并对齐 `stream_options`，全自动防 403 / 401 故障自愈。
+- ⚡ **拦截器递归死循环与调用栈溢出根治，并发单例锁与超限压缩保护 (v0.1.14)**：
+  - **切断递归闭环**：严格限定 Fetch 拦截器仅处理 `chat/completions`，绝不拦截 `/models` 等管理与元数据接口，杜绝同步与拦截间的自调用递归闭环（根除 `RangeError: Maximum call stack size exceeded`）；
+  - **防并发风暴单例锁**：引入 `syncInFlightPromise` 互斥单例与 30 秒防抖控制，多处并发调用自动合并，消灭重复落盘与文件冲突；
+  - **Request 原生凭证无损继承**：完善支持 `Request` 对象输入，彻底保留原始 `Authorization` 等全部 HTTP 头；
+  - **Compaction Context Guard（超长会话自愈保护）**：当上下文过大 (>50万字符) 触发会话压缩总结时，智能保留起始目标与末尾最新消息，安全截断中间冗余历史，彻底消除超大请求导致的网关连接断开 (`Connection error`) 与 400 溢出。
 - 🔌 **全自动多端持久化同步**：自动双写 Pi 本地配置（`~/.pi/agent/models.json` 和 `~/.pi/agent/auth.json`），若检测到 CC-Switch 亦无缝同步其 SQLite 数据库。
 
 ---
