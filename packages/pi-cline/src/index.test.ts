@@ -83,9 +83,26 @@ describe("Cline 模型注册表与能力推断测试", () => {
 		assert.equal(dynamicFree.maxTokens, 16384);
 		assert.equal(dynamicFree.cost.input, 0);
 
+		// 远端 pricing 为 0 的未带 free 标识模型（0 额度扣费模型）
+		const zeroPriceModel = inferClineModelCapabilities("custom-ai/future-stealth-router", {
+			context_length: 1000000,
+			pricing: { prompt: "0", completion: "0", request: "0" },
+		});
+		assert.equal(zeroPriceModel.isFree, true);
+		assert.equal(zeroPriceModel.cost.input, 0);
+
+		// credit_cost 为 0 的免扣费模型
+		const zeroCreditModel = inferClineModelCapabilities("custom-ai/free-experimental-coder", {
+			context_length: 256000,
+			credit_cost: 0,
+		});
+		assert.equal(zeroCreditModel.isFree, true);
+		assert.equal(zeroCreditModel.cost.input, 0);
+
 		// 未知付费模型
 		const paid = inferClineModelCapabilities("anthropic/claude-3-5-sonnet", {
 			context_length: 200000,
+			pricing: { prompt: "0.003", completion: "0.015" },
 		});
 		assert.equal(paid.isFree, false);
 		assert.ok(paid.cost.input > 0);

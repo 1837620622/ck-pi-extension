@@ -378,11 +378,13 @@ export function isClineFreeModel(rawId: string): boolean {
 	if (KNOWN_CLINE_FREE_MODELS[resolved]?.isFree) return true;
 	const lower = resolved.toLowerCase();
 	return (
+		lower.includes("free") ||
 		lower.endsWith(":free") ||
 		lower === "stealth/space-bunny-alpha" ||
 		lower === "openrouter/free" ||
 		lower === "openrouter/fusion" ||
-		lower === "openrouter/pareto-code"
+		lower === "openrouter/pareto-code" ||
+		lower === "typesafe/jev-router"
 	);
 }
 
@@ -404,13 +406,41 @@ export function inferClineModelCapabilities(
 	}
 
 	const lower = modelId.toLowerCase();
-	const isFree =
+	let isFree =
 		lower.includes("free") ||
 		lower.endsWith(":free") ||
 		lower === "stealth/space-bunny-alpha" ||
 		lower === "openrouter/free" ||
 		lower === "openrouter/fusion" ||
-		lower === "openrouter/pareto-code";
+		lower === "openrouter/pareto-code" ||
+		lower === "typesafe/jev-router";
+
+	if (!isFree && raw && typeof raw === "object") {
+		// 1. 显式布尔免费标记
+		if (raw.is_free === true || raw.isFree === true || raw.free === true) {
+			isFree = true;
+		}
+
+		// 2. OpenRouter / Cline 定价对象 (pricing: { prompt: "0", completion: "0" })
+		const pricing = (raw.pricing || (raw as any).cost) as Record<string, unknown> | undefined;
+		if (pricing && typeof pricing === "object") {
+			const promptPrice = parseFloat(String(pricing.prompt ?? pricing.input ?? "1"));
+			const completionPrice = parseFloat(String(pricing.completion ?? pricing.output ?? "1"));
+			const requestPrice = parseFloat(String(pricing.request ?? "0"));
+			if (promptPrice === 0 && completionPrice === 0 && requestPrice === 0) {
+				isFree = true;
+			}
+		}
+
+		// 3. 额度消耗字段检测 (credit_cost / cost_per_request === 0)
+		if (
+			(typeof (raw as any).credit_cost === "number" && (raw as any).credit_cost === 0) ||
+			(typeof (raw as any).creditCost === "number" && (raw as any).creditCost === 0) ||
+			(typeof (raw as any).cost_per_request === "number" && (raw as any).cost_per_request === 0)
+		) {
+			isFree = true;
+		}
+	}
 
 	// 1. 上下文窗口识别
 	let contextWindow = 131072;
