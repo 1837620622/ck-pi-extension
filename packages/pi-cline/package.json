@@ -1,0 +1,49 @@
+{
+  "name": "ck-pi-cline",
+  "version": "0.1.0",
+  "description": "Cline Account API provider, official client header disguise, free model catalog synchronization, reverse proxy, and session management for the Pi coding agent.",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "pi-coding-agent",
+    "cline",
+    "cline-bot",
+    "reverse-proxy",
+    "free-tier"
+  ],
+  "license": "MIT",
+  "author": "传康Kk <1837620622@qq.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/1837620622/ck-pi-extension.git",
+    "directory": "packages/pi-cline"
+  },
+  "homepage": "https://github.com/1837620622/ck-pi-extension#pi-cline",
+  "bugs": {
+    "url": "https://github.com/1837620622/ck-pi-extension/issues"
+  },
+  "type": "module",
+  "bin": {
+    "cline-proxy": "./bin/cline-proxy.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "!src/*.test.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.85.0"
+  },
+  "scripts": {
+    "build": "esbuild src/bin.ts --bundle --platform=node --format=esm --outfile=bin/cline-proxy.js",
+    "prepack": "npm run build",
+    "test": "npm run build && esbuild src/index.test.ts --bundle --packages=external --platform=node --format=esm --outfile=.test-dist/test.mjs --log-level=warning && node --test .test-dist/test.mjs"
+  }
+}
