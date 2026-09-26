@@ -875,17 +875,27 @@ export default function piZenSession(pi: ExtensionAPI): void {
 		}
 	});
 
-	// 6. 注册 /zen 指令
+	// 6. 注册 /zen 指令（语法与 completions 与 /cline 完全对齐）
 	pi.registerCommand("zen", {
-		description: "OpenCode Zen 免费模型与 Session 会话自动维护 (/zen [key|refresh|status|list])",
+		description: "OpenCode Zen 免费模型与 Session 会话自动维护 (/zen [key|refresh|sync|status|list|free|ping|model])",
 		getArgumentCompletions: (prefix: string) => {
-			const candidates = ["refresh", "status", "list", "models"]
+			const candidates = [
+				"refresh",
+				"sync",
+				"status",
+				"list",
+				"models",
+				"free",
+				"key",
+				"model",
+				"ping",
+			]
 				.filter((cmd) => cmd.startsWith(prefix.toLowerCase()))
 				.map((cmd) => ({ value: cmd, label: cmd }));
 			return candidates.length > 0 ? candidates : null;
 		},
 		handler: async (args, ctx) => {
-			await handleZenCommand(args, ctx, pi);
+			return await handleZenCommand(args, ctx, pi);
 		},
 	});
 }
@@ -894,16 +904,18 @@ export async function handleZenCommand(
 	args: string,
 	ctx: ExtensionCommandContext,
 	pi?: ExtensionAPI,
-): Promise<void> {
+): Promise<string> {
 	const rawArg = args.trim();
-	const command = rawArg.toLowerCase();
+	const sub = rawArg.split(/\s+/);
+	const command = sub[0]?.toLowerCase() || "";
 
 	// 1. 查看状态: /zen status
 	if (command === "status") {
 		const status = getZenStatusInfo();
 		if (!status.hasKey) {
-			notify(ctx, "OpenCode Zen 尚未配置 API Key。请使用 /zen <oc_sk_xxx> 进行配置。", "warning");
-			return;
+			const warnMsg = "OpenCode Zen 尚未配置 API Key。请使用 /zen <oc_sk_xxx> 进行配置。";
+			notify(ctx, warnMsg, "warning");
+			return `[WARN] ${warnMsg}`;
 		}
 
 		const ageDesc = status.sessionAgeMinutes < 60
@@ -915,7 +927,7 @@ export async function handleZenCommand(
 		const visionCount = storedModels.filter((m) => m.input.includes("image")).length;
 
 		const msg = [
-			"✨ [OpenCode Zen 运行状态]",
+			"[OpenCode Zen 运行状态]",
 			`• API Key: ${status.maskedKey}`,
 			`• Session: ${status.sessionId || "未生成"} (${status.sessionExpired ? "已过期" : `有效，创建于 ${ageDesc}前`})`,
 			`• 模型库: 已激活 ${storedModels.length} 款 0 额度模型 (${reasoningCount} 款支持思考推理，${visionCount} 款支持多模态)`,
@@ -925,23 +937,25 @@ export async function handleZenCommand(
 			"  /zen <key>   - 更新 Key 并全自动识别免费模型/上下文/思考等级",
 			"  /zen refresh - 强制换新 Session ID",
 			"  /zen list    - 查看所有可用免费模型详细规格卡片",
+			"  /zen ping    - 实时探测 Zen 免费模型连通性与网络时延",
 		].join("\n");
 
 		notify(ctx, msg, "info");
-		return;
+		return msg;
 	}
 
-	// 2. 查看模型清单: /zen list 或 /zen models
-	if (command === "list" || command === "models") {
+	// 2. 查看模型清单: /zen list 或 /zen models 或 /zen free
+	if (command === "list" || command === "models" || command === "free") {
 		const storedModels = getStoredZenModels();
 		if (storedModels.length === 0) {
-			notify(ctx, "当前尚未同步任何模型，请先运行 /zen <key>。", "warning");
-			return;
+			const warn = "当前尚未同步任何模型，请先运行 /zen <key>。";
+			notify(ctx, warn, "warning");
+			return `[WARN] ${warn}`;
 		}
 
 		const modelCards = storedModels.map((m, idx) => formatModelCard(m, idx + 1));
 		const listMsg = [
-			`✨ [OpenCode Zen 免费模型列表 (${storedModels.length} 款)]`,
+			`[OpenCode Zen 免费模型列表 (${storedModels.length} 款)]`,
 			"智能识别精确上下文上限（Context）、最大输出（Max Tokens）及推理思考等级（Thinking）：",
 			"",
 			...modelCards,
@@ -950,11 +964,11 @@ export async function handleZenCommand(
 		].join("\n");
 
 		notify(ctx, listMsg, "info");
-		return;
+		return listMsg;
 	}
 
-	// 3. 强制换新 Session: /zen refresh
-	if (command === "refresh") {
+	// 3. 强制换新 Session: /zen refresh 或 /zen sync
+	if (command === "refresh" || command === "sync") {
 		try {
 			notify(ctx, "正在生成全新 OpenCode Zen 会话 ID 并同步...", "info");
 			const result = await syncZenConfiguration({ forceSession: true });
@@ -968,24 +982,94 @@ export async function handleZenCommand(
 			}
 			const reasoningCount = result.resolvedModels.filter((m) => m.reasoning).length;
 			const successMsg = [
-				"✓ OpenCode Zen Session 已成功刷新！",
+				"[OK] OpenCode Zen Session 已成功刷新！",
 				`• 全新 Session: ${result.sessionId}`,
 				`• 免费模型: 已对齐 ${result.modelsCount} 款 0 额度模型 (${reasoningCount} 款支持思考推理)`,
 				`• 请求头伪装: 7 维官方客户端签名已注入`,
-				`• 同步状态: models.json ✓ | CC-Switch ${result.ccSwitchUpdated ? "✓" : "-(未安装或无此条目)"}`,
+				`• 同步状态: models.json [OK] | CC-Switch ${result.ccSwitchUpdated ? "[OK]" : "-(未安装或无此条目)"}`,
 			].join("\n");
 			notify(ctx, successMsg, "info");
+			return successMsg;
 		} catch (error) {
-			notify(ctx, `刷新失败: ${formatError(error)}`, "error");
+			const err = `[ERR] 刷新失败: ${formatError(error)}`;
+			notify(ctx, err, "error");
+			return err;
 		}
-		return;
 	}
 
-	// 4. 输入了具体的 API Key: /zen oc_sk_... 或其它 key
-	if (rawArg.length > 0 && !["status", "refresh", "list", "models"].includes(command)) {
+	// 4. /zen ping [modelId]：网络时延实时探测
+	if (command === "ping") {
+		const target = sub[1] || "big-pickle";
+		const key = getStoredZenApiKey();
+		notify(ctx, "正在探测 OpenCode Zen 免费模型网络时延与连通性...", "info");
+		const start = Date.now();
+		try {
+			const res = await fetch(`${ZEN_BASE_URL}/chat/completions`, {
+				method: "POST",
+				headers: {
+					Authorization: `Bearer ${key}`,
+					"Content-Type": "application/json",
+					"User-Agent": ZEN_USER_AGENT,
+					"x-opencode-client": "cli",
+					"x-opencode-session": getStoredZenSessionId() || generateZenSessionId(),
+				},
+				body: JSON.stringify({
+					model: target,
+					messages: [{ role: "user", content: "ping" }],
+					max_tokens: 5,
+					stream: false,
+				}),
+			});
+			const ms = Date.now() - start;
+			const statusTag = res.ok ? "[200 OK]" : `[HTTP ${res.status}]`;
+			const speedTag = ms < 800 ? "极速" : ms < 2000 ? "良好" : "稍慢";
+			const pingMsg = `• ${target}: ${statusTag} (${ms}ms, ${speedTag})`;
+			notify(ctx, pingMsg, "info");
+			return pingMsg;
+		} catch (e: any) {
+			const ms = Date.now() - start;
+			const pingMsg = `• ${target}: [FAILED] (${ms}ms, ${e.message})`;
+			notify(ctx, pingMsg, "info");
+			return pingMsg;
+		}
+	}
+
+	// 5. /zen model <modelId>：快速切换模型
+	if (command === "model") {
+		const targetId = sub[1];
+		if (!targetId) {
+			const err = "[ERR] 用法: /zen model <模型ID>\n示例: /zen model big-pickle";
+			notify(ctx, err, "warning");
+			return err;
+		}
+		if (typeof (ctx as any).setModel === "function") {
+			await (ctx as any).setModel({ provider: ZEN_PROVIDER_ID, id: targetId });
+			const msg = `[OK] 已成功切换至 Zen 模型: ${targetId}`;
+			notify(ctx, msg, "info");
+			return msg;
+		}
+		const warnMsg = `[WARN] 当前环境暂不支持动态 setModel，请在配置文件或交互界面选择 ${targetId}`;
+		notify(ctx, warnMsg, "warning");
+		return warnMsg;
+	}
+
+	// 6. 输入了具体的 API Key: /zen oc_sk_... 或 /zen key oc_sk_...
+	let zenApiKey: string | undefined;
+	if (command === "key" && sub[1]) {
+		zenApiKey = sub[1].trim();
+	} else if (rawArg.startsWith("oc_sk_")) {
+		zenApiKey = rawArg;
+	} else if (
+		rawArg.length > 0 &&
+		!["status", "refresh", "sync", "list", "models", "free", "ping", "model"].includes(command)
+	) {
+		zenApiKey = rawArg;
+	}
+
+	if (zenApiKey) {
 		try {
 			notify(ctx, "正在验证 OpenCode Zen API Key 并智能探测免费模型上下文与思考等级...", "info");
-			const result = await syncZenConfiguration({ apiKey: rawArg, forceSession: true });
+			const result = await syncZenConfiguration({ apiKey: zenApiKey, forceSession: true });
 			if (pi) {
 				registerZenProviderToPi(pi, result.apiKey, result.sessionId, result.resolvedModels);
 			}
@@ -999,7 +1083,7 @@ export async function handleZenCommand(
 			const reasoningCount = result.resolvedModels.filter((m) => m.reasoning).length;
 
 			const msg = [
-				"🎉 OpenCode Zen 配置成功！免费套餐与零额度模型已全自动识别并对接：",
+				"[OK] OpenCode Zen 配置成功！免费套餐与零额度模型已全自动识别并对接：",
 				`• API Key: ${maskKey(result.apiKey)} (已验证并保存)`,
 				`• 会话 Session: ${result.sessionId} (官方降序时间戳逆向算法，30分钟自动轮换自愈)`,
 				`• 识别到 ${result.modelsCount} 款 0 额度免费模型 (${reasoningCount} 款支持深度推理/思考)：`,
@@ -1011,13 +1095,15 @@ export async function handleZenCommand(
 				"提示：全部模型参数已热载入 Pi，输入 /model 或在模型选择器中可即刻选用！",
 			].filter(Boolean).join("\n");
 			notify(ctx, msg, "info");
+			return msg;
 		} catch (error) {
-			notify(ctx, `配置失败: ${formatError(error)}`, "error");
+			const err = `[ERR] 配置失败: ${formatError(error)}`;
+			notify(ctx, err, "error");
+			return err;
 		}
-		return;
 	}
 
-	// 5. 无参调用: /zen
+	// 7. 无参调用: /zen
 	const status = getZenStatusInfo();
 	if (status.hasKey) {
 		// 已有 Key 时，自动强制刷新 Session 并重新注册热载
@@ -1034,7 +1120,7 @@ export async function handleZenCommand(
 			}
 			const reasoningCount = result.resolvedModels.filter((m) => m.reasoning).length;
 			const msg = [
-				"✨ [OpenCode Zen 已自动刷新并就绪]",
+				"[OpenCode Zen 已自动刷新并就绪]",
 				`• API Key: ${maskKey(result.apiKey)}`,
 				`• 全新 Session: ${result.sessionId} (有效且已持久化)`,
 				`• 自动对接免费模型: 已同步 ${result.modelsCount} 个 0 额度消耗模型 (${reasoningCount} 款支持思考推理)`,
@@ -1044,12 +1130,15 @@ export async function handleZenCommand(
 				"  /zen <key>   - 更换 API Key (自动重识免费模型/上下文/思考等级)",
 				"  /zen status  - 详情状态",
 				"  /zen list    - 查看所有可用免费模型详细规格",
+				"  /zen ping    - 实时探测网络连通性与时延",
 			].join("\n");
 			notify(ctx, msg, "info");
+			return msg;
 		} catch (error) {
-			notify(ctx, `同步状态失败: ${formatError(error)}`, "error");
+			const err = `[ERR] 同步状态失败: ${formatError(error)}`;
+			notify(ctx, err, "error");
+			return err;
 		}
-		return;
 	}
 
 	// 没有 Key，如果在支持交互的 UI 环境下，弹出输入框
@@ -1060,17 +1149,19 @@ export async function handleZenCommand(
 				"oc_sk_",
 			);
 			if (enteredKey && enteredKey.trim()) {
-				await handleZenCommand(enteredKey.trim(), ctx, pi);
-				return;
+				return await handleZenCommand(enteredKey.trim(), ctx, pi);
 			}
-			notify(ctx, "已取消输入。如需配置请使用 /zen <oc_sk_xxx>", "info");
-			return;
+			const cancelMsg = "已取消输入。如需配置请使用 /zen <oc_sk_xxx>";
+			notify(ctx, cancelMsg, "info");
+			return cancelMsg;
 		} catch {
 			// fallthrough to text usage
 		}
 	}
 
-	notify(ctx, "请提供 OpenCode Zen API Key。用法：/zen <oc_sk_xxx>", "warning");
+	const noKeyMsg = "请提供 OpenCode Zen API Key。用法：/zen <oc_sk_xxx>";
+	notify(ctx, noKeyMsg, "warning");
+	return `[WARN] ${noKeyMsg}`;
 }
 
 function maskKey(key: string): string {

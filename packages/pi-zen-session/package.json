@@ -1,6 +1,6 @@
 {
   "name": "ck-pi-zen-session",
-  "version": "0.1.17",
+  "version": "0.1.18",
   "description": "OpenCode Zen session auto-refresh and free-tier model catalog synchronization for the Pi coding agent.",
   "keywords": [
     "pi-package",
@@ -12,7 +12,7 @@
     "free-tier"
   ],
   "license": "MIT",
-  "author": "传康Kk <1837620622@qq.com>",
+  "author": "传康Kk（万能程序员）",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/1837620622/ck-pi-extension.git",

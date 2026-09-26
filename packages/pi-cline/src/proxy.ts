@@ -357,13 +357,16 @@ export async function startClineProxyServer(
 													}
 
 													const choice = chunk.choices?.[0];
-													if (choice?.delta?.content || (Array.isArray(choice?.delta?.tool_calls) && choice.delta.tool_calls.length > 0)) {
+													const rawReasoning = choice?.delta?.reasoning_content || choice?.delta?.reasoning || (choice?.delta as any)?.thinking;
+
+													if (choice?.delta?.content || (Array.isArray(choice?.delta?.tool_calls) && choice.delta.tool_calls.length > 0) || rawReasoning) {
 														hasSentAnyContent = true;
 													}
 
-													// 规范化思考过程：若具备 reasoning 则自动注入 reasoning_content
-													if (choice?.delta?.reasoning && !choice.delta.reasoning_content) {
-														choice.delta.reasoning_content = choice.delta.reasoning;
+													// 规范化思考过程：全量保障 CoT 完整转发（双向写入 reasoning 与 reasoning_content）
+													if (rawReasoning && choice?.delta) {
+														choice.delta.reasoning_content = rawReasoning;
+														choice.delta.reasoning = rawReasoning;
 														res.write(`data: ${JSON.stringify(chunk)}\n\n`);
 														continue;
 													}

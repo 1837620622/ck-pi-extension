@@ -505,7 +505,30 @@ export function formatTokens(tokens: number): string {
 }
 
 /**
- * 格式化模型卡片（专业无 Emoji 终端风格）
+ * 格式化模型思考等级与推理能力描述
+ */
+export function formatThinkingSummary(model: ClineModelDefinition): string {
+	if (!model.reasoning) {
+		return "不支持 (快反系统/无需思考)";
+	}
+	if (!model.thinkingLevelMap) {
+		return "支持思考 (默认档位)";
+	}
+	const activeLevels = Object.entries(model.thinkingLevelMap)
+		.filter(([_, v]) => v !== null && v !== undefined)
+		.map(([k]) => k);
+
+	if (activeLevels.length >= 6) {
+		return `6档深度思考 [${activeLevels.join(", ")}]`;
+	}
+	if (activeLevels.length > 0) {
+		return `${activeLevels.length}档思考 [${activeLevels.join(", ")}]`;
+	}
+	return "支持思考";
+}
+
+/**
+ * 格式化模型卡片（专业无 Emoji 终端风格单行）
  */
 export function formatClineModelCard(model: ClineModelDefinition): string {
 	const freeTag = model.isFree ? "\x1b[32m[FREE]\x1b[0m" : "\x1b[33m[PAID]\x1b[0m";
@@ -515,6 +538,25 @@ export function formatClineModelCard(model: ClineModelDefinition): string {
 	const outStr = formatTokens(model.maxTokens);
 
 	return `  • \x1b[36m${model.id.padEnd(50)}\x1b[0m ${freeTag} ${reasonTag} ${imageTag} \x1b[90m(ctx: ${ctxStr}, out: ${outStr})\x1b[0m`;
+}
+
+/**
+ * 格式化模型详细规格卡片 (与 Zen 插件对齐的双行树形结构)
+ */
+export function formatClineModelDetailCard(model: ClineModelDefinition, index?: number): string {
+	const prefix = typeof index === "number" ? `${index}. ` : "• ";
+	const ctxTokens = model.contextWindow;
+	const outTokens = model.maxTokens;
+	const ctxStr = `${formatTokens(ctxTokens)} (${ctxTokens.toLocaleString("en-US")} tokens)`;
+	const outStr = `${formatTokens(outTokens)} (${outTokens.toLocaleString("en-US")} tokens)`;
+	const thinkStr = formatThinkingSummary(model);
+	const inputStr = model.input.includes("image") ? "文本 + 视觉 (多模态)" : "纯文本";
+	const freeTag = model.isFree ? "0免费 (实测 0 Credit 消耗)" : "付费";
+
+	return [
+		`${prefix}${model.name} (${model.id})`,
+		`   └─ 上下文: ${ctxStr} | 最大输出: ${outStr} | 思考等级: ${thinkStr} | 模态: ${inputStr} | 额度: ${freeTag}`,
+	].join("\n");
 }
 
 /**
@@ -544,3 +586,4 @@ export function formatClineModelsTable(models: ClineModelDefinition[]): string {
 
 	return lines.join("\n");
 }
+

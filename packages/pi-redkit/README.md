@@ -86,7 +86,6 @@ pi install npm:ck-pi-redkit
 2）目标是否在本次授权范围内。授权段已写明"合规责任由操作者承担、模型只做技术执行"，
 若特定模型仍拒绝，把拒绝原文贴出来，我针对性调措辞。
 
-## 作者
+## License
 
-传康Kk（万能程序员）——GitHub：[1837620622](https://github.com/1837620622)，
-邮箱：`1837620622@qq.com`。License: MIT.
+MIT License.

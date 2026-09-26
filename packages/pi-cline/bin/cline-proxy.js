@@ -596,11 +596,13 @@ async function startClineProxyServer(options = {}) {
                             continue;
                           }
                           const choice = chunk.choices?.[0];
-                          if (choice?.delta?.content || Array.isArray(choice?.delta?.tool_calls) && choice.delta.tool_calls.length > 0) {
+                          const rawReasoning = choice?.delta?.reasoning_content || choice?.delta?.reasoning || choice?.delta?.thinking;
+                          if (choice?.delta?.content || Array.isArray(choice?.delta?.tool_calls) && choice.delta.tool_calls.length > 0 || rawReasoning) {
                             hasSentAnyContent = true;
                           }
-                          if (choice?.delta?.reasoning && !choice.delta.reasoning_content) {
-                            choice.delta.reasoning_content = choice.delta.reasoning;
+                          if (rawReasoning && choice?.delta) {
+                            choice.delta.reasoning_content = rawReasoning;
+                            choice.delta.reasoning = rawReasoning;
                             res.write(`data: ${JSON.stringify(chunk)}
 
 `);

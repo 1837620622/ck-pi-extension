@@ -1,7 +1,7 @@
 # ck-pi-cline
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.1.0-blue.svg?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.1.1-blue.svg?style=flat-square" alt="Version" />
   <img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License" />
   <img src="https://img.shields.io/badge/runtime-Pi%20Agent%20%3E%3D0.85.0-orange.svg?style=flat-square" alt="Pi Runtime" />
   <img src="https://img.shields.io/badge/protocol-OpenAI%20Compatible-informational.svg?style=flat-square" alt="Protocol" />
@@ -235,24 +235,29 @@ if (choice?.delta?.reasoning && !choice.delta.reasoning_content) {
 
 ## 四、命令使用与交互面板
 
-在 Pi 终端交互界面中，可通过 `/cline` 体系指令进行全方位控制：
+在 Pi 终端交互界面中，可通过 `/cline` 体系指令进行全方位控制（命令语法与 `/zen` 插件完全对称一致）：
+
+| 命令 | 说明 | 交互效果 |
+|:---|:---|:---|
+| `/cline` | **无参直接运行**：全自动在线探测拉取后端最新模型，刷新上下文与思考等级，同步 `models.json` / `auth.json` / CC-Switch 并热载入 Pi | 输出控制面板与已同步模型摘要 |
+| `/cline <key>` 或 `/cline key <key>` | **更新 API Key**：保存新 Key，自动在线探测拉取最新免费模型并热重载 | 输出新 Key 验证结果与模型卡片 |
+| `/cline refresh` 或 `/cline sync` | **强制在线刷新**：重新在线拉取远端模型目录并全量同步本地配置与运行时 | 输出同步状态报告 |
+| `/cline list` 或 `/cline models` | **查看模型列表**：展示全部 21 款零额度模型详细树形卡片（上下文、最大输出、思考等级、模态） | 输出分级卡片列表 |
+| `/cline free` | **查看零额度注册表**：分类呈现隐身零消耗模型与官方标准免费模型 | 输出分类结构表格 |
+| `/cline status` | **查看运行状态**：脱敏 Key、端点、可用模型总数、思考模型数、多模态数及本地反代状态 | 输出运行状态仪表盘 |
+| `/cline ping [模型ID]` | **网络时延探针**：实时探测免费模型连通性与往返延迟 (RTT) | 输出各模型网络时延与评级 |
+| `/cline model <模型ID>` | **快速切换模型**：一键切换当前 Pi 会话所使用的模型 | 即刻切换生效 |
+| `/cline proxy start [端口]` | **启动本地反向代理**：在指定端口（默认 4116）启动 OpenAI 兼容本地代理 | 输出端点信息 |
+| `/cline proxy stop` | **停止本地反向代理**：停止正在运行的代理进程 | 释放端口 |
 
 ```text
-=== Cline 免费模型与本地反代控制面板 ===
-• API Key: sk_0ea2...5625dd
+[Cline 免费模型与本地反代控制面板]
+• API Key: sk_0ea24...25dd (已验证并持久化)
 • 基础端点: https://api.cline.bot/api/v1
-• 当前会话模型: cline/stealth/space-bunny-alpha
-• 已收录可用模型: 21 款 (21 款完全免费 / 零额度消耗)
-• 本地反向代理: 运行中 (http://127.0.0.1:4116/v1)
-
-常用指令:
-  /cline free                  查看全部免费与隐身模型及上下文规格
-  /cline ping [模型ID]         实时探测免费模型连通性与网络时延
-  /cline sync                  重新探测并全量同步 models.json 与 CC-Switch
-  /cline model <模型ID>        快速切换至指定 Cline 模型
-  /cline key <API-KEY>         更新并持久化 Cline API Key
-  /cline proxy start [4116]    启动本地 OpenAI 兼容反向代理服务器
-  /cline proxy stop            停止本地反代服务器
+• 自动对接免费模型: 已同步 21 款 0 额度消耗模型 (19 款支持深度思考，1 款支持多模态视觉)
+• 官方客户端伪装: 8 维官方指纹签名已注入 (VSCode 4.1.16 / cline-vscode)
+• 本地配置同步: models.json [OK] | auth.json [OK] | CC-Switch DB [OK]
+• 本地反向代理: 未运行
 ```
 
 ### 1. 快速命令行调用
@@ -371,6 +376,11 @@ console.log(completion.choices[0].message.content);
 ---
 
 ## 六、版本变更记录 (Changelog)
+
+### v0.1.1 (2026-09-26)
+* **指令体系全面对称**：`/cline` 与 `/zen` 深度对齐，支持无参直接拉取远端模型、直接传入 Key 自动验证并热载入模型库、`refresh`/`sync`、`list`/`models`/`free`、`ping` 实时探针与 `model` 快捷切换；
+* **思考链 (CoT) 双向保全**：SSE 流式传输中同时双向写入 `delta.reasoning` 与 `delta.reasoning_content`，杜绝思考内容在部分客户端被遗漏；
+* **零表情纯净终端**：彻底清除终端输出与文档中的所有 Emoji，全面采用结构化标签与统一格式。
 
 ### v0.1.0 (2026-09-26)
 * **协议逆向与指纹注入**：完整实现官方 VS Code 扩展 4.1.16 的 8 大请求标头伪装；

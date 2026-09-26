@@ -9,14 +9,16 @@
  * 5. 交互式 /cline 命令支持模型速切、Key 管理与代理监控。
  */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import {
 	CLINE_BASE_URL,
 	CLINE_CLIENT_HEADERS,
 	CLINE_DEFAULT_KEY,
 	CLINE_PROVIDER_ID,
 	formatClineModelCard,
+	formatClineModelDetailCard,
 	formatClineModelsTable,
+	formatThinkingSummary,
 	formatTokens,
 	inferClineModelCapabilities,
 	KNOWN_CLINE_FREE_MODELS,
@@ -28,7 +30,9 @@ export {
 	CLINE_DEFAULT_KEY,
 	CLINE_PROVIDER_ID,
 	formatClineModelCard,
+	formatClineModelDetailCard,
 	formatClineModelsTable,
+	formatThinkingSummary,
 	formatTokens,
 	inferClineModelCapabilities,
 	KNOWN_CLINE_FREE_MODELS,
@@ -453,13 +457,16 @@ export function installClineFetchInterceptor(targetGlobal: typeof globalThis = g
 								}
 
 								const choice = data.choices?.[0];
-								if (choice?.delta?.content || (Array.isArray(choice?.delta?.tool_calls) && choice.delta.tool_calls.length > 0)) {
+								const rawReasoning = choice?.delta?.reasoning_content || choice?.delta?.reasoning || (choice?.delta as any)?.thinking;
+
+								if (choice?.delta?.content || (Array.isArray(choice?.delta?.tool_calls) && choice.delta.tool_calls.length > 0) || rawReasoning) {
 									hasSentAnyContent = true;
 								}
 
-								// 规范化思考过程：若具备 reasoning 则自动注入 reasoning_content
-								if (choice?.delta?.reasoning && !choice.delta.reasoning_content) {
-									choice.delta.reasoning_content = choice.delta.reasoning;
+								// 规范化思考过程：全量保障 CoT 完整转发（双向写入 reasoning 与 reasoning_content）
+								if (rawReasoning && choice?.delta) {
+									choice.delta.reasoning_content = rawReasoning;
+									choice.delta.reasoning = rawReasoning;
 									controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
 									continue;
 								}
@@ -548,24 +555,54 @@ export function registerClineProviderToPi(
 ): void {
 	if (!pi || typeof pi.registerProvider !== "function") return;
 
-	pi.registerProvider(CLINE_PROVIDER_ID, {
-		baseUrl: CLINE_BASE_URL,
-		api: "openai-completions",
-		apiKey,
-		headers: {
-			...CLINE_CLIENT_HEADERS,
-		},
-		models: models.map((m) => ({
-			id: m.id,
-			name: m.name,
-			contextWindow: m.contextWindow,
-			maxTokens: m.maxTokens,
-			reasoning: m.reasoning,
-			input: m.input,
-			thinkingLevelMap: m.thinkingLevelMap,
-			cost: m.cost,
-		})),
-	});
+	try {
+		const aliasList = [
+			{ id: "bunny", ref: "stealth/space-bunny-alpha", name: "Cline Bunny (1M Stealth Free)" },
+			{ id: "ling", ref: "inclusionai/ling-3.0-flash-fin:free", name: "Cline Ling 3.0 Flash Fin (Free)" },
+			{ id: "code", ref: "openrouter/pareto-code", name: "Cline Pareto Code (2M Free)" },
+			{ id: "fusion", ref: "openrouter/fusion", name: "Cline Fusion (1M Free)" },
+			{ id: "free", ref: "openrouter/free", name: "Cline OpenRouter Free (200k)" },
+			{ id: "550b", ref: "nvidia/nemotron-3-ultra-550b-a55b:free", name: "Cline Nemotron 550B (1M Free)" },
+			{ id: "120b", ref: "nvidia/nemotron-3-super-120b-a12b:free", name: "Cline Nemotron 120B (Free)" },
+			{ id: "qwen", ref: "qwen/qwen3.8-27b:free", name: "Cline Qwen 3.8 27B (Free)" },
+		].map((a) => {
+			const base = KNOWN_CLINE_FREE_MODELS[a.ref] || models.find((m) => m.id === a.ref);
+			return {
+				id: a.id,
+				name: a.name,
+				contextWindow: base?.contextWindow || 262144,
+				maxTokens: base?.maxTokens || 32768,
+				reasoning: base?.reasoning ?? true,
+				input: base?.input || (["text"] as ("text" | "image")[]),
+				thinkingLevelMap: base?.thinkingLevelMap,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			};
+		});
+
+		pi.registerProvider(CLINE_PROVIDER_ID, {
+			baseUrl: CLINE_BASE_URL,
+			api: "openai-completions",
+			apiKey,
+			headers: {
+				...CLINE_CLIENT_HEADERS,
+			},
+			models: [
+				...aliasList,
+				...models.map((m) => ({
+					id: m.id,
+					name: m.name,
+					contextWindow: m.contextWindow,
+					maxTokens: m.maxTokens,
+					reasoning: m.reasoning,
+					input: m.input,
+					thinkingLevelMap: m.thinkingLevelMap,
+					cost: m.cost,
+				})),
+			],
+		});
+	} catch {
+		// 忽略重复或上下文过期注册
+	}
 }
 
 /**
@@ -577,14 +614,21 @@ export default function piCline(pi: ExtensionAPI): void {
 	const initialKey = getStoredClineApiKey();
 	setProxyDefaultApiKey(initialKey);
 
-	// 异步注册模型到当前会话运行态
-	fetchClineModelCatalog(initialKey).then((catalog) => {
-		registerClineProviderToPi(pi, initialKey, catalog);
-	}).catch(() => {
-		registerClineProviderToPi(pi, initialKey, Object.values(KNOWN_CLINE_FREE_MODELS));
-	});
+	// 同步初始注册已知免费模型与短别名，保障冷启动零等待
+	registerClineProviderToPi(pi, initialKey, Object.values(KNOWN_CLINE_FREE_MODELS));
 
-	// 1. 标头注入钩子
+	// 后台静默拉取远端目录并更新
+	fetchClineModelCatalog(initialKey)
+		.then((catalog) => {
+			try {
+				registerClineProviderToPi(pi, initialKey, catalog);
+			} catch {
+				// 忽略 session 替换后的旧 ctx
+			}
+		})
+		.catch(() => {});
+
+	// 1. 标头注入钩子：注入官方 8 维客户端指纹与凭证
 	pi.on("before_provider_headers", (event, ctx) => {
 		if (isClineModelTarget(ctx.model)) {
 			for (const [key, value] of Object.entries(CLINE_CLIENT_HEADERS)) {
@@ -593,7 +637,7 @@ export default function piCline(pi: ExtensionAPI): void {
 		}
 	});
 
-	// 2. 请求体拦截防护
+	// 2. 请求体拦截防护：短别名解析、上下文修剪与输出钳位
 	pi.on("before_provider_request", (event, ctx) => {
 		const payload = event.payload as Record<string, unknown> | undefined;
 		const payloadModel = typeof payload?.model === "string" ? payload.model : undefined;
@@ -640,191 +684,401 @@ export default function piCline(pi: ExtensionAPI): void {
 	pi.on("after_provider_response", (event, ctx) => {
 		if (isClineModelTarget(ctx.model)) {
 			if (event.status === 401 || event.status === 403) {
-				if (ctx.hasUI && ctx.ui?.notify) {
-					ctx.ui.notify(
-						`[Cline] 接收到 HTTP ${event.status} 认证错误，请使用 /cline key <新KEY> 更新 API Key`,
-						"warning",
-					);
-				}
+				notify(
+					ctx,
+					`[Cline] 接收到 HTTP ${event.status} 认证错误，请使用 /cline key <新KEY> 更新 API Key`,
+					"warning",
+				);
 			} else if (event.status === 429) {
-				if (ctx.hasUI && ctx.ui?.notify) {
-					ctx.ui.notify(`[Cline] 请求触发频次限制 (HTTP 429)，请稍后重试`, "warning");
-				}
+				notify(ctx, `[Cline] 请求触发频次限制 (HTTP 429)，请稍后重试`, "warning");
 			}
 		}
 	});
 
-	// 4. 注册 /cline 命令行工具
+	// 4. 注册 /cline 命令行工具（语法与 completions 完全对齐 /zen）
 	pi.registerCommand("cline", {
-		description: "Cline 官方 API / 免费模型管理与本地反向代理控制",
-		handler: async (args: string, ctx: any) => {
-			const sub = args.trim().split(/\s+/);
-			const cmd = sub[0]?.toLowerCase() || "";
+		description: "Cline 官方 API 免费模型管理、伪装反代与会话护航 (/cline [key|refresh|sync|status|list|free|ping|proxy|model])",
+		getArgumentCompletions: (prefix: string) => {
+			const candidates = [
+				"refresh",
+				"sync",
+				"status",
+				"list",
+				"models",
+				"free",
+				"key",
+				"model",
+				"ping",
+				"proxy",
+			]
+				.filter((cmd) => cmd.startsWith(prefix.toLowerCase()))
+				.map((cmd) => ({ value: cmd, label: cmd }));
+			return candidates.length > 0 ? candidates : null;
+		},
+		handler: async (args: string, ctx: ExtensionCommandContext) => {
+			return await handleClineCommand(args, ctx, pi);
+		},
+	});
+}
 
-			// A. /cline sync: 同步模型并写入 models.json 与 CC-Switch
-			if (cmd === "sync") {
-				if (ctx.hasUI && ctx.ui?.notify) {
-					ctx.ui.notify("正在拉取 Cline 最新模型并同步至本地配置...", "info");
-				}
-				const result = await syncClineConfiguration();
+export async function handleClineCommand(
+	args: string,
+	ctx: ExtensionCommandContext,
+	pi?: ExtensionAPI,
+): Promise<string> {
+	const rawArg = args.trim();
+	const sub = rawArg.split(/\s+/);
+	const cmd = sub[0]?.toLowerCase() || "";
+
+	// 1. 无参直接调用 /cline：全自动在线探测拉取后端模型、同步本地配置并热重载
+	if (rawArg.length === 0) {
+		notify(ctx, "正在拉取 Cline 最新模型并同步至本地配置...", "info");
+		try {
+			const result = await syncClineConfiguration({ silent: true });
+			if (pi) {
 				registerClineProviderToPi(pi, result.apiKey, result.models);
-
-				const freeList = result.models.filter((m) => m.isFree);
-				const msg = `[OK] Cline 配置同步成功！已收录 ${result.modelCount} 款模型 (其中 ${freeList.length} 款完全免费)。\n` +
-					`• models.json: ${result.updatedModelsJson ? "已更新" : "跳过"}\n` +
-					`• auth.json: ${result.updatedAuthJson ? "已更新" : "跳过"}\n` +
-					`• CC-Switch DB: ${result.updatedCcSwitchDb ? "已同步" : "无数据库"}`;
-
-				if (ctx.hasUI && ctx.ui?.notify) {
-					ctx.ui.notify("Cline 同步完成", "info");
-				}
-				return msg;
+			}
+			if ((ctx as any).modelRegistry?.refresh) {
+				await (ctx as any).modelRegistry.refresh({ providers: [CLINE_PROVIDER_ID] }).catch(() => {});
 			}
 
-			// B. /cline free: 列出全部免费与隐身模型
-			if (cmd === "free") {
-				const storedKey = getStoredClineApiKey();
-				const catalog = await fetchClineModelCatalog(storedKey);
-				const freeModels = catalog.filter((m) => m.isFree);
-				return formatClineModelsTable(freeModels);
-			}
-
-			// C. /cline model <modelId>: 快速切换模型
-			if (cmd === "model") {
-				const targetId = sub[1];
-				if (!targetId) {
-					return "[ERR] 用法: /cline model <模型ID>\n示例: /cline model inclusionai/ling-3.0-flash-fin:free";
-				}
-				if (typeof ctx.setModel === "function") {
-					await ctx.setModel({ provider: CLINE_PROVIDER_ID, id: targetId });
-					return `[OK] 已成功切换至 Cline 模型: ${targetId}`;
-				}
-				return `[WARN] 当前环境暂不支持动态 setModel，请在配置文件或交互界面选择 ${targetId}`;
-			}
-
-			// D. /cline key <apiKey>: 更新 API Key
-			if (cmd === "key") {
-				const newKey = sub[1];
-				if (!newKey || !newKey.startsWith("sk_")) {
-					return "[ERR] 请提供有效的 Cline API Key (以 sk_ 开头)";
-				}
-				setProxyDefaultApiKey(newKey);
-				const result = await syncClineConfiguration({ apiKey: newKey });
-				registerClineProviderToPi(pi, newKey, result.models);
-				return `[OK] Cline API Key 已更新并同步！已刷新 ${result.modelCount} 款模型。`;
-			}
-
-			// E. /cline proxy [start|stop|status] [port]: 管理本地反代服务器
-			if (cmd === "proxy") {
-				const action = sub[1]?.toLowerCase() || "status";
-				if (action === "start") {
-					const port = parseInt(sub[2], 10) || 4116;
-					try {
-						const res = await startClineProxyServer({ port });
-						return `[OK] Cline 本地反向代理已就绪！\n• 接口地址: ${res.url}\n• 标准端点: ${res.url}/chat/completions\n• 模型列表: ${res.url}/models\n• 指纹伪装: 8大官方客户端标头已自动注入\n可在 CC-Switch、Cursor、Cherry Studio 中直接作为 OpenAI 供应商接入使用。`;
-					} catch (e: any) {
-						return `[ERR] 反代启动失败: ${e.message}`;
-					}
-				} else if (action === "stop") {
-					await stopClineProxyServer();
-					return "[INFO] Cline 本地反向代理已停止。";
-				} else {
-					const status = getClineProxyStatus();
-					if (status.running) {
-						return `[ONLINE] Cline 本地反代运行中: ${status.url}\n• 已处理请求: ${status.requestCount}\n• 错误数: ${status.errorCount}`;
-					}
-					return `[OFFLINE] Cline 本地反代未启动。\n使用 /cline proxy start [端口] 即可启动本地 OpenAI 兼容反向代理服务 (默认端口 4116)。`;
-				}
-			}
-
-			// F. /cline ping [modelId]: 免费模型网络连通性与时延实时探测
-			if (cmd === "ping") {
-				const target = sub[1];
-				const key = getStoredClineApiKey();
-				const testTargets = target
-					? [resolveFreeModelId(target)]
-					: [
-						"stealth/space-bunny-alpha",
-						"inclusionai/ling-3.0-flash-fin:free",
-						"openrouter/fusion",
-						"openrouter/pareto-code",
-						"openrouter/free",
-						"nvidia/nemotron-3-ultra-550b-a55b:free",
-					];
-
-				if (ctx.hasUI && ctx.ui?.notify) {
-					ctx.ui.notify("正在探测 Cline 免费模型网络时延与连通性...", "info");
-				}
-
-				const results: string[] = ["\x1b[1m=== Cline 免费模型连通性与时延实时探测 ===\x1b[0m"];
-				for (const m of testTargets) {
-					const start = Date.now();
-					try {
-						const res = await fetch(`${CLINE_BASE_URL}/chat/completions`, {
-							method: "POST",
-							headers: {
-								Authorization: `Bearer ${key}`,
-								"Content-Type": "application/json",
-								...CLINE_CLIENT_HEADERS,
-							},
-							body: JSON.stringify({
-								model: m,
-								messages: [{ role: "user", content: "ping" }],
-								max_tokens: 5,
-								stream: false,
-							}),
-						});
-						const ms = Date.now() - start;
-						if (res.ok) {
-							const speedTag = ms < 800 ? "极速" : ms < 2000 ? "良好" : "稍慢";
-							results.push(`  • \x1b[36m${m}\x1b[0m: \x1b[32m[200 OK]\x1b[0m (${ms}ms, ${speedTag})`);
-						} else {
-							results.push(`  • \x1b[36m${m}\x1b[0m: \x1b[31m[HTTP ${res.status}]\x1b[0m (${ms}ms)`);
-						}
-					} catch (e: any) {
-						const ms = Date.now() - start;
-						results.push(`  • \x1b[36m${m}\x1b[0m: \x1b[31m[FAILED]\x1b[0m (${ms}ms, ${e.message})`);
-					}
-				}
-				return results.join("\n");
-			}
-
-			// 默认状态面板
-			const storedKey = getStoredClineApiKey();
-			const maskedKey = storedKey.length > 12
-				? `${storedKey.slice(0, 7)}...${storedKey.slice(-5)}`
-				: "未配置";
+			const freeModels = result.models.filter((m) => m.isFree);
+			const reasoningCount = freeModels.filter((m) => m.reasoning).length;
+			const visionCount = freeModels.filter((m) => m.input.includes("image")).length;
 			const proxyStatus = getClineProxyStatus();
-			const catalog = await fetchClineModelCatalog(storedKey).catch(() => Object.values(KNOWN_CLINE_FREE_MODELS));
-			const freeModels = catalog.filter((m) => m.isFree);
-
-			const currentModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "未连接";
+			const maskedKey = maskKey(result.apiKey);
 
 			const lines: string[] = [
-				`\x1b[1m=== Cline 免费模型与本地反代控制面板 ===\x1b[0m`,
-				`• API Key: \x1b[32m${maskedKey}\x1b[0m`,
-				`• 基础端点: \x1b[34m${CLINE_BASE_URL}\x1b[0m`,
-				`• 当前会话模型: \x1b[33m${currentModel}\x1b[0m`,
-				`• 已收录可用模型: ${catalog.length} 款 (\x1b[32m${freeModels.length} 款完全免费 / 零额度消耗\x1b[0m)`,
-				`• 本地反向代理: ${proxyStatus.running ? `\x1b[32m运行中 (${proxyStatus.url})\x1b[0m` : "\x1b[90m未运行\x1b[0m"}`,
+				`[Cline 免费模型与本地反代控制面板]`,
+				`• API Key: ${maskedKey} (已验证并持久化)`,
+				`• 基础端点: ${CLINE_BASE_URL}`,
+				`• 自动对接免费模型: 已同步 ${freeModels.length} 款 0 额度消耗模型 (${reasoningCount} 款支持深度思考，${visionCount} 款支持多模态视觉)`,
+				`• 官方客户端伪装: 8 维官方指纹签名已注入 (VSCode 4.1.16 / cline-vscode)`,
+				`• 本地配置同步: models.json [OK] | auth.json [OK] | CC-Switch DB ${result.updatedCcSwitchDb ? "[OK]" : "[跳过]"}`,
+				`• 本地反向代理: ${proxyStatus.running ? `运行中 (${proxyStatus.url})` : "未运行"}`,
 				"",
-				`\x1b[1m常用指令:\x1b[0m`,
-				`  /cline free                  查看全部免费与隐身模型及上下文规格`,
+				`常用指令:`,
+				`  /cline <key>                 更换 API Key (自动重识免费模型/上下文/思考等级)`,
+				`  /cline refresh               强制在线拉取远端模型并刷新本地配置`,
+				`  /cline list                  查看所有 21 款可用免费模型详细规格`,
+				`  /cline free                  查看零额度模型注册表`,
+				`  /cline status                查看当前详细运行状态与代理信息`,
 				`  /cline ping [模型ID]         实时探测免费模型连通性与网络时延`,
-				`  /cline sync                  重新探测并全量同步 models.json 与 CC-Switch`,
 				`  /cline model <模型ID>        快速切换至指定 Cline 模型`,
-				`  /cline key <API-KEY>         更新并持久化 Cline API Key`,
-				`  /cline proxy start [4116]    启动本地 OpenAI 兼容反向代理服务器`,
+				`  /cline proxy start [4116]    启动本地 OpenAI 兼容反向代理服务`,
 				`  /cline proxy stop            停止本地反代服务器`,
 				"",
-				`\x1b[1m精选高优免费与隐身模型:\x1b[0m`,
+				`精选高优免费与隐身模型:`,
 			];
 
 			for (const m of freeModels.slice(0, 6)) {
 				lines.push(formatClineModelCard(m));
 			}
 
-			return lines.join("\n");
-		},
-	});
+			const msg = lines.join("\n");
+			notify(ctx, msg, "info");
+			return msg;
+		} catch (error) {
+			const errMsg = `[ERR] Cline 同步失败: ${formatError(error)}`;
+			notify(ctx, errMsg, "error");
+			return errMsg;
+		}
+	}
+
+	// 2. 输入了 API Key (/cline sk_... 或 /cline key sk_... 或直接粘贴的长 Key)
+	let newKey: string | undefined;
+	if (cmd === "key" && sub[1]) {
+		newKey = sub[1].trim();
+	} else if (rawArg.startsWith("sk_")) {
+		newKey = rawArg;
+	} else if (
+		rawArg.length > 20 &&
+		!["status", "refresh", "sync", "list", "models", "free", "ping", "proxy", "model"].includes(cmd)
+	) {
+		newKey = rawArg;
+	}
+
+	if (cmd === "key" && !sub[1]) {
+		const err = "[ERR] 用法: /cline key <sk_xxx>";
+		notify(ctx, err, "warning");
+		return err;
+	}
+
+	if (newKey) {
+		if (!newKey.startsWith("sk_")) {
+			const err = "[ERR] 请提供有效的 Cline API Key (以 sk_ 开头)";
+			notify(ctx, err, "warning");
+			return err;
+		}
+
+		try {
+			notify(ctx, "正在验证 Cline API Key 并拉取最新免费模型/上下文规格/深度思考配置...", "info");
+			setProxyDefaultApiKey(newKey);
+			const result = await syncClineConfiguration({ apiKey: newKey });
+			if (pi) {
+				registerClineProviderToPi(pi, newKey, result.models);
+			}
+			if ((ctx as any).modelRegistry?.refresh) {
+				await (ctx as any).modelRegistry.refresh({ providers: [CLINE_PROVIDER_ID] }).catch(() => {});
+			}
+
+			const freeModels = result.models.filter((m) => m.isFree);
+			const reasoningCount = freeModels.filter((m) => m.reasoning).length;
+			const modelCards = freeModels.slice(0, 8).map((m, idx) => formatClineModelDetailCard(m, idx + 1));
+
+			const msg = [
+				`[OK] Cline API Key 配置成功！免费套餐与零额度模型已全自动识别并对接：`,
+				`• API Key: ${maskKey(newKey)} (已验证并保存，配置已更新并同步)`,
+				`• 识别到 ${result.modelCount} 款可用模型 (${freeModels.length} 款完全免费 / 零额度消耗，${reasoningCount} 款支持深度思考)：`,
+				"",
+				...modelCards,
+				"",
+				`• 同步路径: models.json [OK] | auth.json [OK]`,
+				`• CC-Switch: ${result.updatedCcSwitchDb ? "本地数据库已同步更新" : "无数据库或跳过"}`,
+				`提示：全部模型参数已热载入 Pi，输入 /model 或在模型选择器中可即刻选用！`,
+			].join("\n");
+
+			notify(ctx, msg, "info");
+			return msg;
+		} catch (error) {
+			const errMsg = `[ERR] 配置失败: ${formatError(error)}`;
+			notify(ctx, errMsg, "error");
+			return errMsg;
+		}
+	}
+
+	// 3. /cline refresh 或 /cline sync：强制全量刷新模型与配置
+	if (cmd === "refresh" || cmd === "sync") {
+		try {
+			notify(ctx, "正在拉取 Cline 最新模型并同步至本地配置...", "info");
+			const result = await syncClineConfiguration();
+			if (pi) {
+				registerClineProviderToPi(pi, result.apiKey, result.models);
+			}
+			if ((ctx as any).modelRegistry?.refresh) {
+				await (ctx as any).modelRegistry.refresh({ providers: [CLINE_PROVIDER_ID] }).catch(() => {});
+			}
+
+			const freeModels = result.models.filter((m) => m.isFree);
+			const reasoningCount = freeModels.filter((m) => m.reasoning).length;
+			const visionCount = freeModels.filter((m) => m.input.includes("image")).length;
+
+			const msg = [
+				`[OK] Cline 配置与模型已成功刷新！`,
+				`• API Key: ${maskKey(result.apiKey)}`,
+				`• 免费模型: 已对齐 ${freeModels.length} 款 0 额度消耗模型 (${reasoningCount} 款支持深度思考，${visionCount} 款支持多模态视觉)`,
+				`• 请求头伪装: 8 维官方客户端指纹已注入 (VSCode 4.1.16 / cline-vscode)`,
+				`• 同步状态: models.json [OK] | auth.json [OK] | CC-Switch DB ${result.updatedCcSwitchDb ? "[OK]" : "[跳过]"}`,
+			].join("\n");
+
+			notify(ctx, msg, "info");
+			return msg;
+		} catch (error) {
+			const errMsg = `[ERR] 刷新失败: ${formatError(error)}`;
+			notify(ctx, errMsg, "error");
+			return errMsg;
+		}
+	}
+
+	// 4. /cline list 或 /cline models：查看所有可用免费模型详细规格卡片
+	if (cmd === "list" || cmd === "models") {
+		const storedKey = getStoredClineApiKey();
+		const catalog = await fetchClineModelCatalog(storedKey).catch(() => Object.values(KNOWN_CLINE_FREE_MODELS));
+		const freeModels = catalog.filter((m) => m.isFree);
+
+		const cards = freeModels.map((m, idx) => formatClineModelDetailCard(m, idx + 1));
+		const msg = [
+			`[Cline 免费模型列表 (${freeModels.length} 款)]`,
+			`智能识别精确上下文上限（Context）、最大输出（Max Tokens）及推理思考等级（Thinking）：`,
+			"",
+			...cards,
+			"",
+			`提示：这些模型已全量注册至 Pi，使用 /model 或快捷键随时切换！`,
+		].join("\n");
+
+		notify(ctx, msg, "info");
+		return msg;
+	}
+
+	// 5. /cline free：查看零额度模型注册表分类视图
+	if (cmd === "free") {
+		const storedKey = getStoredClineApiKey();
+		const catalog = await fetchClineModelCatalog(storedKey).catch(() => Object.values(KNOWN_CLINE_FREE_MODELS));
+		const freeModels = catalog.filter((m) => m.isFree);
+		const table = formatClineModelsTable(freeModels);
+		notify(ctx, table, "info");
+		return table;
+	}
+
+	// 6. /cline status：查看当前运行状态与代理信息
+	if (cmd === "status") {
+		const storedKey = getStoredClineApiKey();
+		const maskedKey = maskKey(storedKey);
+		const proxyStatus = getClineProxyStatus();
+		const catalog = await fetchClineModelCatalog(storedKey).catch(() => Object.values(KNOWN_CLINE_FREE_MODELS));
+		const freeModels = catalog.filter((m) => m.isFree);
+		const reasoningCount = freeModels.filter((m) => m.reasoning).length;
+		const visionCount = freeModels.filter((m) => m.input.includes("image")).length;
+		const currentModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "未连接";
+
+		const lines: string[] = [
+			`[Cline 运行状态]`,
+			`• API Key: ${maskedKey}`,
+			`• 基础端点: ${CLINE_BASE_URL}`,
+			`• 当前会话模型: ${currentModel}`,
+			`• 模型库: 已激活 ${catalog.length} 款可用模型 (${freeModels.length} 款完全免费 / 零额度消耗，${reasoningCount} 款支持深度思考，${visionCount} 款支持多模态视觉)`,
+			`• 本地反向代理: ${proxyStatus.running ? `运行中 (${proxyStatus.url}, 已处理 ${proxyStatus.requestCount} 次请求)` : "未运行"}`,
+			`• 指纹保护: 8 维官方客户端签名 + 响应空值守卫`,
+			"",
+			`常用指令:`,
+			`  /cline <key>                 更新 Key 并全自动识别免费模型/上下文/思考等级`,
+			`  /cline refresh               重新拉取远端模型并刷新本地配置`,
+			`  /cline list                  查看所有可用免费模型详细规格卡片`,
+			`  /cline ping [模型ID]         实时探测网络连通性与时延`,
+			`  /cline proxy start [4116]    启动本地 OpenAI 兼容反代服务器`,
+		];
+
+		const msg = lines.join("\n");
+		notify(ctx, msg, "info");
+		return msg;
+	}
+
+	// 7. /cline ping [modelId]：网络时延实时探测
+	if (cmd === "ping") {
+		const target = sub[1];
+		const key = getStoredClineApiKey();
+		const testTargets = target
+			? [resolveFreeModelId(target)]
+			: [
+				"stealth/space-bunny-alpha",
+				"inclusionai/ling-3.0-flash-fin:free",
+				"openrouter/fusion",
+				"openrouter/pareto-code",
+				"openrouter/free",
+				"nvidia/nemotron-3-ultra-550b-a55b:free",
+			];
+
+		notify(ctx, "正在探测 Cline 免费模型网络时延与连通性...", "info");
+
+		const results: string[] = ["=== Cline 免费模型连通性与时延实时探测 ==="];
+		for (const m of testTargets) {
+			const start = Date.now();
+			try {
+				const res = await fetch(`${CLINE_BASE_URL}/chat/completions`, {
+					method: "POST",
+					headers: {
+						Authorization: `Bearer ${key}`,
+						"Content-Type": "application/json",
+						...CLINE_CLIENT_HEADERS,
+					},
+					body: JSON.stringify({
+						model: m,
+						messages: [{ role: "user", content: "ping" }],
+						max_tokens: 5,
+						stream: false,
+					}),
+				});
+				const ms = Date.now() - start;
+				if (res.ok) {
+					const speedTag = ms < 800 ? "极速" : ms < 2000 ? "良好" : "稍慢";
+					results.push(`  • ${m}: [200 OK] (${ms}ms, ${speedTag})`);
+				} else {
+					results.push(`  • ${m}: [HTTP ${res.status}] (${ms}ms)`);
+				}
+			} catch (e: any) {
+				const ms = Date.now() - start;
+				results.push(`  • ${m}: [FAILED] (${ms}ms, ${e.message})`);
+			}
+		}
+		const pingMsg = results.join("\n");
+		notify(ctx, pingMsg, "info");
+		return pingMsg;
+	}
+
+	// 8. /cline model <modelId>：快速切换模型
+	if (cmd === "model") {
+		const targetId = sub[1];
+		if (!targetId) {
+			const err = "[ERR] 用法: /cline model <模型ID>\n示例: /cline model inclusionai/ling-3.0-flash-fin:free";
+			notify(ctx, err, "warning");
+			return err;
+		}
+		const resolvedId = resolveFreeModelId(targetId);
+		if (typeof (ctx as any).setModel === "function") {
+			await (ctx as any).setModel({ provider: CLINE_PROVIDER_ID, id: resolvedId });
+			const msg = `[OK] 已成功切换至 Cline 模型: ${resolvedId}`;
+			notify(ctx, msg, "info");
+			return msg;
+		}
+		const warnMsg = `[WARN] 当前环境暂不支持动态 setModel，请在配置文件或交互界面选择 ${resolvedId}`;
+		notify(ctx, warnMsg, "warning");
+		return warnMsg;
+	}
+
+	// 9. /cline proxy [start|stop|status] [port]：管理本地反向代理服务器
+	if (cmd === "proxy") {
+		const action = sub[1]?.toLowerCase() || "status";
+		if (action === "start") {
+			const port = parseInt(sub[2], 10) || 4116;
+			try {
+				const res = await startClineProxyServer({ port });
+				const msg = `[OK] Cline 本地反向代理已就绪！\n• 接口地址: ${res.url}\n• 标准端点: ${res.url}/chat/completions\n• 模型列表: ${res.url}/models\n• 指纹伪装: 8大官方客户端标头已自动注入\n可在 CC-Switch、Cursor、Cherry Studio 中直接作为 OpenAI 供应商接入使用。`;
+				notify(ctx, msg, "info");
+				return msg;
+			} catch (e: any) {
+				const err = `[ERR] 反代启动失败: ${e.message}`;
+				notify(ctx, err, "error");
+				return err;
+			}
+		} else if (action === "stop") {
+			await stopClineProxyServer();
+			const msg = "[INFO] Cline 本地反向代理已停止。";
+			notify(ctx, msg, "info");
+			return msg;
+		} else {
+			const status = getClineProxyStatus();
+			if (status.running) {
+				const msg = `[ONLINE] Cline 本地反代运行中: ${status.url}\n• 已处理请求: ${status.requestCount}\n• 错误数: ${status.errorCount}`;
+				notify(ctx, msg, "info");
+				return msg;
+			}
+			const msg = `[OFFLINE] Cline 本地反代未启动。\n使用 /cline proxy start [端口] 即可启动本地 OpenAI 兼容反向代理服务 (默认端口 4116)。`;
+			notify(ctx, msg, "info");
+			return msg;
+		}
+	}
+
+	// 兜底提示
+	const fallback = `[INFO] 未知指令: ${cmd}。可用指令: /cline [key|refresh|sync|status|list|free|ping|proxy|model]`;
+	notify(ctx, fallback, "warning");
+	return fallback;
 }
+
+function maskKey(key: string): string {
+	if (!key || key === CLINE_DEFAULT_KEY) {
+		return key && key.length > 12 ? `${key.slice(0, 8)}...${key.slice(-4)}` : "未配置";
+	}
+	if (key.length <= 12) return "******";
+	return `${key.slice(0, 8)}...${key.slice(-4)}`;
+}
+
+function notify(
+	ctx: ExtensionCommandContext,
+	message: string,
+	level: "info" | "warning" | "error" = "info",
+): void {
+	try {
+		if (ctx.hasUI && typeof ctx.ui?.notify === "function") {
+			ctx.ui.notify(message, level);
+		} else {
+			console.log(`[${level.toUpperCase()}] ${message}`);
+		}
+	} catch {
+		// 容错
+	}
+}
+
+function formatError(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+

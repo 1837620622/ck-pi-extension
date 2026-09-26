@@ -76,12 +76,12 @@ pi install npm:ck-pi-rail
 
 | 终端 | 真彩 | 字形 |
 | --- | --- | --- |
-| Ghostty / Kitty / WezTerm / Alacritty / iTerm2 | ✅ | ✅ |
-| Terminal.app（macOS 26 Tahoe+） | ✅ | ✅ |
-| Terminal.app（旧版） | 256 色降级 | ✅ |
-| Windows Terminal / VS Code 集成终端 | ✅ | ✅ |
-| tmux / screen（透传开启） | ✅，否则降级 | ✅ |
-| Linux 控制台 | 16 色近似 | ✅ |
+| Ghostty / Kitty / WezTerm / Alacritty / iTerm2 | 支持 | 支持 |
+| Terminal.app（macOS 26 Tahoe+） | 支持 | 支持 |
+| Terminal.app（旧版） | 256 色降级 | 支持 |
+| Windows Terminal / VS Code 集成终端 | 支持 | 支持 |
+| tmux / screen（透传开启） | 支持，否则降级 | 支持 |
+| Linux 控制台 | 16 色近似 | 支持 |
 
 只用各家等宽字体标配字形：`┃ │ › · • … ↑ ↓ π`，不需 Nerd Font，不需 Emoji 字体。
 CJK 宽字符按终端列宽截断，中英文混排不错位。
@@ -130,7 +130,6 @@ mv ~/.pi/agent/pi-statusline.json ~/.pi/agent/ck-pi-rail.json
 不能。所有入口文本统一过长度限制 + `sanitizeTerminalText + stripEmoji`，
 上游扩展带什么符号都进不了底栏，这是设计原则。
 
-## 作者
+## License
 
-传康Kk（万能程序员）——GitHub：[1837620622](https://github.com/1837620622)，
-邮箱：`1837620622@qq.com`。License: MIT.
+MIT License.
