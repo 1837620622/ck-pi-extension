@@ -64,11 +64,11 @@ export function getStoredClineApiKey(
 	try {
 		if (existsSync(authPath)) {
 			const auth = JSON.parse(readFileSync(authPath, "utf-8"));
-			if (typeof auth?.cline?.key === "string" && auth.cline.key.trim()) {
-				return auth.cline.key.trim();
-			}
 			if (typeof auth?.["cline-free"]?.key === "string" && auth["cline-free"].key.trim()) {
 				return auth["cline-free"].key.trim();
+			}
+			if (typeof auth?.cline?.key === "string" && auth.cline.key.trim()) {
+				return auth.cline.key.trim();
 			}
 		}
 	} catch {
@@ -78,7 +78,11 @@ export function getStoredClineApiKey(
 	try {
 		if (existsSync(modelsPath)) {
 			const models = JSON.parse(readFileSync(modelsPath, "utf-8"));
-			const prov = models?.providers?.cline || models?.cline;
+			const prov =
+				models?.providers?.["cline-free"] ||
+				models?.["cline-free"] ||
+				models?.providers?.cline ||
+				models?.cline;
 			if (typeof prov?.apiKey === "string" && prov.apiKey.trim()) {
 				return prov.apiKey.trim();
 			}
@@ -218,8 +222,10 @@ export async function syncClineConfiguration(
 			};
 
 			if (modelsData.providers && typeof modelsData.providers === "object") {
+				delete modelsData.providers.cline;
 				modelsData.providers[CLINE_PROVIDER_ID] = providerConfig;
 			} else {
+				delete modelsData.cline;
 				modelsData[CLINE_PROVIDER_ID] = providerConfig;
 			}
 
@@ -245,6 +251,7 @@ export async function syncClineConfiguration(
 				authData = JSON.parse(readFileSync(authPath, "utf-8"));
 			}
 
+			delete authData.cline;
 			authData[CLINE_PROVIDER_ID] = {
 				type: "api_key",
 				key: apiKey,

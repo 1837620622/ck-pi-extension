@@ -263,30 +263,30 @@ describe("配置同步与落盘逻辑测试", () => {
 		});
 
 		assert.equal(res.success, true);
-		assert.equal(res.provider, "cline");
+		assert.equal(res.provider, "cline-free");
 		assert.equal(res.apiKey, "sk_test_sync_key_12345");
 		assert.ok(res.modelCount >= 10);
 
-		// 验证 models.json 保留其他 Provider 并正确新增 cline
+		// 验证 models.json 保留其他 Provider 并正确新增 cline-free
 		const modelsData = JSON.parse(readFileSync(tempModelsPath, "utf-8"));
 		assert.ok(modelsData.providers.relayhub, "保留已有 relayhub 供应商");
-		assert.ok(modelsData.providers.cline, "成功写入 cline 供应商");
-		assert.equal(modelsData.providers.cline.apiKey, "sk_test_sync_key_12345");
-		assert.equal(modelsData.providers.cline.headers["User-Agent"], "Cline/4.1.16");
-		assert.equal(modelsData.providers.cline.headers["x-client-type"], "cline-vscode");
+		assert.ok(modelsData.providers["cline-free"], "成功写入 cline-free 供应商");
+		assert.equal(modelsData.providers["cline-free"].apiKey, "sk_test_sync_key_12345");
+		assert.equal(modelsData.providers["cline-free"].headers["User-Agent"], "Cline/4.1.16");
+		assert.equal(modelsData.providers["cline-free"].headers["x-client-type"], "cline-vscode");
 
 		// 验证 auth.json
 		const authData = JSON.parse(readFileSync(tempAuthPath, "utf-8"));
 		assert.equal(authData.relayhub.key, "existing_key");
-		assert.equal(authData.cline.key, "sk_test_sync_key_12345");
+		assert.equal(authData["cline-free"].key, "sk_test_sync_key_12345");
 
 		// 验证 CC-Switch SQLite 数据库
 		const db = new DatabaseSync(tempDbPath);
-		const row = db.prepare("SELECT id, config FROM providers WHERE id = 'cline'").get() as any;
+		const row = db.prepare("SELECT id, config FROM providers WHERE id = 'cline-free'").get() as any;
 		db.close();
-		assert.ok(row, "CC-Switch 中成功插入 cline 供应商");
+		assert.ok(row, "CC-Switch 中成功插入 cline-free 供应商");
 		const parsedConfig = JSON.parse(row.config);
-		assert.equal(parsedConfig.id, "cline");
+		assert.equal(parsedConfig.id, "cline-free");
 		assert.equal(parsedConfig.apiKey, "sk_test_sync_key_12345");
 	});
 });

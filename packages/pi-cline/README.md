@@ -269,16 +269,16 @@ if (choice?.delta?.reasoning && !choice.delta.reasoning_content) {
 在终端中使用短别名直接运行任务：
 ```bash
 # 启动 100 万超长隐身模型
-pi --model cline/bunny -p "深度分析大型工程架构"
+pi --model cline-free/bunny -p "深度分析大型工程架构"
 
 # 启动 200 万上下文代码专用模型
-pi --model cline/code -p "审查当前 Git 仓库所有改动"
+pi --model cline-free/code -p "审查当前 Git 仓库所有改动"
 
 # 启动 550B 参数级巨型模型
-pi --model cline/550b -p "解答高难度数理逻辑问题"
+pi --model cline-free/550b -p "解答高难度数理逻辑问题"
 
 # 启动极速主力免费模型
-pi --model cline/ling -p "编写一个 Rust 异步并发队列"
+pi --model cline-free/ling -p "编写一个 Rust 异步并发队列"
 ```
 
 ### 2. 实时网络连通性与时延探针 (`/cline ping`)

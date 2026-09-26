@@ -11,7 +11,7 @@
 
 import type { ClineModelDefinition } from "./types.js";
 
-export const CLINE_PROVIDER_ID = "cline";
+export const CLINE_PROVIDER_ID = "cline-free";
 export const CLINE_BASE_URL = "https://api.cline.bot/api/v1";
 export const CLINE_DEFAULT_KEY = "";
 
