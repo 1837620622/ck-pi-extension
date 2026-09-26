@@ -100,6 +100,8 @@ describe("Cline 模型注册表与能力推断测试", () => {
 		assert.equal(resolveFreeModelId("free"), "openrouter/free");
 		assert.equal(resolveFreeModelId("fusion"), "openrouter/fusion");
 		assert.equal(resolveFreeModelId("code"), "openrouter/pareto-code");
+		assert.equal(resolveFreeModelId("bunny"), "stealth/space-bunny-alpha");
+		assert.equal(resolveFreeModelId("stealth"), "stealth/space-bunny-alpha");
 		assert.equal(resolveFreeModelId("luna"), "typesafe/jev-router");
 		assert.equal(resolveFreeModelId("ling"), "inclusionai/ling-3.0-flash-fin:free");
 		assert.equal(resolveFreeModelId("550b"), "nvidia/nemotron-3-ultra-550b-a55b:free");
@@ -123,11 +125,11 @@ describe("Cline 模型注册表与能力推断测试", () => {
 
 		const card = formatClineModelCard(KNOWN_CLINE_FREE_MODELS["inclusionai/ling-3.0-flash-fin:free"]);
 		assert.ok(card.includes("inclusionai/ling-3.0-flash-fin:free"));
-		assert.ok(card.includes("免费"));
-		assert.ok(card.includes("深度思考"));
+		assert.ok(card.includes("[FREE]"));
+		assert.ok(card.includes("[THINK]"));
 
 		const table = formatClineModelsTable(Object.values(KNOWN_CLINE_FREE_MODELS));
-		assert.ok(table.includes("Cline 可用免费模型"));
+		assert.ok(table.includes("Cline 零额度模型注册表"));
 	});
 });
 
@@ -527,13 +529,13 @@ describe("Extension 钩子、命令与拦截测试", () => {
 		const statusOutput = await clineCmd.handler("", {
 			model: { provider: "cline", id: "inclusionai/ling-3.0-flash-fin:free" },
 		});
-		assert.ok(statusOutput.includes("Cline 免费模型与反向代理控制面板"));
+		assert.ok(statusOutput.includes("Cline 免费模型与本地反代控制面板"));
 		assert.ok(statusOutput.includes("API Key"));
 		assert.ok(statusOutput.includes("常用指令"));
 
 		// 2. /cline free
 		const freeOutput = await clineCmd.handler("free", {});
-		assert.ok(freeOutput.includes("Cline 可用免费模型"));
+		assert.ok(freeOutput.includes("Cline 零额度模型注册表"));
 
 		// 3. /cline key
 		const keyOutput = await clineCmd.handler("key sk_test_new_key_9999", {});

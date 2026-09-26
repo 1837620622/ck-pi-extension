@@ -346,7 +346,7 @@ export async function startClineProxyServer(
 															choices: [
 																{
 																	index: 0,
-																	delta: { content: `\n\n⚠️ [Cline 供应商异常: ${errMsg}，请重试或切换其他免费模型]` },
+																	delta: { content: `\n\n[!][Cline 供应商异常: ${errMsg}，请重试或切换其他免费模型]` },
 																	finish_reason: "stop",
 																},
 															],
@@ -385,7 +385,7 @@ export async function startClineProxyServer(
 										choices: [
 											{
 												index: 0,
-												delta: { content: "⚠️ [当前模型节点暂时无响应，请重试或使用 /cline free 切换高可用模型]" },
+												delta: { content: "[!][当前模型节点暂时无响应，请重试或使用 /cline free 切换高可用模型]" },
 												finish_reason: "stop",
 											},
 										],
@@ -424,7 +424,7 @@ export async function startClineProxyServer(
 									// 防御 content 与 tool_calls 同时为空导致的崩溃
 									const hasTools = Array.isArray(choice?.message?.tool_calls) && choice.message.tool_calls.length > 0;
 									if (!hasTools && (!choice?.message?.content || !choice.message.content.trim())) {
-										choice.message.content = choice?.message?.reasoning || "⚠️ [模型服务暂未返回有效文本，请重试或切换至其他免费模型]";
+										choice.message.content = choice?.message?.reasoning || "[!][模型服务暂未返回有效文本，请重试或切换至其他免费模型]";
 									}
 								}
 							}

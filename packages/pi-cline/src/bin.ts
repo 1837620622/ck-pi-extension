@@ -26,13 +26,13 @@ for (let i = 0; i < args.length; i++) {
 const apiKey = customKey || getStoredClineApiKey();
 
 async function main() {
-	console.log("\x1b[1m\x1b[36m=== 🤖 Cline OpenAI-Compatible 本地反向代理服务 ===\x1b[0m");
+	console.log("\x1b[1m\x1b[36m=== Cline OpenAI-Compatible 本地反向代理服务 ===\x1b[0m");
 	console.log(`• 指纹伪装: 8大官方客户端特征标头已启用`);
 	console.log(`• 免费模型: 已收录 ${Object.keys(KNOWN_CLINE_FREE_MODELS).length} 款零额度模型`);
 
 	try {
 		const srv = await startClineProxyServer({ port, apiKey });
-		console.log(`\n\x1b[32m✔ 代理服务已就绪！\x1b[0m`);
+		console.log(`\n\x1b[32m[OK] 代理服务已就绪！\x1b[0m`);
 		console.log(`• OpenAI Base URL: \x1b[1m\x1b[34m${srv.url}\x1b[0m`);
 		console.log(`• 对话补全端点:   \x1b[34m${srv.url}/chat/completions\x1b[0m`);
 		console.log(`• 模型列表端点:   \x1b[34m${srv.url}/models\x1b[0m`);
@@ -53,7 +53,7 @@ async function main() {
 			process.exit(0);
 		});
 	} catch (err: any) {
-		console.error(`\x1b[31m✖ 启动失败: ${err.message}\x1b[0m`);
+		console.error(`\x1b[31m[x] 启动失败: ${err.message}\x1b[0m`);
 		process.exit(1);
 	}
 }

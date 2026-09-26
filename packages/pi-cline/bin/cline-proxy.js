@@ -26,9 +26,100 @@ var STANDARD_THINKING_LEVELS = {
   off: null
 };
 var KNOWN_CLINE_FREE_MODELS = {
+  // ==================== 1. 隐身与智能路由零消耗模型 (Stealth & Smart Routers) ====================
+  "stealth/space-bunny-alpha": {
+    id: "stealth/space-bunny-alpha",
+    name: "Stealth Space Bunny Alpha (1M Stealth Free)",
+    contextWindow: 1e6,
+    maxTokens: 32768,
+    reasoning: true,
+    input: ["text"],
+    thinkingLevelMap: STANDARD_THINKING_LEVELS,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    isFree: true
+  },
+  "openrouter/fusion": {
+    id: "openrouter/fusion",
+    name: "OpenRouter Fusion (Smart Meta Router - Free)",
+    contextWindow: 1e6,
+    maxTokens: 32768,
+    reasoning: true,
+    input: ["text"],
+    thinkingLevelMap: STANDARD_THINKING_LEVELS,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    isFree: true
+  },
+  "openrouter/pareto-code": {
+    id: "openrouter/pareto-code",
+    name: "OpenRouter Pareto Code (Coding Specialist - Free)",
+    contextWindow: 2e6,
+    maxTokens: 32768,
+    reasoning: true,
+    input: ["text"],
+    thinkingLevelMap: STANDARD_THINKING_LEVELS,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    isFree: true
+  },
+  "openrouter/free": {
+    id: "openrouter/free",
+    name: "OpenRouter Auto Free Router",
+    contextWindow: 2e5,
+    maxTokens: 32768,
+    reasoning: true,
+    input: ["text"],
+    thinkingLevelMap: STANDARD_THINKING_LEVELS,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    isFree: true
+  },
+  // ==================== 2. 百万级超长上下文免费模型 (1M+ Giant Context) ====================
+  "nvidia/nemotron-3-ultra-550b-a55b:free": {
+    id: "nvidia/nemotron-3-ultra-550b-a55b:free",
+    name: "NVIDIA Nemotron 3 Ultra 550B (1M Free)",
+    contextWindow: 1e6,
+    maxTokens: 32768,
+    reasoning: true,
+    input: ["text"],
+    thinkingLevelMap: STANDARD_THINKING_LEVELS,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    isFree: true
+  },
+  "nvidia/nemotron-3.5-lightning:free": {
+    id: "nvidia/nemotron-3.5-lightning:free",
+    name: "NVIDIA Nemotron 3.5 Lightning (1M Free)",
+    contextWindow: 1e6,
+    maxTokens: 32768,
+    reasoning: true,
+    input: ["text"],
+    thinkingLevelMap: STANDARD_THINKING_LEVELS,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    isFree: true
+  },
+  "thinkingmachines/inkling:free": {
+    id: "thinkingmachines/inkling:free",
+    name: "Thinking Machines Inkling (1M Free)",
+    contextWindow: 1048576,
+    maxTokens: 32768,
+    reasoning: true,
+    input: ["text"],
+    thinkingLevelMap: STANDARD_THINKING_LEVELS,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    isFree: true
+  },
+  "thinkingmachines/inkling-small:free": {
+    id: "thinkingmachines/inkling-small:free",
+    name: "Thinking Machines Inkling Small (1M Free)",
+    contextWindow: 1048576,
+    maxTokens: 32768,
+    reasoning: true,
+    input: ["text"],
+    thinkingLevelMap: STANDARD_THINKING_LEVELS,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    isFree: true
+  },
+  // ==================== 3. 主力代码与推理思考免费模型 (Core Coding & Reasoning) ====================
   "inclusionai/ling-3.0-flash-fin:free": {
     id: "inclusionai/ling-3.0-flash-fin:free",
-    name: "InclusionAI Ling 3.0 Flash Fin (Free)",
+    name: "InclusionAI Ling 3.0 Flash Fin (262k Free)",
     contextWindow: 262144,
     maxTokens: 32768,
     reasoning: true,
@@ -39,7 +130,7 @@ var KNOWN_CLINE_FREE_MODELS = {
   },
   "inclusionai/ling-3.0-flash-sante:free": {
     id: "inclusionai/ling-3.0-flash-sante:free",
-    name: "InclusionAI Ling 3.0 Flash Sante (Free)",
+    name: "InclusionAI Ling 3.0 Flash Sante (262k Free)",
     contextWindow: 262144,
     maxTokens: 32768,
     reasoning: true,
@@ -48,9 +139,9 @@ var KNOWN_CLINE_FREE_MODELS = {
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     isFree: true
   },
-  "nvidia/nemotron-3.5-lightning:free": {
-    id: "nvidia/nemotron-3.5-lightning:free",
-    name: "NVIDIA Nemotron 3.5 Lightning (Free)",
+  "qwen/qwen3.8-27b:free": {
+    id: "qwen/qwen3.8-27b:free",
+    name: "Qwen 3.8 27B (262k Free)",
     contextWindow: 262144,
     maxTokens: 32768,
     reasoning: true,
@@ -59,10 +150,10 @@ var KNOWN_CLINE_FREE_MODELS = {
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     isFree: true
   },
-  "nvidia/nemotron-3-ultra-550b-a55b:free": {
-    id: "nvidia/nemotron-3-ultra-550b-a55b:free",
-    name: "NVIDIA Nemotron 3 Ultra 550B (Free)",
-    contextWindow: 1e6,
+  "nvidia/nemotron-3-super-120b-a12b:free": {
+    id: "nvidia/nemotron-3-super-120b-a12b:free",
+    name: "NVIDIA Nemotron 3 Super 120B (262k Free)",
+    contextWindow: 262144,
     maxTokens: 32768,
     reasoning: true,
     input: ["text"],
@@ -81,9 +172,43 @@ var KNOWN_CLINE_FREE_MODELS = {
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     isFree: true
   },
-  "nvidia/nemotron-3-super-120b-a12b:free": {
-    id: "nvidia/nemotron-3-super-120b-a12b:free",
-    name: "NVIDIA Nemotron 3 Super 120B (Free)",
+  "cohere/north-mini-code:free": {
+    id: "cohere/north-mini-code:free",
+    name: "Cohere North Mini Code (Free)",
+    contextWindow: 131072,
+    maxTokens: 32768,
+    reasoning: true,
+    input: ["text"],
+    thinkingLevelMap: STANDARD_THINKING_LEVELS,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    isFree: true
+  },
+  "poolside/laguna-s-2.1:free": {
+    id: "poolside/laguna-s-2.1:free",
+    name: "Poolside Laguna S 2.1 (Free)",
+    contextWindow: 131072,
+    maxTokens: 32768,
+    reasoning: true,
+    input: ["text"],
+    thinkingLevelMap: STANDARD_THINKING_LEVELS,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    isFree: true
+  },
+  "poolside/laguna-xs-2.1:free": {
+    id: "poolside/laguna-xs-2.1:free",
+    name: "Poolside Laguna XS 2.1 (Free)",
+    contextWindow: 131072,
+    maxTokens: 32768,
+    reasoning: true,
+    input: ["text"],
+    thinkingLevelMap: STANDARD_THINKING_LEVELS,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    isFree: true
+  },
+  // ==================== 4. 轻量极速与专用工具模型 (Lightweight & Tools) ====================
+  "google/gemma-4-26b-a4b-it:free": {
+    id: "google/gemma-4-26b-a4b-it:free",
+    name: "Google Gemma 4 26B A4B IT (Free)",
     contextWindow: 262144,
     maxTokens: 32768,
     reasoning: true,
@@ -92,20 +217,10 @@ var KNOWN_CLINE_FREE_MODELS = {
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     isFree: true
   },
-  "nvidia/nemotron-3.5-content-safety:free": {
-    id: "nvidia/nemotron-3.5-content-safety:free",
-    name: "NVIDIA Nemotron 3.5 Content Safety (Free)",
-    contextWindow: 131072,
-    maxTokens: 16384,
-    reasoning: false,
-    input: ["text"],
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    isFree: true
-  },
-  "cohere/north-mini-code:free": {
-    id: "cohere/north-mini-code:free",
-    name: "Cohere North Mini Code (Free)",
-    contextWindow: 131072,
+  "google/gemma-4-31b-it:free": {
+    id: "google/gemma-4-31b-it:free",
+    name: "Google Gemma 4 31B IT (Free)",
+    contextWindow: 262144,
     maxTokens: 32768,
     reasoning: true,
     input: ["text"],
@@ -134,70 +249,15 @@ var KNOWN_CLINE_FREE_MODELS = {
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     isFree: true
   },
-  "openrouter/free": {
-    id: "openrouter/free",
-    name: "OpenRouter Auto Free Router",
-    contextWindow: 2e5,
-    maxTokens: 32768,
-    reasoning: true,
-    input: ["text"],
-    thinkingLevelMap: STANDARD_THINKING_LEVELS,
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    isFree: true
-  },
-  "typesafe/jev-router": {
-    id: "typesafe/jev-router",
-    name: "TypeSafe JEV Router (GPT-6 Luna Free)",
-    contextWindow: 128e3,
-    maxTokens: 16384,
-    reasoning: true,
-    input: ["text"],
-    thinkingLevelMap: STANDARD_THINKING_LEVELS,
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    isFree: true
-  },
-  "poolside/laguna-s-2.1:free": {
-    id: "poolside/laguna-s-2.1:free",
-    name: "Poolside Laguna S 2.1 (Free)",
+  "nvidia/nemotron-3.5-content-safety:free": {
+    id: "nvidia/nemotron-3.5-content-safety:free",
+    name: "NVIDIA Nemotron 3.5 Content Safety (Free)",
     contextWindow: 131072,
-    maxTokens: 32768,
-    reasoning: true,
-    input: ["text"],
-    thinkingLevelMap: STANDARD_THINKING_LEVELS,
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    isFree: true
-  },
-  "openrouter/fusion": {
-    id: "openrouter/fusion",
-    name: "OpenRouter Fusion (Smart Meta Router - Free)",
-    contextWindow: 262144,
-    maxTokens: 32768,
-    reasoning: true,
-    input: ["text"],
-    thinkingLevelMap: STANDARD_THINKING_LEVELS,
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    isFree: true
-  },
-  "openrouter/pareto-code": {
-    id: "openrouter/pareto-code",
-    name: "OpenRouter Pareto Code (Coding Specialist - Free)",
-    contextWindow: 262144,
-    maxTokens: 32768,
-    reasoning: true,
-    input: ["text"],
-    thinkingLevelMap: STANDARD_THINKING_LEVELS,
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    isFree: true
-  },
-  "openai/gpt-4o-mini": {
-    id: "openai/gpt-4o-mini",
-    name: "OpenAI GPT-4o Mini (Cline)",
-    contextWindow: 128e3,
     maxTokens: 16384,
     reasoning: false,
-    input: ["text", "image"],
-    cost: { input: 0.15, output: 0.6, cacheRead: 0.075, cacheWrite: 0.15 },
-    isFree: false
+    input: ["text"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    isFree: true
   }
 };
 function resolveFreeModelId(rawId) {
@@ -219,16 +279,22 @@ function resolveFreeModelId(rawId) {
   if (lower === "luna" || lower === "jev") {
     return "typesafe/jev-router";
   }
-  if (lower === "ling" || lower === "flash-fin") {
+  if (lower === "bunny" || lower === "stealth" || lower === "space-bunny") {
+    return "stealth/space-bunny-alpha";
+  }
+  if (lower === "ling" || lower === "flash" || lower === "flash-fin") {
     return "inclusionai/ling-3.0-flash-fin:free";
   }
   if (lower === "sante" || lower === "flash-sante") {
     return "inclusionai/ling-3.0-flash-sante:free";
   }
+  if (lower === "qwen" || lower === "qwen-free") {
+    return "qwen/qwen3.8-27b:free";
+  }
   if (lower === "550b" || lower === "ultra") {
     return "nvidia/nemotron-3-ultra-550b-a55b:free";
   }
-  if (lower === "reasoning" || lower === "nano-omni") {
+  if (lower === "reasoning" || lower === "nano" || lower === "nano-omni") {
     return "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free";
   }
   if (lower === "120b" || lower === "super-120b") {
@@ -239,6 +305,21 @@ function resolveFreeModelId(rawId) {
   }
   if (lower === "laguna") {
     return "poolside/laguna-s-2.1:free";
+  }
+  if (lower === "north") {
+    return "cohere/north-mini-code:free";
+  }
+  if (lower === "gemma" || lower === "gemma-free") {
+    return "google/gemma-4-26b-a4b-it:free";
+  }
+  if (lower === "inkling") {
+    return "thinkingmachines/inkling:free";
+  }
+  if (lower === "note") {
+    return "dots-studio/dots-3-note-preview:free";
+  }
+  if (lower === "lfm") {
+    return "liquid/lfm-2.5-2.6b:free";
   }
   if (KNOWN_CLINE_FREE_MODELS[id]) {
     return id;
@@ -503,7 +584,7 @@ async function startClineProxyServer(options = {}) {
                                   index: 0,
                                   delta: { content: `
 
-\u26A0\uFE0F [Cline \u4F9B\u5E94\u5546\u5F02\u5E38: ${errMsg}\uFF0C\u8BF7\u91CD\u8BD5\u6216\u5207\u6362\u5176\u4ED6\u514D\u8D39\u6A21\u578B]` },
+[!][Cline \u4F9B\u5E94\u5546\u5F02\u5E38: ${errMsg}\uFF0C\u8BF7\u91CD\u8BD5\u6216\u5207\u6362\u5176\u4ED6\u514D\u8D39\u6A21\u578B]` },
                                   finish_reason: "stop"
                                 }
                               ]
@@ -541,7 +622,7 @@ async function startClineProxyServer(options = {}) {
                     choices: [
                       {
                         index: 0,
-                        delta: { content: "\u26A0\uFE0F [\u5F53\u524D\u6A21\u578B\u8282\u70B9\u6682\u65F6\u65E0\u54CD\u5E94\uFF0C\u8BF7\u91CD\u8BD5\u6216\u4F7F\u7528 /cline free \u5207\u6362\u9AD8\u53EF\u7528\u6A21\u578B]" },
+                        delta: { content: "[!][\u5F53\u524D\u6A21\u578B\u8282\u70B9\u6682\u65F6\u65E0\u54CD\u5E94\uFF0C\u8BF7\u91CD\u8BD5\u6216\u4F7F\u7528 /cline free \u5207\u6362\u9AD8\u53EF\u7528\u6A21\u578B]" },
                         finish_reason: "stop"
                       }
                     ]
@@ -575,7 +656,7 @@ async function startClineProxyServer(options = {}) {
                   }
                   const hasTools = Array.isArray(choice?.message?.tool_calls) && choice.message.tool_calls.length > 0;
                   if (!hasTools && (!choice?.message?.content || !choice.message.content.trim())) {
-                    choice.message.content = choice?.message?.reasoning || "\u26A0\uFE0F [\u6A21\u578B\u670D\u52A1\u6682\u672A\u8FD4\u56DE\u6709\u6548\u6587\u672C\uFF0C\u8BF7\u91CD\u8BD5\u6216\u5207\u6362\u81F3\u5176\u4ED6\u514D\u8D39\u6A21\u578B]";
+                    choice.message.content = choice?.message?.reasoning || "[!][\u6A21\u578B\u670D\u52A1\u6682\u672A\u8FD4\u56DE\u6709\u6548\u6587\u672C\uFF0C\u8BF7\u91CD\u8BD5\u6216\u5207\u6362\u81F3\u5176\u4ED6\u514D\u8D39\u6A21\u578B]";
                   }
                 }
               }
@@ -678,13 +759,13 @@ for (let i = 0; i < args.length; i++) {
 }
 var apiKey = customKey || getStoredClineApiKey();
 async function main() {
-  console.log("\x1B[1m\x1B[36m=== \u{1F916} Cline OpenAI-Compatible \u672C\u5730\u53CD\u5411\u4EE3\u7406\u670D\u52A1 ===\x1B[0m");
+  console.log("\x1B[1m\x1B[36m=== Cline OpenAI-Compatible \u672C\u5730\u53CD\u5411\u4EE3\u7406\u670D\u52A1 ===\x1B[0m");
   console.log(`\u2022 \u6307\u7EB9\u4F2A\u88C5: 8\u5927\u5B98\u65B9\u5BA2\u6237\u7AEF\u7279\u5F81\u6807\u5934\u5DF2\u542F\u7528`);
   console.log(`\u2022 \u514D\u8D39\u6A21\u578B: \u5DF2\u6536\u5F55 ${Object.keys(KNOWN_CLINE_FREE_MODELS).length} \u6B3E\u96F6\u989D\u5EA6\u6A21\u578B`);
   try {
     const srv = await startClineProxyServer({ port, apiKey });
     console.log(`
-\x1B[32m\u2714 \u4EE3\u7406\u670D\u52A1\u5DF2\u5C31\u7EEA\uFF01\x1B[0m`);
+\x1B[32m[OK] \u4EE3\u7406\u670D\u52A1\u5DF2\u5C31\u7EEA\uFF01\x1B[0m`);
     console.log(`\u2022 OpenAI Base URL: \x1B[1m\x1B[34m${srv.url}\x1B[0m`);
     console.log(`\u2022 \u5BF9\u8BDD\u8865\u5168\u7AEF\u70B9:   \x1B[34m${srv.url}/chat/completions\x1B[0m`);
     console.log(`\u2022 \u6A21\u578B\u5217\u8868\u7AEF\u70B9:   \x1B[34m${srv.url}/models\x1B[0m`);
@@ -705,7 +786,7 @@ async function main() {
       process.exit(0);
     });
   } catch (err) {
-    console.error(`\x1B[31m\u2716 \u542F\u52A8\u5931\u8D25: ${err.message}\x1B[0m`);
+    console.error(`\x1B[31m[x] \u542F\u52A8\u5931\u8D25: ${err.message}\x1B[0m`);
     process.exit(1);
   }
 }

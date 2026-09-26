@@ -7,6 +7,7 @@ Pi 插件 monorepo：一个 GitHub 仓库，多个彼此独立的 npm 包，用�
 | Pi Rail | `ck-pi-rail` | 无表情、自适应满宽状态栏 | [README](packages/pi-rail/README.md) |
 | Pi Redkit | `ck-pi-redkit` | 授权交战条令注入（渗透/逆向） | [README](packages/pi-redkit/README.md) |
 | Pi Zen Session | `ck-pi-zen-session` | OpenCode Zen 免费模型、全套请求头伪装与会话自动轮换 | [README](packages/pi-zen-session/README.md) |
+| Pi Cline | `ck-pi-cline` | Cline 官方指纹伪装、21 款零额度模型与本地反向代理 | [README](packages/pi-cline/README.md) |
 
 ## 安装
 
@@ -16,6 +17,7 @@ Pi 插件 monorepo：一个 GitHub 仓库，多个彼此独立的 npm 包，用�
 pi install npm:ck-pi-rail        # 只要状态栏
 pi install npm:ck-pi-redkit      # 只要条令注入
 pi install npm:ck-pi-zen-session # 只要 OpenCode Zen 免费模型与 Session 自动维护
+pi install npm:ck-pi-cline       # 只要 Cline 官方指纹伪装、21 款零额度免费模型与本地反代
 ```
 
 旧合集包 `ck-pi-extension` 已废弃（不再更新），新用户请装上面单包。
@@ -33,10 +35,15 @@ GitHub 源安装：`pi install git:github.com/1837620622/ck-pi-extension`。
 /zen status          查看 Zen 会话年龄与在线模型状态
 /zen refresh         强制生成全新 Session ID 并刷新请求头
 /zen list            查看所有已激活的 Zen 免费模型清单
+/cline               查看 Cline 状态面板、API Key、本地反代状态与可用免费模型
+/cline free          列出实测 21 款零额度模型（含 1M 上下文隐身模型与代码专精模型）
+/cline ping          实时探测免费模型连通性与网络时延
+/cline proxy start   在后台启动本地 OpenAI 兼容反向代理服务 (默认端口 4116)
 ```
 
 ## 更新日志
 
+- `ck-pi-cline 0.1.0`：全新发布！Cline 官方指纹伪装、21 款实测零额度免费模型（含 1M 隐身模型 `stealth/space-bunny-alpha` 与 2M 代码模型 `openrouter/pareto-code`）、本地 OpenAI 兼容反向代理（端口 4116）、Empty Output Guard 空输出死锁防御与自动故障转移。
 - `ck-pi-zen-session 0.1.15`：全面深度优化：极速压缩修剪、透明三重重试自愈与多场景护航。
   - **Compaction 标签级深度修剪与极速响应 (`pruneZenContext`)**：深度定位 Pi 在执行 `/compact` 或自动压缩时将历史封装在单条 `<conversation>` 消息的底层机制。当累积超 100K 字符时，保留首尾关键任务与执行结果，修剪中间冗长过程并完整缝合 XML，压缩时间从 142s 直降至 8~10s，彻底根除 Cloudflare 超时与 `Connection error` 断连；
   - **Tool 巨型输出截断**：单个 Tool 命令（如超长 bash 输出、cat 巨大日志）截断在 25,000 字符内，杜绝撑爆上下文；
