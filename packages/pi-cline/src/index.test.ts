@@ -542,5 +542,51 @@ describe("Extension 钩子、命令与拦截测试", () => {
 		// 4. /cline proxy status
 		const proxyOutput = await clineCmd.handler("proxy status", {});
 		assert.ok(proxyOutput.includes("Cline 本地反代"));
+
+		// 5. /cline ping
+		const pingOutput = await clineCmd.handler("ping", {});
+		assert.ok(pingOutput.includes("Cline 免费模型连通性与时延实时探测"));
+	});
+
+	it("installClineFetchInterceptor 遭遇 500 异常时自动透明故障转移至备用模型重试", async () => {
+		const requestLog: string[] = [];
+		const mockGlobal: any = {
+			fetch: async (input: any, init: any) => {
+				const body = JSON.parse(init.body);
+				requestLog.push(body.model);
+				if (body.model === "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free") {
+					// 模拟第一次主模型服务 500 故障
+					return new Response(JSON.stringify({ error: "Nvidia 502 limit reached" }), {
+						status: 502,
+						headers: { "Content-Type": "application/json" },
+					});
+				}
+				// 模拟备用模型重试成功
+				return new Response(
+					JSON.stringify({
+						data: {
+							choices: [{ message: { role: "assistant", content: "Failover Success!" } }],
+						},
+					}),
+					{ status: 200, headers: { "Content-Type": "application/json" } },
+				);
+			},
+		};
+
+		installClineFetchInterceptor(mockGlobal);
+
+		const res = await mockGlobal.fetch("https://api.cline.bot/api/v1/chat/completions", {
+			method: "POST",
+			body: JSON.stringify({
+				model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+				messages: [{ role: "user", content: "test" }],
+			}),
+		});
+
+		assert.equal(res.status, 200);
+		const json = await res.json();
+		assert.equal(json.choices[0].message.content, "Failover Success!");
+		assert.equal(requestLog[0], "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free");
+		assert.equal(requestLog[1], "inclusionai/ling-3.0-flash-fin:free", "失败后必须自动重试高可用备用免费模型");
 	});
 });

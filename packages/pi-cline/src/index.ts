@@ -330,16 +330,18 @@ export function installClineFetchInterceptor(targetGlobal: typeof globalThis = g
 
 		// 检查修补请求体
 		let newBody = init?.body;
+		let targetModelId = "openrouter/free";
 		if (typeof init?.body === "string" && init.body.trim().startsWith("{")) {
 			try {
 				const payload = JSON.parse(init.body) as Record<string, unknown>;
+				let modified = false;
+
 				// 模型路由与别名解析
 				if (typeof payload.model === "string") {
 					const resolved = resolveFreeModelId(payload.model);
-					if (resolved !== payload.model) {
-						payload.model = resolved;
-						modified = true;
-					}
+					payload.model = resolved;
+					targetModelId = resolved;
+					modified = true;
 				}
 
 				if (pruneClineContext(payload)) {
@@ -372,7 +374,31 @@ export function installClineFetchInterceptor(targetGlobal: typeof globalThis = g
 			body: newBody,
 		};
 
-		const res = await originalFetch.call(this, targetUrl, newInit);
+		let res = await originalFetch.call(this, targetUrl, newInit);
+
+		// 故障自动转移重试 (Auto-Failover): 若遇 500/502/503/504/429 报错，且为 Cline 模型，透明使用高可用备份模型重试
+		if ((res.status >= 500 || res.status === 429) && targetUrl.includes("chat/completions") && typeof newBody === "string") {
+			try {
+				const payload = JSON.parse(newBody);
+				const origModel = payload.model || "";
+				const backupModel = origModel === "inclusionai/ling-3.0-flash-fin:free"
+					? "openrouter/free"
+					: "inclusionai/ling-3.0-flash-fin:free";
+
+				payload.model = backupModel;
+				const retryInit: RequestInit = {
+					...newInit,
+					body: JSON.stringify(payload),
+				};
+				const retryRes = await originalFetch.call(this, targetUrl, retryInit);
+				if (retryRes.ok) {
+					res = retryRes;
+					targetModelId = backupModel;
+				}
+			} catch {
+				// 忽略重试异常，正常进入保护流
+			}
+		}
 
 		// 核心解包：Cline 官方 API 会将非流式结果包裹在 { data: { choices: [...] }, success: true } 中
 		// 标准 OpenAI 客户端与 Pi 内置 openai-completions 适配器期待根节点拥有 choices，此处透明解包
@@ -711,6 +737,57 @@ export default function piCline(pi: ExtensionAPI): void {
 				}
 			}
 
+			// F. /cline ping [modelId]: 免费模型网络连通性与时延实时探测
+			if (cmd === "ping") {
+				const target = sub[1];
+				const key = getStoredClineApiKey();
+				const testTargets = target
+					? [resolveFreeModelId(target)]
+					: [
+						"inclusionai/ling-3.0-flash-fin:free",
+						"openrouter/fusion",
+						"openrouter/pareto-code",
+						"openrouter/free",
+						"nvidia/nemotron-3-ultra-550b-a55b:free",
+					];
+
+				if (ctx.hasUI && ctx.ui?.notify) {
+					ctx.ui.notify("正在探测 Cline 免费模型网络时延与连通性...", "info");
+				}
+
+				const results: string[] = ["📡 \x1b[1mCline 免费模型连通性与时延实时探测:\x1b[0m"];
+				for (const m of testTargets) {
+					const start = Date.now();
+					try {
+						const res = await fetch(`${CLINE_BASE_URL}/chat/completions`, {
+							method: "POST",
+							headers: {
+								Authorization: `Bearer ${key}`,
+								"Content-Type": "application/json",
+								...CLINE_CLIENT_HEADERS,
+							},
+							body: JSON.stringify({
+								model: m,
+								messages: [{ role: "user", content: "ping" }],
+								max_tokens: 5,
+								stream: false,
+							}),
+						});
+						const ms = Date.now() - start;
+						if (res.ok) {
+							const speedTag = ms < 800 ? "极速" : ms < 2000 ? "良好" : "稍慢";
+							results.push(`  • \x1b[36m${m}\x1b[0m: \x1b[32m🟢 200 OK\x1b[0m (${ms}ms, ${speedTag})`);
+						} else {
+							results.push(`  • \x1b[36m${m}\x1b[0m: \x1b[31m🔴 HTTP ${res.status}\x1b[0m (${ms}ms)`);
+						}
+					} catch (e: any) {
+						const ms = Date.now() - start;
+						results.push(`  • \x1b[36m${m}\x1b[0m: \x1b[31m✖ 失败\x1b[0m (${ms}ms, ${e.message})`);
+					}
+				}
+				return results.join("\n");
+			}
+
 			// 默认状态面板
 			const storedKey = getStoredClineApiKey();
 			const maskedKey = storedKey.length > 12
@@ -732,6 +809,7 @@ export default function piCline(pi: ExtensionAPI): void {
 				"",
 				`\x1b[1m常用指令:\x1b[0m`,
 				`  /cline free                  查看全部免费模型及上下文规格`,
+				`  /cline ping [模型ID]         实时探测免费模型连通性与网络时延`,
 				`  /cline sync                  重新探测并全量同步 models.json 与 CC-Switch`,
 				`  /cline model <模型ID>        快速切换至指定 Cline 模型`,
 				`  /cline key <API-KEY>         更新并持久化 Cline API Key`,
