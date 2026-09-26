@@ -83,7 +83,13 @@ export function isClineModelTarget(
 	payloadModel?: string,
 ): boolean {
 	const prov = model?.provider?.toLowerCase();
-	if (prov === CLINE_PROVIDER_ID || prov === "cline-free" || prov === "cline-bot") {
+	if (
+		prov === CLINE_PROVIDER_ID ||
+		prov === "cline-free" ||
+		prov === "cline-bot" ||
+		prov === "cline (free)" ||
+		prov?.includes("cline")
+	) {
 		return true;
 	}
 
@@ -617,16 +623,28 @@ export function registerClineProviderToPi(
 			};
 		});
 
+		// 严格只注入零额度免费模型，和 Zen 保持完全一致：provider 名称为 Cline (Free)
+		const freeOnly = (models || []).filter((m) => m.isFree ?? true);
+		const targetModels = freeOnly.length > 0 ? freeOnly : Object.values(KNOWN_CLINE_FREE_MODELS);
+
 		pi.registerProvider(CLINE_PROVIDER_ID, {
+			name: "Cline (Free)",
 			baseUrl: CLINE_BASE_URL,
 			api: "openai-completions",
 			apiKey,
 			headers: {
 				...CLINE_CLIENT_HEADERS,
 			},
+			compat: {
+				maxTokensField: "max_tokens",
+				requiresReasoningContentOnAssistantMessages: true,
+				supportsDeveloperRole: false,
+				supportsStore: false,
+				supportsUsageInStreaming: true,
+			},
 			models: [
 				...aliasList,
-				...models.map((m) => ({
+				...targetModels.map((m) => ({
 					id: m.id,
 					name: m.name,
 					contextWindow: m.contextWindow,
@@ -1073,6 +1091,7 @@ export async function handleClineCommand(
 			const port = parseInt(sub[2], 10) || 4116;
 			try {
 				const res = await startClineProxyServer({ port });
+				await syncClineConfiguration({ useLocalProxy: true, proxyPort: port }).catch(() => {});
 				const msg = `[OK] Cline 本地反向代理已就绪！\n• 接口地址: ${res.url}\n• 标准端点: ${res.url}/chat/completions\n• 模型列表: ${res.url}/models\n• 指纹伪装: 8大官方客户端标头已自动注入\n可在 CC-Switch、Cursor、Cherry Studio 中直接作为 OpenAI 供应商接入使用。`;
 				notify(ctx, msg, "info");
 				return msg;
@@ -1083,7 +1102,8 @@ export async function handleClineCommand(
 			}
 		} else if (action === "stop") {
 			await stopClineProxyServer();
-			const msg = "[INFO] Cline 本地反向代理已停止。";
+			await syncClineConfiguration({ useLocalProxy: false }).catch(() => {});
+			const msg = "[INFO] Cline 本地反向代理已停止，已恢复为默认官方直连注入模式。";
 			notify(ctx, msg, "info");
 			return msg;
 		} else {

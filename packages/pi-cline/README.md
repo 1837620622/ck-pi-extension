@@ -1,7 +1,7 @@
 # ck-pi-cline
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.1.1-blue.svg?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.1.3-blue.svg?style=flat-square" alt="Version" />
   <img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License" />
   <img src="https://img.shields.io/badge/runtime-Pi%20Agent%20%3E%3D0.85.0-orange.svg?style=flat-square" alt="Pi Runtime" />
   <img src="https://img.shields.io/badge/protocol-OpenAI%20Compatible-informational.svg?style=flat-square" alt="Protocol" />
@@ -43,8 +43,8 @@
 `ck-pi-cline` 是专为 **Pi Coding Agent** 打造的高可用 Cline 官方 API 逆向代理、客户端指纹伪装、全量零额度模型智能路由与本地 OpenAI 兼容反向代理插件。
 
 > **架构与运行原则**：
-> * **默认原生极简直连**：启动运行时默认**不开启本地反代端口**，仅在 Pi 进程内通过 fetch 拦截器与 Provider 注册直接直连官方网关（零本地代理开销，架构与 `ck-pi-zen-session` 完全对齐）；
-> * **按需启动反向代理**：仅在显式执行 `/cline proxy start` 命令或需要供第三方工具（如 CC-Switch、Cursor）使用时才启动本地 4116 端口；
+> * **默认原生极简直连与模型注入**：启动运行时默认**不开启本地反代端口**，直接在 Pi 运行时中以 `Cline (Free)` 供应商注入 21 款零额度免费模型，通过全局 Fetch 拦截器直连官方网关（零本地代理开销，架构与 `ck-pi-zen-session` 完全对齐）；
+> * **按需启动本地反向代理**：仅在显式执行 `/cline proxy start` 命令或需要供第三方工具（如 CC-Switch、Cursor）使用时才启动本地 4116 端口，可通过 `/cline proxy stop` 随时停止并恢复直连；
 > * **同模型指数退避重试**：遭遇 500/502/503/504/429 报错时，坚守模型质量底线，自动进行同模型指数退避重试，绝不擅自降级或切换低配备用模型。
 
 在实际使用官方 Cline 接口时，开发者普遍面临以下技术痛点：

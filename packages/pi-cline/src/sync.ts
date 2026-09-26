@@ -114,13 +114,13 @@ export async function fetchClineModelCatalog(apiKey: string): Promise<ClineModel
 					modelsMap.set(id, m);
 				}
 
-				// 2. 将远端返回的免费模型与常用模型推断并合入
+				// 2. 将远端返回的免费模型推断并合入 (仅限零额度免费模型，与 Zen 保持一致)
 				for (const raw of data.data) {
 					const id = String(raw.id || "");
 					if (!id) continue;
 					const inferred = inferClineModelCapabilities(id, raw);
-					// 优先展示免费模型和常用高优模型
-					if (inferred.isFree || !modelsMap.has(id)) {
+					// 严格只合入零额度/免费模型
+					if (inferred.isFree) {
 						modelsMap.set(id, inferred);
 					}
 				}
@@ -147,8 +147,9 @@ export async function syncClineConfiguration(
 		const ccSwitchDbPath = options.ccSwitchDbPath || defaultCcSwitchDbPath();
 
 		const apiKey = options.apiKey?.trim() || getStoredClineApiKey(authPath, modelsPath);
-		const models = await fetchClineModelCatalog(apiKey);
-		const freeModels = models.filter((m) => m.isFree);
+		const allModels = await fetchClineModelCatalog(apiKey);
+		const freeModels = allModels.filter((m) => m.isFree ?? true);
+		const modelsToUse = freeModels.length > 0 ? freeModels : Object.values(KNOWN_CLINE_FREE_MODELS);
 
 		const baseUrl = options.useLocalProxy
 			? `http://127.0.0.1:${options.proxyPort || 4116}/v1`
@@ -166,11 +167,19 @@ export async function syncClineConfiguration(
 			}
 
 			const providerConfig = {
+				name: "Cline (Free)",
 				baseUrl,
 				api: "openai-completions",
 				apiKey,
 				headers: {
 					...CLINE_CLIENT_HEADERS,
+				},
+				compat: {
+					maxTokensField: "max_tokens",
+					requiresReasoningContentOnAssistantMessages: true,
+					supportsDeveloperRole: false,
+					supportsStore: false,
+					supportsUsageInStreaming: true,
 				},
 				models: [
 					...[
@@ -183,7 +192,7 @@ export async function syncClineConfiguration(
 						{ id: "120b", ref: "nvidia/nemotron-3-super-120b-a12b:free", name: "Cline Nemotron 120B (Free)" },
 						{ id: "qwen", ref: "qwen/qwen3.8-27b:free", name: "Cline Qwen 3.8 27B (Free)" },
 					].map((a) => {
-						const base = KNOWN_CLINE_FREE_MODELS[a.ref] || models.find((m) => m.id === a.ref);
+						const base = KNOWN_CLINE_FREE_MODELS[a.ref] || modelsToUse.find((m) => m.id === a.ref);
 						return {
 							id: a.id,
 							name: a.name,
@@ -195,7 +204,7 @@ export async function syncClineConfiguration(
 							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 						};
 					}),
-					...models.map((m) => ({
+					...modelsToUse.map((m) => ({
 						id: m.id,
 						name: m.name,
 						contextWindow: m.contextWindow,
@@ -258,7 +267,7 @@ export async function syncClineConfiguration(
 
 		// 3. 更新 CC-Switch 本地 SQLite 数据库
 		try {
-			updatedCcSwitchDb = updateCcSwitchDbForCline(ccSwitchDbPath, apiKey, baseUrl, models);
+			updatedCcSwitchDb = updateCcSwitchDbForCline(ccSwitchDbPath, apiKey, baseUrl, modelsToUse);
 		} catch {
 			// CC-Switch 可选
 		}
@@ -267,9 +276,9 @@ export async function syncClineConfiguration(
 			success: updatedModelsJson || updatedAuthJson,
 			provider: CLINE_PROVIDER_ID,
 			apiKey,
-			modelCount: models.length,
+			modelCount: modelsToUse.length,
 			freeModelCount: freeModels.length,
-			models,
+			models: modelsToUse,
 			updatedModelsJson,
 			updatedAuthJson,
 			updatedCcSwitchDb,
@@ -315,7 +324,7 @@ export function updateCcSwitchDbForCline(
 
 		const providerConfig = {
 			id: CLINE_PROVIDER_ID,
-			name: "Cline (Free Tier & Router)",
+			name: "Cline (Free)",
 			baseUrl,
 			apiKey,
 			headers: CLINE_CLIENT_HEADERS,
@@ -343,7 +352,7 @@ export function updateCcSwitchDbForCline(
 				}
 			} else {
 				const insertStmt = db.prepare(
-					"INSERT INTO providers (id, app_type, name, settings_config) VALUES (?, 'pi', 'Cline (Free Tier & Router)', ?)",
+					"INSERT INTO providers (id, app_type, name, settings_config) VALUES (?, 'pi', 'Cline (Free)', ?)",
 				);
 				insertStmt.run(
 					CLINE_PROVIDER_ID,
@@ -367,7 +376,7 @@ export function updateCcSwitchDbForCline(
 				);
 			} else {
 				db.prepare(
-					"INSERT INTO providers (id, name, type, config) VALUES (?, 'Cline (Free Tier & Router)', 'openai', ?)",
+					"INSERT INTO providers (id, name, type, config) VALUES (?, 'Cline (Free)', 'openai', ?)",
 				).run(CLINE_PROVIDER_ID, JSON.stringify(providerConfig));
 			}
 		}
