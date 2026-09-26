@@ -170,9 +170,10 @@ describe("Cline 本地反向代理服务器测试", () => {
 	it("处理 OPTIONS 预检请求并返回合规 CORS 响应头", async () => {
 		const optRes = await fetch(`http://127.0.0.1:${TEST_PROXY_PORT}/v1/chat/completions`, {
 			method: "OPTIONS",
+			headers: { Origin: "http://localhost:3000" },
 		});
 		assert.equal(optRes.status, 204);
-		assert.equal(optRes.headers.get("access-control-allow-origin"), "*");
+		assert.equal(optRes.headers.get("access-control-allow-origin"), "http://localhost:3000");
 	});
 
 	it("关闭反代服务后状态正常重置", async () => {
@@ -449,21 +450,31 @@ describe("Extension 钩子、命令与拦截测试", () => {
 			},
 		};
 
-		installClineFetchInterceptor(mockGlobal);
+		const prevKey = process.env.CLINE_API_KEY;
+		try {
+			process.env.CLINE_API_KEY = "sk_interceptor_test_key_12345";
+			installClineFetchInterceptor(mockGlobal);
 
-		await mockGlobal.fetch("https://api.cline.bot/api/v1/chat/completions", {
-			method: "POST",
-			body: JSON.stringify({
-				model: "inclusionai/ling-3.0-flash-fin:free",
-				messages: [{ role: "user", content: "test" }],
-			}),
-		});
+			await mockGlobal.fetch("https://api.cline.bot/api/v1/chat/completions", {
+				method: "POST",
+				body: JSON.stringify({
+					model: "inclusionai/ling-3.0-flash-fin:free",
+					messages: [{ role: "user", content: "test" }],
+				}),
+			});
 
-		assert.equal(capturedUrl, "https://api.cline.bot/api/v1/chat/completions");
-		const headers = new Headers(capturedInit?.headers);
-		assert.equal(headers.get("User-Agent"), "Cline/4.1.16");
-		assert.equal(headers.get("x-client-type"), "cline-vscode");
-		assert.ok(headers.get("Authorization")?.startsWith("Bearer sk_"));
+			assert.equal(capturedUrl, "https://api.cline.bot/api/v1/chat/completions");
+			const headers = new Headers(capturedInit?.headers);
+			assert.equal(headers.get("User-Agent"), "Cline/4.1.16");
+			assert.equal(headers.get("x-client-type"), "cline-vscode");
+			assert.ok(headers.get("Authorization")?.startsWith("Bearer sk_"));
+		} finally {
+			if (prevKey === undefined) {
+				delete process.env.CLINE_API_KEY;
+			} else {
+				process.env.CLINE_API_KEY = prevKey;
+			}
+		}
 	});
 
 	it("installClineFetchInterceptor 自动解包上游 data.choices 并注入 reasoning_content", async () => {
@@ -525,13 +536,17 @@ describe("Extension 钩子、命令与拦截测试", () => {
 		const clineCmd = commands["cline"];
 		assert.ok(clineCmd);
 
-		// 1. /cline (status)
-		const statusOutput = await clineCmd.handler("", {
+		// 1. /cline status
+		const statusOutput = await clineCmd.handler("status", {
 			model: { provider: "cline", id: "inclusionai/ling-3.0-flash-fin:free" },
 		});
-		assert.ok(statusOutput.includes("Cline 免费模型与本地反代控制面板"));
+		assert.ok(statusOutput.includes("Cline 运行状态"));
 		assert.ok(statusOutput.includes("API Key"));
 		assert.ok(statusOutput.includes("常用指令"));
+
+		// 1.1 未配置 Key 时无参 /cline 触发友好提示
+		const noKeyOutput = await clineCmd.handler("", {});
+		assert.ok(noKeyOutput.includes("尚未配置 API Key"));
 
 		// 2. /cline free
 		const freeOutput = await clineCmd.handler("free", {});

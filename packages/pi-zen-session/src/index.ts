@@ -85,6 +85,22 @@ export function registerZenProviderToPi(
 	}
 }
 
+function sleepWithSignal(ms: number, signal?: AbortSignal | null): Promise<void> {
+	if (signal?.aborted) return Promise.reject(new DOMException("Aborted", "AbortError"));
+	return new Promise((resolve, reject) => {
+		const timer = setTimeout(() => {
+			signal?.removeEventListener("abort", onAbort);
+			resolve();
+		}, ms);
+		const onAbort = () => {
+			clearTimeout(timer);
+			signal?.removeEventListener("abort", onAbort);
+			reject(new DOMException("Aborted", "AbortError"));
+		};
+		signal?.addEventListener("abort", onAbort);
+	});
+}
+
 export function isZenModelTarget(model?: { provider?: string; id?: string }, payloadModel?: string): boolean {
 	if (!model) {
 		if (payloadModel) {
@@ -155,8 +171,13 @@ export function findSafeUserCutPoint(messages: unknown[], maxTailChars: number):
 	let accumulatedChars = 0;
 	let userCutIndex = -1;
 	for (let i = messages.length - 1; i >= 2; i--) {
-		const msg = messages[i] as Record<string, unknown>;
-		accumulatedChars += JSON.stringify(msg).length;
+		const msg = messages[i] as Record<string, unknown> | null | undefined;
+		if (!msg || typeof msg !== "object") continue;
+		try {
+			accumulatedChars += JSON.stringify(msg).length;
+		} catch {
+			// 忽略循环引用或不可序列化对象
+		}
 		if (msg.role === "user") {
 			userCutIndex = i;
 			if (accumulatedChars >= maxTailChars) {
@@ -222,10 +243,11 @@ export function pruneZenContext(payload: Record<string, unknown>): boolean {
 			const m = msg as Record<string, unknown>;
 			if (m.role === "tool") {
 				const toolText = getMessageText(m.content);
-				if (toolText.length > 25_000) {
-					const newText =
-						toolText.slice(0, 25_000) +
+				if (toolText.length > 25_000 && !toolText.includes("Tool output truncated to 25,000 chars")) {
+					const notice =
 						"\n\n[... Zen Guard: Tool output truncated to 25,000 chars to avoid context overflow ...]";
+					const maxBody = Math.max(0, 25_000 - notice.length);
+					const newText = toolText.slice(0, maxBody) + notice;
 					updateMessageText(m, newText);
 					modified = true;
 				}
@@ -498,6 +520,7 @@ export function installZenFetchInterceptor(targetGlobal: typeof globalThis = glo
 		const maxAttempts = 3;
 
 		for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+			if (init?.signal?.aborted) break;
 			try {
 				headers.set("x-opencode-request", generateZenRequestId());
 
@@ -520,27 +543,34 @@ export function installZenFetchInterceptor(targetGlobal: typeof globalThis = glo
 					debouncedAutoSync(true);
 
 					if (attempt < maxAttempts) {
-						await new Promise((r) => setTimeout(r, 300));
+						await sleepWithSignal(300, init?.signal);
 						continue;
 					}
 				}
 
-				// 遇 502/503/504/524 临时网络抖动或上游过载进行退避重试
-				if ([502, 503, 504, 524].includes(response.status)) {
+				// 遇 500/502/503/504/524/429 临时网络抖动或上游过载进行同模型退避重试 (Full Jitter)
+				if ([500, 502, 503, 504, 524, 429].includes(response.status)) {
 					if (attempt < maxAttempts) {
-						const backoffMs = attempt * 1000;
-						await new Promise((r) => setTimeout(r, backoffMs));
+						const isTestEnv = !!process.env.TEST_PI_MODELS_PATH || process.env.NODE_ENV === "test";
+						const baseDelay = isTestEnv ? 10 : Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+						const backoffMs = isTestEnv ? 10 : Math.max(10, Math.floor(Math.random() * baseDelay));
+						await sleepWithSignal(backoffMs, init?.signal);
 						continue;
 					}
 				}
 
 				// 正常 200 或业务状态码，跳出重试
 				break;
-			} catch (networkError) {
+			} catch (networkError: any) {
 				lastError = networkError;
+				if (networkError?.name === "AbortError" || init?.signal?.aborted) {
+					throw networkError;
+				}
 				if (attempt < maxAttempts) {
-					const backoffMs = attempt * 1000;
-					await new Promise((r) => setTimeout(r, backoffMs));
+					const isTestEnv = !!process.env.TEST_PI_MODELS_PATH || process.env.NODE_ENV === "test";
+					const baseDelay = isTestEnv ? 10 : Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+					const backoffMs = isTestEnv ? 10 : Math.max(10, Math.floor(Math.random() * baseDelay));
+					await sleepWithSignal(backoffMs, init?.signal);
 					continue;
 				}
 				throw lastError;
@@ -596,6 +626,10 @@ export async function assembleSseToChatCompletionResponse(
 			done = readerDone;
 			if (value) {
 				buffer += decoder.decode(value, { stream: !done });
+				if (buffer.length > 2 * 1024 * 1024) {
+					buffer = "";
+					throw new Error("SSE stream line exceeded maximum allowable buffer size (2MB)");
+				}
 				const lines = buffer.split("\n");
 				buffer = lines.pop() || "";
 				for (const line of lines) {

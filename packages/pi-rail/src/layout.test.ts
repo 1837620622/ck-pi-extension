@@ -67,11 +67,11 @@ describe("composeAdaptiveLine", () => {
 
 	it("contains no emoji even with emoji input", () => {
 		const dirty = [
-			seg("model", "🚀omen-alpha🎉"),
-			seg("cwd", "🔥~/Downloads"),
-			seg("branch", "main ✅"),
+			seg("model", "\u{1F680}omen-alpha\u{1F389}"),
+			seg("cwd", "\u{1F525}~/Downloads"),
+			seg("branch", "main \u2705"),
 		];
-		const line = composeAdaptiveLine(80, dirty, ["TPS 🚀 42", "MCP 🎉 9"], config, true);
+		const line = composeAdaptiveLine(80, dirty, ["TPS \u{1F680} 42", "MCP \u{1F389} 9"], config, true);
 		assert.equal(/\p{Extended_Pictographic}/u.test(line), false);
 		assert.equal(visibleWidth(line), 80);
 	});
@@ -135,7 +135,7 @@ describe("composeAdaptiveLine", () => {
 
 	it("rejects emoji and control chars in extension status icons", () => {
 		const { config: parsed, diagnostics } = normalizeStatuslineConfig({
-			extensionStatusIcons: { mcp: "🚀", lsp: "[2J", ok: "OK" },
+			extensionStatusIcons: { mcp: "\u{1F680}", lsp: "\x1b[2J", ok: "OK" },
 		});
 		assert.equal(parsed.extensionStatusIcons["mcp"], "");
 		assert.equal(parsed.extensionStatusIcons["lsp"], "");
@@ -147,19 +147,20 @@ describe("composeAdaptiveLine", () => {
 		assert.equal(stripEmoji("12" + String.fromCodePoint(0xFE0F, 0x20E3) + "3"), "123");
 		assert.equal(stripEmoji("hi" + String.fromCodePoint(0xE0020, 0xE0067, 0xE007F) + "bye"), "hibye");
 		assert.equal(stripEmoji("a" + String.fromCodePoint(0x200B, 0x200F) + "bc"), "abc");
+		assert.equal(containsEmoji("1\uFE0F\u20E3"), true);
 	});
 
 	it("strips flags and skin-tone modifiers", () => {
-		assert.equal(stripEmoji("🇯🇵"), "");
-		assert.equal(stripEmoji("👍🏽"), "");
-		assert.equal(stripEmoji("🏻"), "");
-		assert.equal(containsEmoji("🇯🇵 ok"), true);
+		assert.equal(stripEmoji("\u{1F1EF}\u{1F1F5}"), "");
+		assert.equal(stripEmoji("\u{1F44D}\u{1F3FD}"), "");
+		assert.equal(stripEmoji("\u{1F3FB}"), "");
+		assert.equal(containsEmoji("\u{1F1EF}\u{1F1F5} ok"), true);
 		assert.equal(containsEmoji("plain ok"), false);
 	});
 
 	it("rejects flag emoji in extension status icons", () => {
 		const { config: parsed, diagnostics } = normalizeStatuslineConfig({
-			extensionStatusIcons: { mcp: "🇯🇵" },
+			extensionStatusIcons: { mcp: "\u{1F1EF}\u{1F1F5}" },
 		});
 		assert.equal(parsed.extensionStatusIcons["mcp"], "");
 		assert.ok(diagnostics.some((item) => item.path === "extensionStatusIcons.mcp"));
@@ -167,7 +168,7 @@ describe("composeAdaptiveLine", () => {
 
 	it("bounds raw status length without splitting surrogate pairs", () => {
 		assert.equal(boundRawStatus("a".repeat(5000)).length, 4096);
-		const emoji = "😀".repeat(3000);
+		const emoji = "\u{1F600}".repeat(3000);
 		const bounded = boundRawStatus(emoji);
 		assert.ok(bounded.length <= 4096);
 		assert.equal(Array.from(bounded).join(""), bounded);
@@ -233,14 +234,14 @@ describe("composeAdaptiveLine", () => {
 describe("splitRightParts", () => {
 	it("caps at 4 parts and strips emoji", () => {
 		assert.deepEqual(splitRightParts(["a", "b", "c", "d", "e"]), ["a", "b", "c", "d"]);
-		assert.deepEqual(splitRightParts(["TPS 🚀 42", "  "]), ["TPS 42"]);
+		assert.deepEqual(splitRightParts(["TPS \u{1F680} 42", "  "]), ["TPS 42"]);
 		assert.deepEqual(splitRightParts("A  |  B | C"), ["A", "B", "C"]);
 	});
 });
 
 describe("no-emoji rails", () => {
 	it("stripEmoji removes emoji but keeps tech glyphs", () => {
-		assert.equal(stripEmoji("🚀hi🎉 ✓ ok"), "hi ✓ ok");
+		assert.equal(stripEmoji("\u{1F680}hi\u{1F389} \u2713 ok"), "hi \u2713 ok");
 		assert.equal(stripEmoji("π ↑↓ │ · … ^v"), "π ↑↓ │ · … ^v");
 	});
 

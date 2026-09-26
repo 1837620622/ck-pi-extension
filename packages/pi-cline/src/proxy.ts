@@ -12,16 +12,16 @@ import http from "node:http";
 import {
 	CLINE_BASE_URL,
 	CLINE_CLIENT_HEADERS,
-	CLINE_DEFAULT_KEY,
 	KNOWN_CLINE_FREE_MODELS,
 	resolveFreeModelId,
 } from "./models-registry.js";
+import { getStoredClineApiKey } from "./sync.js";
 import type { ClineProxyServerOptions, ClineProxyStatus } from "./types.js";
 
 let activeServer: http.Server | null = null;
 let activePort = 4116;
 let activeHost = "127.0.0.1";
-let configuredApiKey = CLINE_DEFAULT_KEY;
+let configuredApiKey = "";
 let requestCounter = 0;
 let errorCounter = 0;
 let serverStartedAt: number | undefined;
@@ -42,6 +42,22 @@ export function setProxyDefaultApiKey(key: string): void {
 	if (key && key.trim()) {
 		configuredApiKey = key.trim();
 	}
+}
+
+function sleepWithSignal(ms: number, signal?: AbortSignal | null): Promise<void> {
+	if (signal?.aborted) return Promise.reject(new DOMException("Aborted", "AbortError"));
+	return new Promise((resolve, reject) => {
+		const timer = setTimeout(() => {
+			signal?.removeEventListener("abort", onAbort);
+			resolve();
+		}, ms);
+		const onAbort = () => {
+			clearTimeout(timer);
+			signal?.removeEventListener("abort", onAbort);
+			reject(new DOMException("Aborted", "AbortError"));
+		};
+		signal?.addEventListener("abort", onAbort);
+	});
 }
 
 /**
@@ -72,23 +88,41 @@ async function assembleSseStreamToJson(
 	let usage: Record<string, unknown> = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
 	const toolCallsMap = new Map<number, { id: string; type: string; function: { name: string; arguments: string } }>();
 
-	while (!done) {
-		const { value, done: rDone } = await reader.read();
-		done = rDone;
-		if (value) {
-			buffer += decoder.decode(value, { stream: !done });
-			const lines = buffer.split("\n");
-			buffer = lines.pop() || "";
-			for (const line of lines) {
-				const trimmed = line.trim();
-				if (trimmed.startsWith("data: ") && trimmed !== "data: [DONE]") {
-					try {
-						const chunk = JSON.parse(trimmed.slice(6));
-						if (chunk.id) id = chunk.id;
-						const choice = chunk.choices?.[0];
-						if (choice?.delta?.content) textContent += choice.delta.content;
-						if (choice?.delta?.reasoning_content) reasoningContent += choice.delta.reasoning_content;
-						if (choice?.delta?.reasoning) reasoningContent += choice.delta.reasoning;
+	try {
+		while (!done) {
+			const { value, done: rDone } = await reader.read();
+			done = rDone;
+			if (value) {
+				buffer += decoder.decode(value, { stream: !done });
+				if (buffer.length > 2 * 1024 * 1024) {
+					buffer = "";
+					await reader.cancel("Buffer exceeded 2MB limit").catch(() => {});
+					break;
+				}
+				const lines = buffer.split("\n");
+				buffer = lines.pop() || "";
+				for (const line of lines) {
+					const trimmed = line.trim();
+					if (trimmed.startsWith("data: ") && trimmed !== "data: [DONE]") {
+						try {
+							const chunk = JSON.parse(trimmed.slice(6));
+							if (chunk.id) id = chunk.id;
+							const choice = chunk.choices?.[0];
+							if (choice?.delta?.content) {
+								if (textContent.length < 2 * 1024 * 1024) {
+									textContent += choice.delta.content;
+								}
+							}
+							if (choice?.delta?.reasoning_content) {
+								if (reasoningContent.length < 2 * 1024 * 1024) {
+									reasoningContent += choice.delta.reasoning_content;
+								}
+							}
+							if (choice?.delta?.reasoning) {
+								if (reasoningContent.length < 2 * 1024 * 1024) {
+									reasoningContent += choice.delta.reasoning;
+								}
+							}
 
 						// 累计流式工具调用
 						if (Array.isArray(choice?.delta?.tool_calls)) {
@@ -118,6 +152,9 @@ async function assembleSseStreamToJson(
 				}
 			}
 		}
+	}
+	} catch (err) {
+		await reader.cancel(err).catch(() => {});
 	}
 
 	const promptTokens = Number(usage.prompt_tokens) || 0;
@@ -174,10 +211,47 @@ export async function startClineProxyServer(
 	}
 
 	const server = http.createServer(async (req, res) => {
-		// 1. CORS 支持
-		res.setHeader("Access-Control-Allow-Origin", "*");
+		// Host 标头安全校验：防止 DNS 重绑定与未授权局域网访问 (DNS Rebinding Protection)
+		const hostHeader = req.headers.host?.trim() || "";
+		if (!hostHeader) {
+			res.writeHead(403, { "Content-Type": "application/json" });
+			res.end(JSON.stringify({ error: { message: "Forbidden: Missing Host header" } }));
+			return;
+		}
+		let hostName = "";
+		if (hostHeader.startsWith("[")) {
+			const closingBracket = hostHeader.indexOf("]");
+			if (closingBracket !== -1) {
+				hostName = hostHeader.slice(1, closingBracket).toLowerCase();
+			}
+		} else {
+			hostName = hostHeader.split(":")[0]?.toLowerCase() || "";
+		}
+		const allowedHosts = new Set(["127.0.0.1", "localhost", "::1", activeHost.toLowerCase()]);
+		if (!allowedHosts.has(hostName)) {
+			res.writeHead(403, { "Content-Type": "application/json" });
+			res.end(JSON.stringify({ error: { message: "Forbidden: Invalid Host header" } }));
+			return;
+		}
+
+		// 1. CORS 安全防护：仅反射受信任的本地/编辑器 Origin
+		const origin = req.headers.origin || "";
+		const isTrustedOrigin =
+			origin.startsWith("http://localhost:") ||
+			origin.startsWith("http://127.0.0.1:") ||
+			origin.startsWith("http://[::1]:") ||
+			origin === "http://localhost" ||
+			origin === "http://127.0.0.1" ||
+			origin === "http://[::1]" ||
+			origin.startsWith("vscode-webview://") ||
+			origin.startsWith("vscode-file://");
+
+		if (isTrustedOrigin && origin) {
+			res.setHeader("Access-Control-Allow-Origin", origin);
+			res.setHeader("Vary", "Origin");
+		}
 		res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE");
-		res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, *");
+		res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
 
 		if (req.method === "OPTIONS") {
 			res.writeHead(204);
@@ -212,14 +286,21 @@ export async function startClineProxyServer(
 				parsedUrl.searchParams.get("free") === "true" ||
 				parsedUrl.searchParams.get("free") === "1";
 
-			if (!onlyFree) {
+			const clientAuth = req.headers["authorization"] || "";
+			const token =
+				(clientAuth.startsWith("Bearer ") && clientAuth.slice(7).trim()) ||
+				configuredApiKey ||
+				getStoredClineApiKey();
+
+			if (!onlyFree && token) {
 				try {
 					// 尝试向上游同步，失败则快速回退本地已知免费模型
 					const upstreamRes = await fetch(`${CLINE_BASE_URL}/models`, {
 						headers: {
-							Authorization: `Bearer ${configuredApiKey}`,
+							Authorization: `Bearer ${token}`,
 							...CLINE_CLIENT_HEADERS,
 						},
+						signal: AbortSignal.timeout(10_000),
 					}).catch(() => null);
 
 					if (upstreamRes && upstreamRes.ok) {
@@ -258,10 +339,34 @@ export async function startClineProxyServer(
 
 			requestCounter++;
 
-			// 收集请求体
+			// 收集请求体（设置 10MB 上限防御堆内存耗尽 DoS 攻击）
+			const MAX_BODY_BYTES = 10 * 1024 * 1024;
+			let receivedBytes = 0;
+			let exceeded = false;
 			const chunks: Buffer[] = [];
-			req.on("data", (chunk) => chunks.push(chunk));
+
+			req.on("data", (chunk: Buffer) => {
+				if (exceeded) return;
+				receivedBytes += chunk.length;
+				if (receivedBytes > MAX_BODY_BYTES) {
+					exceeded = true;
+					res.writeHead(413, { "Content-Type": "application/json" });
+					res.end(JSON.stringify({ error: { message: "Payload Too Large: Maximum request body is 10MB" } }));
+					req.destroy();
+					return;
+				}
+				chunks.push(chunk);
+			});
+
+			req.on("error", () => {
+				if (!res.headersSent) {
+					res.writeHead(400, { "Content-Type": "application/json" });
+					res.end(JSON.stringify({ error: { message: "Bad Request" } }));
+				}
+			});
+
 			req.on("end", async () => {
+				if (exceeded) return;
 				try {
 					const bodyText = Buffer.concat(chunks).toString("utf-8");
 					let payload: Record<string, unknown> = {};
@@ -279,11 +384,24 @@ export async function startClineProxyServer(
 					payload.model = resolvedModel;
 					const modelId = resolvedModel;
 
-					// 提取认证 Token：若调用者传入了非空 Bearer Token 则优先使用，否则自动注入内置的 Cline Key
+					// 提取认证 Token：优先使用请求头 Bearer Token，其次使用本地配置或存储的 Key
 					const clientAuth = req.headers["authorization"] || "";
-					let tokenToUse = configuredApiKey;
-					if (clientAuth.startsWith("Bearer ") && clientAuth.slice(7).trim().startsWith("sk_")) {
+					let tokenToUse = configuredApiKey || getStoredClineApiKey();
+					if (clientAuth.startsWith("Bearer ") && clientAuth.slice(7).trim()) {
 						tokenToUse = clientAuth.slice(7).trim();
+					}
+
+					if (!tokenToUse) {
+						res.writeHead(401, { "Content-Type": "application/json" });
+						res.end(
+							JSON.stringify({
+								error: {
+									message: "Unauthorized: No Cline API key provided or configured.",
+									type: "invalid_request_error",
+								},
+							}),
+						);
+						return;
 					}
 
 					const upstreamHeaders: Record<string, string> = {
@@ -293,34 +411,52 @@ export async function startClineProxyServer(
 					};
 
 					const isStreaming = payload.stream === true;
+					const abortController = new AbortController();
+					let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+
+					const onClientAbort = () => {
+						abortController.abort();
+						reader?.cancel("Client disconnected").catch(() => {});
+					};
+					req.on("close", onClientAbort);
+					res.on("close", onClientAbort);
 
 					// 向上游 Cline 官方 API 发起转发（严守同模型重试，绝不降级模型）
 					let upstreamRes: Response | undefined;
 					const maxProxyRetries = 3;
 					for (let attempt = 0; attempt <= maxProxyRetries; attempt++) {
+						if (abortController.signal.aborted) break;
 						try {
 							upstreamRes = await fetch(`${CLINE_BASE_URL}/chat/completions`, {
 								method: "POST",
 								headers: upstreamHeaders,
 								body: JSON.stringify(payload),
+								signal: abortController.signal,
 							});
 							if (upstreamRes.ok || (upstreamRes.status < 500 && upstreamRes.status !== 429)) {
 								break;
 							}
 							if (attempt < maxProxyRetries) {
 								const isTestEnv = !!process.env.TEST_PI_MODELS_PATH || process.env.NODE_ENV === "test";
-								const delayMs = isTestEnv ? 10 : Math.min(1000 * Math.pow(2, attempt), 5000);
-								await new Promise((resolve) => setTimeout(resolve, delayMs));
+								const baseDelay = isTestEnv ? 10 : Math.min(1000 * Math.pow(2, attempt), 5000);
+								const delayMs = isTestEnv ? 10 : Math.max(10, Math.floor(Math.random() * baseDelay));
+								await sleepWithSignal(delayMs, abortController.signal);
 							}
-						} catch (netErr) {
+						} catch (netErr: any) {
+							if (netErr?.name === "AbortError" || abortController.signal.aborted) {
+								return;
+							}
 							if (attempt < maxProxyRetries) {
 								const isTestEnv = !!process.env.TEST_PI_MODELS_PATH || process.env.NODE_ENV === "test";
-								const delayMs = isTestEnv ? 10 : Math.min(1000 * Math.pow(2, attempt), 5000);
-								await new Promise((resolve) => setTimeout(resolve, delayMs));
+								const baseDelay = isTestEnv ? 10 : Math.min(1000 * Math.pow(2, attempt), 5000);
+								const delayMs = isTestEnv ? 10 : Math.max(10, Math.floor(Math.random() * baseDelay));
+								await sleepWithSignal(delayMs, abortController.signal);
 							} else {
 								errorCounter++;
-								res.writeHead(502, { "Content-Type": "application/json" });
-								res.end(JSON.stringify({ error: { message: `Upstream connection failed after ${maxProxyRetries} retries: ${String(netErr)}` } }));
+								if (!res.headersSent) {
+									res.writeHead(502, { "Content-Type": "application/json" });
+									res.end(JSON.stringify({ error: { message: "Upstream connection failed after retries" } }));
+								}
 								return;
 							}
 						}
@@ -330,8 +466,21 @@ export async function startClineProxyServer(
 						errorCounter++;
 						const status = upstreamRes ? upstreamRes.status : 502;
 						const errText = upstreamRes ? await upstreamRes.text().catch(() => "") : "";
-						res.writeHead(status, { "Content-Type": "application/json" });
-						res.end(errText || JSON.stringify({ error: upstreamRes?.statusText || "Upstream request failed" }));
+						let errorJson: unknown;
+						try {
+							errorJson = JSON.parse(errText);
+						} catch {
+							errorJson = {
+								error: {
+									message: errText.slice(0, 500) || upstreamRes?.statusText || "Upstream request failed",
+									code: status,
+								},
+							};
+						}
+						if (!res.headersSent) {
+							res.writeHead(status, { "Content-Type": "application/json" });
+							res.end(JSON.stringify(errorJson));
+						}
 						return;
 					}
 
@@ -344,7 +493,7 @@ export async function startClineProxyServer(
 						});
 
 						if (upstreamRes.body) {
-							const reader = upstreamRes.body.getReader();
+							reader = upstreamRes.body.getReader();
 							const decoder = new TextDecoder();
 							let buffer = "";
 							let hasSentAnyContent = false;
@@ -354,6 +503,12 @@ export async function startClineProxyServer(
 									if (done) break;
 									if (value) {
 										buffer += decoder.decode(value, { stream: true });
+										if (buffer.length > 2 * 1024 * 1024) {
+											buffer = "";
+											await reader.cancel("Buffer exceeded 2MB limit").catch(() => {});
+											res.destroy();
+											break;
+										}
 										const lines = buffer.split("\n");
 										buffer = lines.pop() || "";
 										for (const line of lines) {
@@ -424,8 +579,18 @@ export async function startClineProxyServer(
 								if (buffer) {
 									res.write(buffer);
 								}
+							} catch (streamErr) {
+								await reader?.cancel(streamErr).catch(() => {});
+								if (!res.headersSent) {
+									res.writeHead(502, { "Content-Type": "application/json" });
+									res.end(JSON.stringify({ error: { message: "Stream reading failed" } }));
+								} else {
+									res.destroy();
+								}
 							} finally {
-								res.end();
+								if (!res.writableEnded) {
+									res.end();
+								}
 							}
 						} else {
 							res.end();
@@ -438,12 +603,20 @@ export async function startClineProxyServer(
 							res.writeHead(200, { "Content-Type": "application/json" });
 							res.end(JSON.stringify(assembledJson));
 						} else {
-							const rawJson = await upstreamRes.json();
+							let rawJson: unknown;
+							try {
+								rawJson = await upstreamRes.json();
+							} catch {
+								errorCounter++;
+								res.writeHead(502, { "Content-Type": "application/json" });
+								res.end(JSON.stringify({ error: { message: "Invalid JSON response from upstream provider" } }));
+								return;
+							}
 							// 核心解包：Cline 官方接口会将非流式结果包裹在 { data: { ... }, success: true }
 							// 标准 OpenAI 客户端期待根对象包含 choices，此处透明解包
 							const unwrapped: Record<string, any> = (rawJson && typeof rawJson === "object" && (rawJson as any).data?.choices)
 								? (rawJson as any).data
-								: rawJson;
+								: (rawJson as Record<string, any>) || {};
 
 							if (Array.isArray(unwrapped.choices) && unwrapped.choices.length > 0) {
 								for (const choice of unwrapped.choices) {
@@ -464,8 +637,12 @@ export async function startClineProxyServer(
 					}
 				} catch (err: any) {
 					errorCounter++;
-					res.writeHead(500, { "Content-Type": "application/json" });
-					res.end(JSON.stringify({ error: err.message || "Proxy Internal Error" }));
+					if (!res.headersSent) {
+						res.writeHead(500, { "Content-Type": "application/json" });
+						res.end(JSON.stringify({ error: { message: err?.message || "Proxy Internal Error" } }));
+					} else {
+						res.destroy();
+					}
 				}
 			});
 			return;

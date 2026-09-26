@@ -84,10 +84,11 @@ function extensionStatusIcon(
 	configuredIcons: Record<string, string>,
 	extensionStatusIconAliases: ExtensionStatusIconAliasMap,
 ) {
-	// 用户配置的图标若含 Emoji 则忽略，保证无表情包。
+	// 用户配置的图标若含 Emoji 则忽略，保证无表情包；严格转义终端控制字符。
 	const configured = pickConfiguredIcon(key, configuredIcons, extensionStatusIconAliases);
 	if (configured !== undefined) {
-		return containsEmoji(configured) ? "" : configured;
+		const cleanConfigured = stripEmoji(sanitizeTerminalText(boundRawStatus(configured)));
+		return containsEmoji(cleanConfigured) ? "" : cleanConfigured;
 	}
 	if (leadingIcon) {
 		const cleanIcon = stripEmoji(sanitizeTerminalText(boundRawStatus(leadingIcon)));

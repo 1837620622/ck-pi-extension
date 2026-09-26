@@ -10,7 +10,8 @@
  * 并写回文件；/reload 会重新执行本工厂函数，从文件刷新配置。
  */
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { configFilePath, loadConfig } from "./config.js";
@@ -71,7 +72,13 @@ export async function handleRedkitCommand(
 	ctx: ExtensionCommandContext,
 	deps: RedkitCommandDeps,
 ): Promise<void> {
-	const token = args.trim().toLowerCase();
+	// 防御：截断至 32 字符并剥离所有控制字符与 ANSI 转义序列，防御终端注入与超长 DoS
+	const token = args
+		.replace(/[\u0000-\u001f\u007f-\u009f\x1b]/g, "")
+		.trim()
+		.toLowerCase()
+		.slice(0, 32);
+
 	if (!token || token === "status") {
 		notify(ctx, `redkit mode: ${deps.getMode()} (config: ${deps.getPath()})`);
 		if (!token) notify(ctx, "Usage: /redkit [full|pentest|reverse|off|status]");
@@ -90,7 +97,7 @@ export async function handleRedkitCommand(
 	notify(ctx, `redkit mode switched to ${token} (takes effect immediately).`);
 }
 
-/** 把 mode 写回配置文件，保留文件里其他字段原样。 */
+/** 把 mode 写回配置文件，保留文件里其他字段原样。采用原子临时文件与 rename 防止文件损坏。 */
 export function persistMode(configPath: string, mode: RedkitMode): void {
 	let document: Record<string, unknown> = {};
 	try {
@@ -102,8 +109,20 @@ export function persistMode(configPath: string, mode: RedkitMode): void {
 		// 文件不存在或损坏都从空对象起写，只保证 mode 落盘。
 	}
 	document.mode = mode;
-	mkdirSync(dirname(configPath), { recursive: true });
-	writeFileSync(configPath, `${JSON.stringify(document, null, 2)}\n`, "utf8");
+	const dir = dirname(configPath);
+	mkdirSync(dir, { recursive: true });
+	const tempPath = `${configPath}.tmp.${randomUUID()}`;
+	writeFileSync(tempPath, `${JSON.stringify(document, null, 2)}\n`, {
+		encoding: "utf8",
+		flag: "wx",
+		mode: 0o600,
+	});
+	try {
+		renameSync(tempPath, configPath);
+	} catch (err) {
+		try { unlinkSync(tempPath); } catch {}
+		throw err;
+	}
 }
 
 function notify(

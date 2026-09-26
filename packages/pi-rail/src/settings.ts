@@ -264,11 +264,11 @@ export function normalizeStatuslineConfig(value: unknown): {
 				});
 			}
 			for (const [legacyKey, canonicalKey] of Object.entries(LEGACY_STATUS_ICON_KEYS)) {
-				const legacyIcon = Object.hasOwn(value.extensionStatusIcons, legacyKey)
-					? value.extensionStatusIcons[legacyKey]
+				const legacyIcon = Object.hasOwn(config.extensionStatusIcons, legacyKey)
+					? (config.extensionStatusIcons as Record<string, string>)[legacyKey]
 					: undefined;
-				const canonicalIcon = Object.hasOwn(value.extensionStatusIcons, canonicalKey)
-					? value.extensionStatusIcons[canonicalKey]
+				const canonicalIcon = Object.hasOwn(config.extensionStatusIcons, canonicalKey)
+					? (config.extensionStatusIcons as Record<string, string>)[canonicalKey]
 					: undefined;
 				const targetKey = typeof canonicalIcon === "string" ? legacyKey : canonicalKey;
 				const inheritedIcon =
@@ -422,7 +422,7 @@ export function saveStatuslineSettingsDocument(
 		fs.mkdirSync(dirname(settingsPath), { recursive: true });
 		fs.writeFileSync(temporaryPath, rawDocument, { encoding: "utf8", flag: "wx" });
 		const info = lstatSync(temporaryPath);
-		fileIdentity = { dev: info.dev, ino: info.ino };
+		fileIdentity = { dev: info.dev, ino: info.ino, mtimeMs: info.mtimeMs, size: info.size };
 		if (!replaceExisting && pathEntryExists(settingsPath)) {
 			throw new Error(`${SETTINGS_FILE_NAME} was created concurrently; reopen settings and retry.`);
 		}

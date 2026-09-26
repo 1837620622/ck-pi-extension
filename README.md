@@ -49,6 +49,11 @@ GitHub 源安装：`pi install git:github.com/1837620622/ck-pi-extension`。
 
 ## 更新日志
 
+- `ck-pi-cline 0.1.3` / `ck-pi-zen-session 0.1.19` / `ck-pi-rail 0.1.1` / `ck-pi-redkit 0.1.8`：系统级安全与架构深度审计全面加固：
+  - **网络与本地代理安全**：强化 DNS Rebinding 防护、严格解析中括号 IPv6 主机头、受信任 CORS 来源白名单校验、SSE 帧缓存 2MB 熔断机制、客户端断开自动取消上游流式传输；
+  - **同模型全抖动退避重试**：Fetch 拦截器遭遇 500/502/503/504 及 429 时，执行带 Full Jitter 全抖动的指数退避重试，绝不自动切换备用模型（严格保障模型质量不降级）；
+  - **凭据与数据库安全**：`auth.json` 与 `models.json` 目录与文件权限严格限制为 0700 / 0600；CC-Switch SQLite 同步兼容 Node < 22.5.0 并杜绝进程参数凭据暴露；
+  - **终端与配置原子落盘**：OSC 8 参数与 ST 终止符完整支持、状态栏配置 CAS 乐观锁防并发覆盖、全工程严格无 Emoji 注入。
 - `ck-pi-cline 0.1.1` / `ck-pi-zen-session 0.1.18`：双插件指令体系全面对齐（`/cline` 与 `/zen` 均支持无参自刷新、直接传 Key 识别模型与热重载、`sync`/`refresh`、`list`/`models`/`free`、`ping` 实时探针与 `model` 切换）；双向保全流式推理思考链 CoT（`delta.reasoning` 与 `delta.reasoning_content` 双向写入）；彻底消除历史遗留 Emoji；模型注册与命令执行全链路异常容灾加固。
 - `ck-pi-cline 0.1.0`：全新发布！Cline 官方指纹伪装、21 款实测零额度免费模型（含 1M 隐身模型 `stealth/space-bunny-alpha` 与 2M 代码模型 `openrouter/pareto-code`）、本地 OpenAI 兼容反向代理（端口 4116）、Empty Output Guard 空输出死锁防御与自动故障转移。
 - `ck-pi-zen-session 0.1.15`：全面深度优化：极速压缩修剪、透明三重重试自愈与多场景护航。

@@ -10,10 +10,28 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
+import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+
+const require = createRequire(import.meta.url);
+
+function getDatabaseSync(): any {
+	try {
+		return require("node:sqlite").DatabaseSync;
+	} catch {
+		return null;
+	}
+}
+
+function resolvePython3(): string {
+	const candidates = ["/usr/bin/python3", "/usr/local/bin/python3", "/opt/homebrew/bin/python3", "python3"];
+	for (const p of candidates) {
+		if (p.startsWith("/") && existsSync(p)) return p;
+	}
+	return "python3";
+}
 import {
 	formatModelCard,
 	formatThinkingSummary,
@@ -65,6 +83,7 @@ export async function fetchZenModelCatalog(apiKey: string): Promise<ZenModelDefi
 			Authorization: `Bearer ${apiKey.trim()}`,
 			"User-Agent": ZEN_USER_AGENT,
 		},
+		signal: AbortSignal.timeout(15_000),
 	});
 
 	if (!res.ok) {
@@ -418,10 +437,16 @@ async function doSyncZenConfiguration(options: ZenSyncOptions = {}): Promise<Zen
 		models: resolvedModels,
 	};
 
-	mkdirSync(dirname(modelsPath), { recursive: true });
-	writeFileSync(modelsPath, `${JSON.stringify(modelsDoc, null, 2)}\n`, "utf8");
+	mkdirSync(dirname(modelsPath), { recursive: true, mode: 0o700 });
+	try {
+		chmodSync(dirname(modelsPath), 0o700);
+	} catch {}
+	writeFileSync(modelsPath, `${JSON.stringify(modelsDoc, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+	try {
+		chmodSync(modelsPath, 0o600);
+	} catch {}
 
-	// 4. 更新 ~/.pi/agent/auth.json
+	// 4. 更新 ~/.pi/agent/auth.json (强制 0600 保护敏感凭证)
 	let authDoc: Record<string, unknown> = {};
 	try {
 		if (existsSync(authPath)) {
@@ -434,8 +459,14 @@ async function doSyncZenConfiguration(options: ZenSyncOptions = {}): Promise<Zen
 		type: "api_key",
 		key: resolvedApiKey,
 	};
-	mkdirSync(dirname(authPath), { recursive: true });
-	writeFileSync(authPath, `${JSON.stringify(authDoc, null, 2)}\n`, "utf8");
+	mkdirSync(dirname(authPath), { recursive: true, mode: 0o700 });
+	try {
+		chmodSync(dirname(authPath), 0o700);
+	} catch {}
+	writeFileSync(authPath, `${JSON.stringify(authDoc, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+	try {
+		chmodSync(authPath, 0o600);
+	} catch {}
 
 	// 5. 同步 CC-Switch 数据库
 	let ccSwitchUpdated = false;
@@ -468,91 +499,133 @@ export function updateCcSwitchDb(
 ): boolean {
 	if (!existsSync(dbPath)) return false;
 
-	// 优先使用 Node 22+ 内置的 node:sqlite
-	try {
-		const db = new DatabaseSync(dbPath);
-		const selectStmt = db.prepare("SELECT app_type, settings_config FROM providers WHERE id = ?");
-		const rows = selectStmt.all(ZEN_PROVIDER_ID) as Array<{ app_type: string; settings_config: string }>;
-
-		if (rows.length > 0) {
-			const updateStmt = db.prepare(
-				"UPDATE providers SET settings_config = ? WHERE id = ? AND app_type = ?",
-			);
-
-			for (const row of rows) {
-				try {
-					const cfg = JSON.parse(row.settings_config) as Record<string, unknown>;
-					if (row.app_type === "pi") {
-						cfg.apiKey = apiKey;
-						const headers = (cfg.headers ?? {}) as Record<string, string>;
-						headers["User-Agent"] = ZEN_USER_AGENT;
-						headers["x-opencode-client"] = "cli";
-						headers["x-opencode-session"] = sessionId;
-						headers["x-opencode-project"] = generateZenProjectId();
-						headers["x-session-affinity"] = sessionId;
-						headers["X-Session-Id"] = sessionId;
-						cfg.headers = headers;
-						cfg.models = models;
-					} else if (row.app_type === "opencode") {
-						const opts = (cfg.options ?? {}) as Record<string, unknown>;
-						opts.apiKey = apiKey;
-						const headers = (opts.headers ?? {}) as Record<string, string>;
-						headers["User-Agent"] = ZEN_USER_AGENT;
-						headers["x-opencode-client"] = "cli";
-						headers["x-opencode-session"] = sessionId;
-						headers["x-opencode-project"] = generateZenProjectId();
-						headers["x-session-affinity"] = sessionId;
-						headers["X-Session-Id"] = sessionId;
-						opts.headers = headers;
-						cfg.options = opts;
-					}
-					updateStmt.run(JSON.stringify(cfg), ZEN_PROVIDER_ID, row.app_type);
-				} catch {
-					// 忽略单行解析失败
-				}
-			}
-			db.close();
-			return true;
-		}
-		db.close();
-	} catch {
-		// 若 node:sqlite 不可用，尝试调用 Python3 脚本无痛回退
+	const DatabaseSync = getDatabaseSync();
+	let db: any = null;
+	if (DatabaseSync) {
 		try {
-			const script = `
-import sqlite3, json, sys
-conn = sqlite3.connect('${dbPath}')
-c = conn.cursor()
-c.execute("SELECT app_type, settings_config FROM providers WHERE id = '${ZEN_PROVIDER_ID}'")
-rows = c.fetchall()
-if rows:
-    for app, cfg_str in rows:
-        try:
-            cfg = json.loads(cfg_str)
-            if app == 'pi':
-                cfg['apiKey'] = '${apiKey}'
-                headers = cfg.get('headers', {})
-                headers['User-Agent'] = '${ZEN_USER_AGENT}'
-                headers['x-opencode-session'] = '${sessionId}'
-                cfg['headers'] = headers
-            elif app == 'opencode':
-                opts = cfg.get('options', {})
-                opts['apiKey'] = '${apiKey}'
-                headers = opts.get('headers', {})
-                headers['User-Agent'] = '${ZEN_USER_AGENT}'
-                headers['x-opencode-session'] = '${sessionId}'
-                opts['headers'] = headers
-                cfg['options'] = opts
-            c.execute("UPDATE providers SET settings_config = ? WHERE id = ? AND app_type = ?", (json.dumps(cfg), '${ZEN_PROVIDER_ID}', app))
-        except Exception:
-            pass
-    conn.commit()
-conn.close()
-`;
-			execFileSync("python3", ["-c", script], { timeout: 3000 });
-			return true;
+			db = new DatabaseSync(dbPath);
+			db.exec("PRAGMA busy_timeout = 5000;");
+			const selectStmt = db.prepare("SELECT app_type, settings_config FROM providers WHERE id = ?");
+			const rows = selectStmt.all(ZEN_PROVIDER_ID) as Array<{ app_type: string; settings_config: string }>;
+
+			if (rows.length > 0) {
+				const updateStmt = db.prepare(
+					"UPDATE providers SET settings_config = ? WHERE id = ? AND app_type = ?",
+				);
+
+				for (const row of rows) {
+					try {
+						const cfg = JSON.parse(row.settings_config) as Record<string, unknown>;
+						if (row.app_type === "pi") {
+							cfg.apiKey = apiKey;
+							const headers = (cfg.headers ?? {}) as Record<string, string>;
+							headers["User-Agent"] = ZEN_USER_AGENT;
+							headers["x-opencode-client"] = "cli";
+							headers["x-opencode-session"] = sessionId;
+							headers["x-opencode-project"] = generateZenProjectId();
+							headers["x-session-affinity"] = sessionId;
+							headers["X-Session-Id"] = sessionId;
+							cfg.headers = headers;
+							cfg.models = models;
+						} else if (row.app_type === "opencode") {
+							const opts = (cfg.options ?? {}) as Record<string, unknown>;
+							opts.apiKey = apiKey;
+							const headers = (opts.headers ?? {}) as Record<string, string>;
+							headers["User-Agent"] = ZEN_USER_AGENT;
+							headers["x-opencode-client"] = "cli";
+							headers["x-opencode-session"] = sessionId;
+							headers["x-opencode-project"] = generateZenProjectId();
+							headers["x-session-affinity"] = sessionId;
+							headers["X-Session-Id"] = sessionId;
+							opts.headers = headers;
+							cfg.options = opts;
+						}
+						updateStmt.run(JSON.stringify(cfg), ZEN_PROVIDER_ID, row.app_type);
+					} catch {
+						// 忽略单行解析失败
+					}
+				}
+				try {
+					chmodSync(dbPath, 0o600);
+				} catch {}
+				db.close();
+				db = null;
+				return true;
+			}
 		} catch {
-			return false;
+			if (db) {
+				try { db.close(); } catch {}
+				db = null;
+			}
+		} finally {
+			if (db) {
+				try { db.close(); } catch {}
+				db = null;
+			}
 		}
+	}
+
+	// 若 node:sqlite 不可用，尝试调用 Python3 脚本无痛回退
+	// 安全防御：通过标准输入传递 JSON 参数，彻底杜绝命令注入与进程列表 (ps aux) 凭据泄露
+	try {
+		const pythonBin = resolvePython3();
+		const script = `
+import sqlite3, json, sys
+try:
+    data = json.loads(sys.stdin.read())
+    db_path = data['dbPath']
+    api_key = data['apiKey']
+    session_id = data['sessionId']
+    user_agent = data['userAgent']
+    provider_id = data['providerId']
+    conn = sqlite3.connect(db_path)
+    try:
+        c = conn.cursor()
+        c.execute("SELECT app_type, settings_config FROM providers WHERE id = ?", (provider_id,))
+        rows = c.fetchall()
+        if rows:
+            for app, cfg_str in rows:
+                try:
+                    cfg = json.loads(cfg_str)
+                    if app == 'pi':
+                        cfg['apiKey'] = api_key
+                        headers = cfg.get('headers', {})
+                        headers['User-Agent'] = user_agent
+                        headers['x-opencode-session'] = session_id
+                        cfg['headers'] = headers
+                    elif app == 'opencode':
+                        opts = cfg.get('options', {})
+                        opts['apiKey'] = api_key
+                        headers = opts.get('headers', {})
+                        headers['User-Agent'] = user_agent
+                        headers['x-opencode-session'] = session_id
+                        opts['headers'] = headers
+                        cfg['options'] = opts
+                    c.execute("UPDATE providers SET settings_config = ? WHERE id = ? AND app_type = ?", (json.dumps(cfg), provider_id, app))
+                except Exception:
+                    pass
+            conn.commit()
+    finally:
+        conn.close()
+except Exception:
+    sys.exit(1)
+`;
+		execFileSync(pythonBin, ["-c", script], {
+			input: JSON.stringify({
+				dbPath,
+				apiKey,
+				sessionId,
+				userAgent: ZEN_USER_AGENT,
+				providerId: ZEN_PROVIDER_ID,
+			}),
+			timeout: 3000,
+		});
+		try {
+			chmodSync(dbPath, 0o600);
+		} catch {}
+		return true;
+	} catch {
+		return false;
 	}
 
 	return false;

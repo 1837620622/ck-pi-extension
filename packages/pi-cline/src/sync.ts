@@ -9,10 +9,20 @@
  * 5. 同步更新 CC-Switch 本地 SQLite 数据库。
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
+import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+
+const require = createRequire(import.meta.url);
+
+function getDatabaseSync(): any {
+	try {
+		return require("node:sqlite").DatabaseSync;
+	} catch {
+		return null;
+	}
+}
 import {
 	CLINE_BASE_URL,
 	CLINE_CLIENT_HEADERS,
@@ -91,6 +101,7 @@ export async function fetchClineModelCatalog(apiKey: string): Promise<ClineModel
 				Authorization: `Bearer ${apiKey.trim()}`,
 				...CLINE_CLIENT_HEADERS,
 			},
+			signal: AbortSignal.timeout(15_000),
 		});
 
 		if (res.ok) {
@@ -203,8 +214,14 @@ export async function syncClineConfiguration(
 				modelsData[CLINE_PROVIDER_ID] = providerConfig;
 			}
 
-			mkdirSync(dirname(modelsPath), { recursive: true });
-			writeFileSync(modelsPath, JSON.stringify(modelsData, null, 2), "utf-8");
+			mkdirSync(dirname(modelsPath), { recursive: true, mode: 0o700 });
+			try {
+				chmodSync(dirname(modelsPath), 0o700);
+			} catch {}
+			writeFileSync(modelsPath, JSON.stringify(modelsData, null, 2), { encoding: "utf-8", mode: 0o600 });
+			try {
+				chmodSync(modelsPath, 0o600);
+			} catch {}
 			updatedModelsJson = true;
 		} catch (err: any) {
 			if (!options.silent) {
@@ -212,7 +229,7 @@ export async function syncClineConfiguration(
 			}
 		}
 
-		// 2. 更新 ~/.pi/agent/auth.json
+		// 2. 更新 ~/.pi/agent/auth.json (强制 0600 权限保护 API Key)
 		try {
 			let authData: Record<string, any> = {};
 			if (existsSync(authPath)) {
@@ -224,8 +241,14 @@ export async function syncClineConfiguration(
 				key: apiKey,
 			};
 
-			mkdirSync(dirname(authPath), { recursive: true });
-			writeFileSync(authPath, JSON.stringify(authData, null, 2), "utf-8");
+			mkdirSync(dirname(authPath), { recursive: true, mode: 0o700 });
+			try {
+				chmodSync(dirname(authPath), 0o700);
+			} catch {}
+			writeFileSync(authPath, JSON.stringify(authData, null, 2), { encoding: "utf-8", mode: 0o600 });
+			try {
+				chmodSync(authPath, 0o600);
+			} catch {}
 			updatedAuthJson = true;
 		} catch (err: any) {
 			if (!options.silent) {
@@ -270,20 +293,25 @@ export function updateCcSwitchDbForCline(
 		return false;
 	}
 
+	const DatabaseSync = getDatabaseSync();
+	if (!DatabaseSync) {
+		return false;
+	}
+
+	let db: any = null;
 	try {
-		const db = new DatabaseSync(dbPath);
+		db = new DatabaseSync(dbPath);
+		db.exec("PRAGMA busy_timeout = 5000;");
 		const tables = db
 			.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='providers'")
 			.all();
 
 		if (tables.length === 0) {
-			db.close();
 			return false;
 		}
 
-		const existing = db
-			.prepare("SELECT id, config FROM providers WHERE id = ?")
-			.get(CLINE_PROVIDER_ID) as { id: string; config?: string } | undefined;
+		const colRows = db.prepare("PRAGMA table_info(providers)").all() as Array<{ name: string }>;
+		const colNames = new Set(colRows.map((r) => r.name));
 
 		const providerConfig = {
 			id: CLINE_PROVIDER_ID,
@@ -299,20 +327,59 @@ export function updateCcSwitchDbForCline(
 			})),
 		};
 
-		if (existing) {
-			db.prepare("UPDATE providers SET config = ? WHERE id = ?").run(
-				JSON.stringify(providerConfig),
-				CLINE_PROVIDER_ID,
-			);
-		} else {
-			db.prepare(
-				"INSERT INTO providers (id, name, type, config) VALUES (?, 'Cline (Free Tier & Router)', 'openai', ?)",
-			).run(CLINE_PROVIDER_ID, JSON.stringify(providerConfig));
+		if (colNames.has("settings_config")) {
+			const rows = db.prepare("SELECT app_type, settings_config FROM providers WHERE id = ?").all(CLINE_PROVIDER_ID) as Array<{ app_type: string; settings_config: string }>;
+			if (rows.length > 0) {
+				const updateStmt = db.prepare("UPDATE providers SET settings_config = ? WHERE id = ? AND app_type = ?");
+				for (const row of rows) {
+					try {
+						const cfg = JSON.parse(row.settings_config) as Record<string, unknown>;
+						cfg.apiKey = apiKey;
+						cfg.baseUrl = baseUrl;
+						cfg.headers = CLINE_CLIENT_HEADERS;
+						cfg.models = models;
+						updateStmt.run(JSON.stringify(cfg), CLINE_PROVIDER_ID, row.app_type);
+					} catch {}
+				}
+			} else {
+				const insertStmt = db.prepare(
+					"INSERT INTO providers (id, app_type, name, settings_config) VALUES (?, 'pi', 'Cline (Free Tier & Router)', ?)",
+				);
+				insertStmt.run(
+					CLINE_PROVIDER_ID,
+					JSON.stringify({
+						apiKey,
+						baseUrl,
+						headers: CLINE_CLIENT_HEADERS,
+						models,
+					}),
+				);
+			}
+		} else if (colNames.has("config")) {
+			const existing = db
+				.prepare("SELECT id, config FROM providers WHERE id = ?")
+				.get(CLINE_PROVIDER_ID) as { id: string; config?: string } | undefined;
+
+			if (existing) {
+				db.prepare("UPDATE providers SET config = ? WHERE id = ?").run(
+					JSON.stringify(providerConfig),
+					CLINE_PROVIDER_ID,
+				);
+			} else {
+				db.prepare(
+					"INSERT INTO providers (id, name, type, config) VALUES (?, 'Cline (Free Tier & Router)', 'openai', ?)",
+				).run(CLINE_PROVIDER_ID, JSON.stringify(providerConfig));
+			}
 		}
 
-		db.close();
+		try {
+			chmodSync(dbPath, 0o600);
+		} catch {}
+
 		return true;
 	} catch {
 		return false;
+	} finally {
+		db?.close();
 	}
 }

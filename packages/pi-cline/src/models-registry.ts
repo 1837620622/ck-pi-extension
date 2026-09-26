@@ -13,7 +13,7 @@ import type { ClineModelDefinition } from "./types.js";
 
 export const CLINE_PROVIDER_ID = "cline";
 export const CLINE_BASE_URL = "https://api.cline.bot/api/v1";
-export const CLINE_DEFAULT_KEY = "sk_0ea2446a7ca63262db183e2e3816f503cdd65fb0f695b5629b2b85126f5625dd";
+export const CLINE_DEFAULT_KEY = "";
 
 /**
  * Cline 官方 VSCode 扩展完整客户端伪装标头

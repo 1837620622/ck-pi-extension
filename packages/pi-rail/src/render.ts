@@ -377,29 +377,42 @@ export function formatToolActivity(runtime: RuntimeState): string | undefined {
 export function prLinkFromStatuses(statuses: ReadonlyMap<string, string>): string | undefined {
 	const value = statuses.get(GITHUB_PR_KEY);
 	if (!value) return undefined;
+	return extractGithubPrLink(value);
+}
+
+const OSC8_SPAN_PATTERN =
+	/\x1b\]8;[^\x07\x1b]*;([^\s\x07\x1b\u0000-\u001f\u0080-\u009f]*)(?:\x07|\x1b\\)([\s\S]*?)\x1b\]8;;(?:\x07|\x1b\\)/;
+
+export function extractGithubPrLink(value: string): string | undefined {
 	// Extract the OSC 8 hyperlink span (the clickable "#123"); skip non-PR states
 	// like "PR gh missing" that carry no link. github-pr emits exactly one link, so the
 	// first OSC 8 span is the PR number.
-	const open = value.indexOf("\x1b]8;;");
-	if (open === -1) return undefined;
-	const closeMarker = "\x1b]8;;\x07";
-	const close = value.indexOf(closeMarker, open + 1);
-	if (close === -1) return undefined;
-	const span = value.slice(open, close + closeMarker.length);
+	const match = OSC8_SPAN_PATTERN.exec(value);
+	if (!match) return undefined;
+	const span = match[0];
 	// A2：只放行 github.com 的链接，钓鱼 URL 直接丢弃。
 	return prLinkUrl(span) !== undefined ? span : undefined;
 }
 
-/** 校验 OSC 8 链接目标，仅允许 github.com，返回 URL；非法返回 undefined。 */
+/** 校验 OSC 8 链接目标，仅允许 github.com，返回 URL；严防嵌套转义与控制字符注入，非法返回 undefined。 */
 function prLinkUrl(span: string): string | undefined {
-	const match = /^\x1b\]8;;([^\s\x07]*)\x07/.exec(span);
+	const match = /^\x1b\]8;[^\x07\x1b]*;([^\s\x07\x1b\u0000-\u001f\u0080-\u009f]*)(?:\x07|\x1b\\)/.exec(span);
 	const url = match?.[1] ?? "";
-	return url.startsWith("https://github.com/") ? url : undefined;
+	if (!url.startsWith("https://github.com/")) return undefined;
+	try {
+		const parsed = new URL(url);
+		return parsed.protocol === "https:" && parsed.hostname === "github.com" ? url : undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 /** OSC 8 span 内部的可点击文本（如 #123），去转义后返回。 */
 function prLinkText(span: string): string | undefined {
-	const match = /^\x1b\]8;;[^\s\x07]*\x07([\s\S]*?)\x1b\]8;;\x07/.exec(span);
+	const match =
+		/^\x1b\]8;[^\x07\x1b]*;[^\s\x07\x1b\u0000-\u001f\u0080-\u009f]*(?:\x07|\x1b\\)([\s\S]*?)\x1b\]8;;(?:\x07|\x1b\\)/.exec(
+			span,
+		);
 	const text = match ? stripEmoji(sanitizeTerminalText(match[1] ?? "")) : "";
 	return text || undefined;
 }

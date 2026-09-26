@@ -257,7 +257,7 @@ if (choice?.delta?.reasoning && !choice.delta.reasoning_content) {
 
 ```text
 [Cline 免费模型与本地反代控制面板]
-• API Key: sk_0ea24...25dd (已验证并持久化)
+• API Key: sk_test_...9999 (已验证并持久化)
 • 基础端点: https://api.cline.bot/api/v1
 • 自动对接免费模型: 已同步 21 款 0 额度消耗模型 (19 款支持深度思考，1 款支持多模态视觉)
 • 官方客户端伪装: 8 维官方指纹签名已注入 (VSCode 4.1.16 / cline-vscode)
@@ -309,7 +309,7 @@ pi --model cline/ling -p "编写一个 Rust 异步并发队列"
 node ./bin/cline-proxy.js 4116
 
 # 或通过自定义参数启动
-node ./bin/cline-proxy.js --port 4116 --key sk_0ea2446a...
+node ./bin/cline-proxy.js --port 4116 --key sk_test_placeholder_key
 ```
 控制台将输出服务就绪信息：
 ```text

@@ -29,7 +29,9 @@ export function configFilePath(): string {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
+	if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+	const proto = Object.getPrototypeOf(value);
+	return proto === Object.prototype || proto === null;
 }
 
 export function loadConfig(path = configFilePath()): RedkitConfig {
@@ -66,6 +68,7 @@ export function loadConfig(path = configFilePath()): RedkitConfig {
 		// 拒绝绝对路径、~、Windows 盘符、反斜杠与 .. 穿越。
 		const dir = parsed.engagementDir.trim();
 		if (
+			dir !== "." &&
 			!dir.startsWith("/") &&
 			!dir.startsWith("~") &&
 			!/^[a-zA-Z]:/.test(dir) &&

@@ -1,6 +1,6 @@
 {
   "name": "ck-pi-rail",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "No-emoji adaptive full-width statusline for the Pi coding agent.",
   "keywords": [
     "pi-package",
@@ -24,7 +24,8 @@
   "type": "module",
   "files": [
     "src",
-    "!src/layout.test.ts",
+    "!src/**/*.test.ts",
+    "!src/**/__tests__/**",
     "README.md",
     "LICENSE"
   ],

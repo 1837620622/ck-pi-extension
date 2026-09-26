@@ -1,6 +1,6 @@
 {
   "name": "ck-pi-redkit",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Authorized-engagement doctrine injector for the Pi coding agent (pentest/reverse).",
   "keywords": [
     "pi-package",
@@ -24,7 +24,8 @@
   "type": "module",
   "files": [
     "src",
-    "!src/prompt.test.ts",
+    "!src/**/*.test.ts",
+    "!src/**/__tests__/**",
     "README.md",
     "LICENSE"
   ],

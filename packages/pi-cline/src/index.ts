@@ -59,6 +59,22 @@ export {
 };
 import type { ClineModelDefinition } from "./types.js";
 
+function sleepWithSignal(ms: number, signal?: AbortSignal | null): Promise<void> {
+	if (signal?.aborted) return Promise.reject(new DOMException("Aborted", "AbortError"));
+	return new Promise((resolve, reject) => {
+		const timer = setTimeout(() => {
+			signal?.removeEventListener("abort", onAbort);
+			resolve();
+		}, ms);
+		const onAbort = () => {
+			clearTimeout(timer);
+			signal?.removeEventListener("abort", onAbort);
+			reject(new DOMException("Aborted", "AbortError"));
+		};
+		signal?.addEventListener("abort", onAbort);
+	});
+}
+
 /**
  * 判断当前目标是否属于 Cline 模型
  */
@@ -125,8 +141,13 @@ export function findSafeUserCutPoint(messages: unknown[], maxTailChars: number):
 	let accumulatedChars = 0;
 	let userCutIndex = -1;
 	for (let i = messages.length - 1; i >= 2; i--) {
-		const msg = messages[i] as Record<string, unknown>;
-		accumulatedChars += JSON.stringify(msg).length;
+		const msg = messages[i] as Record<string, unknown> | null | undefined;
+		if (!msg || typeof msg !== "object") continue;
+		try {
+			accumulatedChars += JSON.stringify(msg).length;
+		} catch {
+			// 忽略循环引用或不可序列化对象
+		}
 		if (msg.role === "user") {
 			userCutIndex = i;
 			if (accumulatedChars >= maxTailChars) {
@@ -181,10 +202,11 @@ export function pruneClineContext(payload: Record<string, unknown>): boolean {
 			const m = msg as Record<string, unknown>;
 			if (m.role === "tool") {
 				const toolText = getMessageText(m.content);
-				if (toolText.length > 25_000) {
-					const newText =
-						toolText.slice(0, 25_000) +
+				if (toolText.length > 25_000 && !toolText.includes("Tool output truncated to 25,000 chars")) {
+					const notice =
 						"\n\n[... Cline Guard: Tool output truncated to 25,000 chars to avoid context overflow ...]";
+					const maxBody = Math.max(0, 25_000 - notice.length);
+					const newText = toolText.slice(0, maxBody) + notice;
 					updateMessageText(m, newText);
 					modified = true;
 				}
@@ -384,6 +406,7 @@ export function installClineFetchInterceptor(targetGlobal: typeof globalThis = g
 		// 核心同模型指数退避重试 (Exponential Backoff Retry on Same Model)
 		// 严守模型质量底线：遭遇 500/502/503/504/524 或 429 时，透明进行同模型指数退避重试，绝不擅自降级或切换备用模型
 		for (let attempt = 0; attempt <= maxRetries; attempt++) {
+			if (newInit.signal?.aborted) break;
 			try {
 				res = await originalFetch.call(this, targetUrl, newInit);
 				// 若不是重试状态码（500/502/503/504/524/429），或者已经是成功的 2xx，直接返回/退出重试循环
@@ -393,14 +416,19 @@ export function installClineFetchInterceptor(targetGlobal: typeof globalThis = g
 				// 遭遇 500/502/503/504/524 或 429 报错，且还有重试机会
 				if (attempt < maxRetries) {
 					const isTestEnv = !!process.env.TEST_PI_MODELS_PATH || process.env.NODE_ENV === "test";
-					const delayMs = isTestEnv ? 10 : Math.min(1000 * Math.pow(2, attempt), 5000);
-					await new Promise((resolve) => setTimeout(resolve, delayMs));
+					const baseDelay = isTestEnv ? 10 : Math.min(1000 * Math.pow(2, attempt), 5000);
+					const delayMs = isTestEnv ? 10 : Math.max(10, Math.floor(Math.random() * baseDelay));
+					await sleepWithSignal(delayMs, newInit.signal);
 				}
-			} catch (err) {
+			} catch (err: any) {
+				if (err?.name === "AbortError" || newInit.signal?.aborted) {
+					throw err;
+				}
 				if (attempt < maxRetries) {
 					const isTestEnv = !!process.env.TEST_PI_MODELS_PATH || process.env.NODE_ENV === "test";
-					const delayMs = isTestEnv ? 10 : Math.min(1000 * Math.pow(2, attempt), 5000);
-					await new Promise((resolve) => setTimeout(resolve, delayMs));
+					const baseDelay = isTestEnv ? 10 : Math.min(1000 * Math.pow(2, attempt), 5000);
+					const delayMs = isTestEnv ? 10 : Math.max(10, Math.floor(Math.random() * baseDelay));
+					await sleepWithSignal(delayMs, newInit.signal);
 				} else {
 					throw err;
 				}
@@ -431,6 +459,11 @@ export function installClineFetchInterceptor(targetGlobal: typeof globalThis = g
 			const transform = new TransformStream({
 				transform(chunk, controller) {
 					buffer += decoder.decode(chunk, { stream: true });
+					if (buffer.length > 2 * 1024 * 1024) {
+						buffer = "";
+						controller.error(new Error("SSE stream line exceeded maximum allowable buffer size (2MB)"));
+						return;
+					}
 					const lines = buffer.split("\n");
 					buffer = lines.pop() || "";
 					for (const line of lines) {
@@ -481,6 +514,8 @@ export function installClineFetchInterceptor(targetGlobal: typeof globalThis = g
 					}
 				},
 				flush(controller) {
+					const remaining = decoder.decode();
+					if (remaining) buffer += remaining;
 					if (buffer.trim()) {
 						controller.enqueue(encoder.encode(buffer + "\n"));
 					}
@@ -735,6 +770,19 @@ export async function handleClineCommand(
 
 	// 1. 无参直接调用 /cline：全自动在线探测拉取后端模型、同步本地配置并热重载
 	if (rawArg.length === 0) {
+		const storedKey = getStoredClineApiKey();
+		if (!storedKey) {
+			if (ctx.hasUI && typeof ctx.ui?.input === "function") {
+				const entered = await ctx.ui.input("请输入 Cline API Key (以 sk_ 开头):", "sk_");
+				if (entered && entered.trim()) {
+					return await handleClineCommand(`key ${entered.trim()}`, ctx, pi);
+				}
+			}
+			const msg = "[WARN] Cline 尚未配置 API Key。请使用 /cline key <sk_xxx> 进行配置。";
+			notify(ctx, msg, "warning");
+			return msg;
+		}
+
 		notify(ctx, "正在拉取 Cline 最新模型并同步至本地配置...", "info");
 		try {
 			const result = await syncClineConfiguration({ silent: true });
