@@ -81,6 +81,12 @@ export async function fetchZenModelCatalog(apiKey: string): Promise<ZenModelDefi
 	const freeItems = data.data.filter((item) => {
 		const id = String(item.id || "");
 		const lower = id.toLowerCase();
+
+		// 排除非对话类模型 (如 TypeSafe Jev 等 decision-only 模型，不支持 Chat/Completions 协议)
+		if (lower.startsWith("jev-") || lower.includes("jev") || lower.includes("system-1")) {
+			return false;
+		}
+
 		const isFreeByKeyword =
 			lower.includes("free") ||
 			lower.includes("pickle") ||

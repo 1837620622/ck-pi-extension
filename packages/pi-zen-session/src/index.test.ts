@@ -105,7 +105,7 @@ describe("OpenCode Zen Session 算法单元测试", () => {
 });
 
 describe("OpenCode Zen 模型库与参数注册表测试", () => {
-	it("包含全部已确认的 10 款免费模型", () => {
+	it("包含全部已确认的 9 款可用免费模型（已排除非聊天协议的 jev-1.13-free）", () => {
 		const expectedModels = [
 			"mimo-v2.5-free",
 			"mimo-v2.6-flash-free",
@@ -115,7 +115,6 @@ describe("OpenCode Zen 模型库与参数注册表测试", () => {
 			"big-pickle",
 			"muse-spark-1.3-contributor-free",
 			"muse-spark-1.2-contributor-free",
-			"jev-1.13-free",
 			"space-bunny-free",
 		];
 
@@ -128,7 +127,6 @@ describe("OpenCode Zen 模型库与参数注册表测试", () => {
 		assert.equal(KNOWN_ZEN_FREE_MODELS["nemotron-3-ultra-free"].contextWindow, 1000000);
 		assert.equal(KNOWN_ZEN_FREE_MODELS["muse-spark-1.3-contributor-free"].contextWindow, 1048576);
 		assert.equal(KNOWN_ZEN_FREE_MODELS["mimo-v2.5-free"].contextWindow, 200000);
-		assert.equal(KNOWN_ZEN_FREE_MODELS["jev-1.13-free"].reasoning, false);
 		assert.equal(KNOWN_ZEN_FREE_MODELS["big-pickle"].reasoning, true);
 	});
 
@@ -190,8 +188,16 @@ describe("OpenCode Zen 模型库与参数注册表测试", () => {
 		const museCard = formatThinkingSummary(KNOWN_ZEN_FREE_MODELS["muse-spark-1.3-contributor-free"]);
 		assert.ok(museCard.includes("6档深度思考"));
 
-		const jevCard = formatThinkingSummary(KNOWN_ZEN_FREE_MODELS["jev-1.13-free"]);
-		assert.ok(jevCard.includes("不支持"));
+		const noReasoningCard = formatThinkingSummary({
+			id: "fast-instruct-model",
+			name: "Fast Instruct Model",
+			reasoning: false,
+			contextWindow: 128000,
+			maxTokens: 8192,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		});
+		assert.ok(noReasoningCard.includes("不支持"));
 
 		const card = formatModelCard(KNOWN_ZEN_FREE_MODELS["mimo-v2.6-flash-free"], 1);
 		assert.ok(card.includes("1. Xiaomi Mimo v2.6 Flash Free"));

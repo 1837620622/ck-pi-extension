@@ -125,15 +125,6 @@ export const KNOWN_ZEN_FREE_MODELS: Record<string, ZenModelDefinition> = {
 		thinkingLevelMap: MUSE_SPARK_THINKING_LEVELS,
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 	},
-	"jev-1.13-free": {
-		id: "jev-1.13-free",
-		name: "TypeSafe Jev 1.13 System-1 Free (OpenCode Zen)",
-		contextWindow: 128000,
-		maxTokens: 16384,
-		reasoning: false,
-		input: ["text"],
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-	},
 	"space-bunny-free": {
 		id: "space-bunny-free",
 		name: "Space Bunny Free (OpenCode Zen)",
