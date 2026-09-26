@@ -161,16 +161,40 @@ export async function syncClineConfiguration(
 				headers: {
 					...CLINE_CLIENT_HEADERS,
 				},
-				models: models.map((m) => ({
-					id: m.id,
-					name: m.name,
-					contextWindow: m.contextWindow,
-					maxTokens: m.maxTokens,
-					reasoning: m.reasoning,
-					input: m.input,
-					thinkingLevelMap: m.thinkingLevelMap,
-					cost: m.cost,
-				})),
+				models: [
+					...[
+						{ id: "bunny", ref: "stealth/space-bunny-alpha", name: "Cline Bunny (1M Stealth Free)" },
+						{ id: "ling", ref: "inclusionai/ling-3.0-flash-fin:free", name: "Cline Ling 3.0 Flash Fin (Free)" },
+						{ id: "code", ref: "openrouter/pareto-code", name: "Cline Pareto Code (2M Free)" },
+						{ id: "fusion", ref: "openrouter/fusion", name: "Cline Fusion (1M Free)" },
+						{ id: "free", ref: "openrouter/free", name: "Cline OpenRouter Free (200k)" },
+						{ id: "550b", ref: "nvidia/nemotron-3-ultra-550b-a55b:free", name: "Cline Nemotron 550B (1M Free)" },
+						{ id: "120b", ref: "nvidia/nemotron-3-super-120b-a12b:free", name: "Cline Nemotron 120B (Free)" },
+						{ id: "qwen", ref: "qwen/qwen3.8-27b:free", name: "Cline Qwen 3.8 27B (Free)" },
+					].map((a) => {
+						const base = KNOWN_CLINE_FREE_MODELS[a.ref] || models.find((m) => m.id === a.ref);
+						return {
+							id: a.id,
+							name: a.name,
+							contextWindow: base?.contextWindow || 262144,
+							maxTokens: base?.maxTokens || 32768,
+							reasoning: base?.reasoning ?? true,
+							input: base?.input || (["text"] as ("text" | "image")[]),
+							thinkingLevelMap: base?.thinkingLevelMap,
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+						};
+					}),
+					...models.map((m) => ({
+						id: m.id,
+						name: m.name,
+						contextWindow: m.contextWindow,
+						maxTokens: m.maxTokens,
+						reasoning: m.reasoning,
+						input: m.input,
+						thinkingLevelMap: m.thinkingLevelMap,
+						cost: m.cost,
+					})),
+				],
 			};
 
 			if (modelsData.providers && typeof modelsData.providers === "object") {
