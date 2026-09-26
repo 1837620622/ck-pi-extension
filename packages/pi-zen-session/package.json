@@ -1,6 +1,6 @@
 {
   "name": "ck-pi-zen-session",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "description": "OpenCode Zen session auto-refresh and free-tier model catalog synchronization for the Pi coding agent.",
   "keywords": [
     "pi-package",

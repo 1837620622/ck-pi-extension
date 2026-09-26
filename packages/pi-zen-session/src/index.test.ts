@@ -841,6 +841,25 @@ describe("Compaction 压缩防护、深度上下文修剪与透明重试机制�
 		assert.ok(resultMsg.length < rawContent.length, "大幅精简请求体积");
 	});
 
+	it("pruneZenContext: Compaction <previous-summary> 标签超长内容安全修剪", () => {
+		const prevSummaryBody = "SUMMARY_DATA_".repeat(4000); // 52,000 字符
+		const rawContent = `<conversation>\n[User]: Hello\n</conversation>\n\n<previous-summary>\n${prevSummaryBody}\n</previous-summary>\n\nSummarize again.`;
+
+		const payload: Record<string, unknown> = {
+			model: "mimo-v2.5-free",
+			messages: [{ role: "user", content: rawContent }],
+		};
+
+		const modified = pruneZenContext(payload);
+		assert.equal(modified, true);
+
+		const resultMsg = (payload.messages as any[])[0].content as string;
+		assert.ok(resultMsg.includes("<previous-summary>"));
+		assert.ok(resultMsg.includes("Zen Compaction Guard: Omitted"));
+		assert.ok(resultMsg.endsWith("Summarize again."));
+		assert.ok(resultMsg.length < rawContent.length);
+	});
+
 	it("pruneZenContext: 单个超大 Tool 输出自动截断至 25,000 字符", () => {
 		const hugeToolOutput = "LOG_LINE_DATA_".repeat(3000); // 42,000 字符
 		const payload: Record<string, unknown> = {

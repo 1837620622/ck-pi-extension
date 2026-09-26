@@ -120,23 +120,72 @@ function debouncedAutoSync(forceSession = true): void {
 }
 
 /**
+ * 从不同形式的消息 content (string 或 Array<{type, text}>) 中提取纯文本
+ */
+export function getMessageText(content: unknown): string {
+	if (typeof content === "string") return content;
+	if (Array.isArray(content)) {
+		return content
+			.filter((b) => b && typeof b === "object" && typeof (b as any).text === "string")
+			.map((b) => (b as any).text)
+			.join("\n");
+	}
+	return "";
+}
+
+/**
+ * 安全更新消息中的文本内容，无论其原始类型为 string 还是 Array<{type, text}>
+ */
+export function updateMessageText(msg: Record<string, unknown>, newText: string): void {
+	if (typeof msg.content === "string") {
+		msg.content = newText;
+	} else if (Array.isArray(msg.content)) {
+		const nonText = msg.content.filter((b) => b && typeof b === "object" && (b as any).type !== "text");
+		msg.content = [{ type: "text", text: newText }, ...nonText];
+	} else {
+		msg.content = newText;
+	}
+}
+
+/**
+ * 寻找符合 OpenAI ChatCompletions 协议切分规范的安全切点：
+ * 切点起始位置必须为 user 消息，彻底杜绝孤立 tool 响应或断头 assistant tool_calls 导致的 400 协议错误。
+ */
+export function findSafeUserCutPoint(messages: unknown[], maxTailChars: number): number {
+	let accumulatedChars = 0;
+	let userCutIndex = -1;
+	for (let i = messages.length - 1; i >= 2; i--) {
+		const msg = messages[i] as Record<string, unknown>;
+		accumulatedChars += JSON.stringify(msg).length;
+		if (msg.role === "user") {
+			userCutIndex = i;
+			if (accumulatedChars >= maxTailChars) {
+				break;
+			}
+		}
+	}
+	return userCutIndex;
+}
+
+/**
  * 智能判定是否为 Compaction / Summarization / 无工具压缩任务请求
  */
 export function isCompactionOrNoToolRequest(payload: Record<string, unknown>): boolean {
 	// 1. 显式指定 tool_choice 为 "none"
 	if (payload.tool_choice === "none") return true;
 
-	// 2. 检查 messages 中是否包含压缩或总结标识 (如 Pi 的 <conversation> 标签)
+	// 2. 检查 messages 中是否包含压缩或总结标识 (如 Pi 的 <conversation> 或 <previous-summary> 标签)
 	if (Array.isArray(payload.messages)) {
 		for (const msg of payload.messages) {
 			if (msg && typeof msg === "object") {
-				const content = String((msg as any).content || "").toLowerCase();
+				const text = getMessageText((msg as any).content).toLowerCase();
 				if (
-					content.includes("<conversation>") ||
-					content.includes("summarize") ||
-					content.includes("summary") ||
-					content.includes("compress") ||
-					content.includes("compact")
+					text.includes("<conversation>") ||
+					text.includes("<previous-summary>") ||
+					text.includes("summarize") ||
+					text.includes("summary") ||
+					text.includes("compress") ||
+					text.includes("compact")
 				) {
 					return true;
 				}
@@ -153,10 +202,12 @@ export function isCompactionOrNoToolRequest(payload: Record<string, unknown>): b
 /**
  * 上下文超限全自动修剪与性能护航引擎
  * 针对 Pi 的各种工作场景进行细粒度优化：
- * 1. Tool 输出截断：单个 tool 输出（如巨大 bash / grep / cat 日志）截断在 25,000 字符内；
- * 2. Compaction 压缩保护：对包含 <conversation> 的海量历史（通常单条超 100K 字符），
- *    保留头部目标任务与尾部最新状态执行结果，修剪中间冗长执行，保证压缩在 10s 内疾速完成且杜绝网关超时断连；
- * 3. 多轮交互修剪：当 messages 总体积超过 250,000 字符时，保留首尾关键轮次，优雅跳过中间冗余。
+ * 1. Tool 输出截断：单个 tool 输出（如巨大 bash / grep / cat 日志）截断至 25,000 字符内，防止单个命令输出几兆文本撑爆上下文；
+ * 2. Compaction 压缩保护：对包含 <conversation> 的海量历史（通常单条可超 100K~2M 字符），
+ *    严格修剪至 70,000 字符以内（保留头部任务目标 25,000 字符与尾部最新状态 45,000 字符），
+ *    确保即使从 1M 模型切换至 200K 的 Zen 模型进行压缩，也绝不超出目标模型 Context Window，并在 5~8 秒内疾速完成且杜绝网关 524 超时；
+ * 3. 多轮交互超长修剪：当 messages 总体积超过 180,000 字符时，安全溯源至合法 user 消息边界切割，
+ *    严禁在消息序列中随意插入非法 system 消息，严格维护 assistant(tool_calls) 与 tool(result) 的配对完整性，彻底杜绝 400 Bad Request。
  */
 export function pruneZenContext(payload: Record<string, unknown>): boolean {
 	if (!Array.isArray(payload.messages) || payload.messages.length === 0) {
@@ -169,11 +220,15 @@ export function pruneZenContext(payload: Record<string, unknown>): boolean {
 	for (const msg of payload.messages) {
 		if (msg && typeof msg === "object") {
 			const m = msg as Record<string, unknown>;
-			if (m.role === "tool" && typeof m.content === "string" && m.content.length > 25_000) {
-				m.content =
-					m.content.slice(0, 25_000) +
-					"\n\n[... Zen Guard: Tool output truncated to 25,000 chars to avoid context overflow ...]";
-				modified = true;
+			if (m.role === "tool") {
+				const toolText = getMessageText(m.content);
+				if (toolText.length > 25_000) {
+					const newText =
+						toolText.slice(0, 25_000) +
+						"\n\n[... Zen Guard: Tool output truncated to 25,000 chars to avoid context overflow ...]";
+					updateMessageText(m, newText);
+					modified = true;
+				}
 			}
 		}
 	}
@@ -182,58 +237,85 @@ export function pruneZenContext(payload: Record<string, unknown>): boolean {
 	for (const msg of payload.messages) {
 		if (msg && typeof msg === "object") {
 			const m = msg as Record<string, unknown>;
-			if (typeof m.content === "string" && m.content.includes("<conversation>")) {
-				const content = m.content;
+			let currentText = getMessageText(m.content);
+			if (currentText.includes("<conversation>")) {
 				const startTag = "<conversation>";
 				const endTag = "</conversation>";
-				const startIndex = content.indexOf(startTag);
-				const endIndex = content.indexOf(endTag);
+				const startIndex = currentText.indexOf(startTag);
+				const endIndex = currentText.indexOf(endTag);
 
 				if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
-					const prefix = content.slice(0, startIndex + startTag.length);
-					const convoBody = content.slice(startIndex + startTag.length, endIndex);
-					const suffix = content.slice(endIndex);
+					const prefix = currentText.slice(0, startIndex + startTag.length);
+					const convoBody = currentText.slice(startIndex + startTag.length, endIndex);
+					const suffix = currentText.slice(endIndex);
 
-					// 若压缩历史主体超过 100,000 字符 (~25,000 tokens)
-					if (convoBody.length > 100_000) {
-						const headChars = 30_000;
-						const tailChars = 60_000;
+					// 若压缩历史主体超过 80,000 字符 (~20,000 tokens)
+					if (convoBody.length > 80_000) {
+						const headChars = 25_000;
+						const tailChars = 45_000;
 						const head = convoBody.slice(0, headChars);
 						const tail = convoBody.slice(-tailChars);
 						const omittedChars = convoBody.length - headChars - tailChars;
-						const notice = `\n\n[... Zen Compaction Guard: Omitted ${omittedChars} intermediate characters to fit context limit & optimize speed ...]\n\n`;
+						const omittedTokensEst = Math.round(omittedChars / 4);
+						const notice = `\n\n[... Zen Compaction Guard: Omitted ${omittedChars} intermediate characters (~${omittedTokensEst} tokens) of verbose logs to fit model context limit & optimize speed ...]\n\n`;
 
-						m.content = prefix + head + notice + tail + suffix;
+						currentText = prefix + head + notice + tail + suffix;
+						updateMessageText(m, currentText);
 						modified = true;
 					}
 				}
 			}
+
+			if (currentText.includes("<previous-summary>")) {
+				const pStartTag = "<previous-summary>";
+				const pEndTag = "</previous-summary>";
+				const pStart = currentText.indexOf(pStartTag);
+				const pEnd = currentText.indexOf(pEndTag);
+				if (pStart !== -1 && pEnd !== -1 && pEnd > pStart) {
+					const pPrefix = currentText.slice(0, pStart + pStartTag.length);
+					const pBody = currentText.slice(pStart + pStartTag.length, pEnd);
+					const pSuffix = currentText.slice(pEnd);
+					if (pBody.length > 40_000) {
+						const pHead = pBody.slice(0, 15_000);
+						const pTail = pBody.slice(-20_000);
+						const pOmitted = pBody.length - 35_000;
+						const pNotice = `\n\n[... Zen Compaction Guard: Omitted ${pOmitted} intermediate chars of previous summary ...]\n\n`;
+						currentText = pPrefix + pHead + pNotice + pTail + pSuffix;
+						updateMessageText(m, currentText);
+						modified = true;
+					}
+				}
+			}
+
+			if (!currentText.includes("<conversation>") && currentText.length > 90_000 && isCompactionOrNoToolRequest(payload)) {
+				// 兜底保护：即使没有明确的 <conversation> 标签，但单条超大消息出现在总结任务中
+				const head = currentText.slice(0, 30_000);
+				const tail = currentText.slice(-50_000);
+				const omitted = currentText.length - 80_000;
+				const notice = `\n\n[... Zen Compaction Guard: Truncated ${omitted} intermediate characters to fit model context limit ...]\n\n`;
+				updateMessageText(m, head + notice + tail);
+				modified = true;
+			}
 		}
 	}
 
-	// 3. 多轮交互超长上下文修剪 (针对常规 Agent 长任务对话)
+	// 3. 多轮交互超长上下文修剪 (针对常规 Agent 长任务对话，严格保持 Tool 配对合法性)
 	const totalChars = JSON.stringify(payload.messages).length;
-	if (payload.messages.length > 4 && totalChars > 250_000) {
-		const head = payload.messages.slice(0, 2);
-		const tail: unknown[] = [];
-		let tailChars = 0;
-		for (let i = payload.messages.length - 1; i >= 2; i--) {
-			const m = payload.messages[i];
-			const mLen = JSON.stringify(m).length;
-			if (tailChars + mLen > 180_000 && tail.length >= 2) {
-				break;
+	// 针对 200k 模型，若请求体积超过 180,000 字符 (~45,000 tokens)
+	if (payload.messages.length > 4 && totalChars > 180_000) {
+		const userCutIndex = findSafeUserCutPoint(payload.messages, 120_000);
+		if (userCutIndex > 2) {
+			const head = payload.messages.slice(0, 2);
+			const tail = payload.messages.slice(userCutIndex);
+			const omittedCount = userCutIndex - 2;
+			if (omittedCount > 0) {
+				const firstUser = tail[0] as Record<string, unknown>;
+				const userOriginalText = getMessageText(firstUser.content);
+				const note = `[Zen Guard: Omitted ${omittedCount} intermediate turns to fit context limit]\n\n`;
+				updateMessageText(firstUser, note + userOriginalText);
+				payload.messages = [...head, ...tail];
+				modified = true;
 			}
-			tail.unshift(m);
-			tailChars += mLen;
-		}
-		const omittedCount = payload.messages.length - head.length - tail.length;
-		if (omittedCount > 0) {
-			const notice = {
-				role: "system",
-				content: `[Zen Guard: Omitted ${omittedCount} intermediate turns to fit context window & guarantee high performance]`,
-			};
-			payload.messages = [...head, notice, ...tail];
-			modified = true;
 		}
 	}
 
@@ -351,33 +433,54 @@ export function installZenFetchInterceptor(targetGlobal: typeof globalThis = glo
 					modified = true;
 				}
 
-				// D. 规范化 reasoning_effort
-				const isNonReasoning =
-					payloadModel.startsWith("jev-") || payloadModel.startsWith("ling-2.6-flash");
-
-				if (isNonReasoning && "reasoning_effort" in payload) {
-					delete payload.reasoning_effort;
+				// D. 规范化 reasoning_effort 与思考参数
+				if (isCompaction) {
+					// 压缩/总结场景：必须压制长思考，强制设为 low 并移除 thinking 对象，
+					// 避免模型思考几十秒导致 Cloudflare 524 握手超时或撞 stopReason: length 截断错误
+					payload.reasoning_effort = "low";
+					if ("thinking" in payload) {
+						delete payload.thinking;
+					}
 					modified = true;
-				} else if (typeof payload.reasoning_effort === "string") {
-					const eff = payload.reasoning_effort.toLowerCase();
-					if (eff === "max" || eff === "xhigh") {
-						payload.reasoning_effort = "high";
-						modified = true;
-					} else if (eff === "minimal") {
-						payload.reasoning_effort = "low";
-						modified = true;
-					} else if (eff === "off" || eff === "none" || eff === "") {
+				} else {
+					const isNonReasoning =
+						payloadModel.startsWith("jev-") || payloadModel.startsWith("ling-2.6-flash");
+
+					if (isNonReasoning && "reasoning_effort" in payload) {
 						delete payload.reasoning_effort;
 						modified = true;
-					} else if (!["low", "medium", "high"].includes(eff)) {
-						payload.reasoning_effort = "high";
+					} else if (typeof payload.reasoning_effort === "string") {
+						const eff = payload.reasoning_effort.toLowerCase();
+						if (eff === "max" || eff === "xhigh") {
+							payload.reasoning_effort = "high";
+							modified = true;
+						} else if (eff === "minimal") {
+							payload.reasoning_effort = "low";
+							modified = true;
+						} else if (eff === "off" || eff === "none" || eff === "") {
+							delete payload.reasoning_effort;
+							modified = true;
+						} else if (!["low", "medium", "high"].includes(eff)) {
+							payload.reasoning_effort = "high";
+							modified = true;
+						}
+					}
+
+					// E. 剔除多余 thinking 顶层对象
+					if ("thinking" in payload && typeof payload.thinking === "object") {
+						delete payload.thinking;
 						modified = true;
 					}
 				}
 
-				// E. 剔除多余 thinking 顶层对象
-				if ("thinking" in payload && typeof payload.thinking === "object") {
-					delete payload.thinking;
+				// F. 输出 Token 阈值安全钳位 (防止 Pi reserveTokens 传出超大 max_tokens 导致 400 Bad Request)
+				const maxAllowedOutput = isCompaction ? 8192 : 32768;
+				if (typeof payload.max_tokens === "number" && (payload.max_tokens as number) > maxAllowedOutput) {
+					payload.max_tokens = maxAllowedOutput;
+					modified = true;
+				}
+				if (typeof payload.max_completion_tokens === "number" && (payload.max_completion_tokens as number) > maxAllowedOutput) {
+					payload.max_completion_tokens = maxAllowedOutput;
 					modified = true;
 				}
 
@@ -537,9 +640,14 @@ export async function assembleSseToChatCompletionResponse(
 	}
 	const totalTokens = Number(usage.total_tokens) || (promptTokens + completionTokens);
 
+	let finalContent = textContent;
+	if (!finalContent.trim() && reasoningContent.trim()) {
+		finalContent = reasoningContent.trim();
+	}
+
 	const messageObj: Record<string, unknown> = {
 		role: "assistant",
-		content: textContent,
+		content: finalContent,
 	};
 	if (reasoningContent) {
 		messageObj.reasoning_content = reasoningContent;
@@ -663,47 +771,55 @@ export default function piZenSession(pi: ExtensionAPI): void {
 				modified = true;
 			}
 
-			// D. 规范化 reasoning_effort：OpenCode Zen 上游端点仅支持 "low", "medium", "high"
-			// 若模型本身为非思考模型 (如 jev-1.13-free)，直接移除 reasoning_effort 避免 400
-			// 若为 "max" 或 "xhigh"，降级映射为 "high"；若为 "minimal" 映射为 "low"，彻底根除 400 Invalid request parameters
-			const isNonReasoningModel =
-				ctx.model?.reasoning === false ||
-				(typeof payloadModel === "string" && (payloadModel.startsWith("jev-") || payloadModel.startsWith("ling-2.6-flash")));
-
-			if (isNonReasoningModel && "reasoning_effort" in transformed) {
-				delete transformed.reasoning_effort;
+			// D. 规范化 reasoning_effort 与思考参数
+			if (isCompaction) {
+				// 压缩/总结场景：必须压制长思考，强制设为 low 并移除 thinking 对象，
+				// 避免模型思考几十秒导致 Cloudflare 524 握手超时或撞 stopReason: length 截断错误
+				transformed.reasoning_effort = "low";
+				if ("thinking" in transformed) {
+					delete transformed.thinking;
+				}
 				modified = true;
-			} else if (typeof transformed.reasoning_effort === "string") {
-				const effort = transformed.reasoning_effort.toLowerCase();
-				if (effort === "max" || effort === "xhigh") {
-					transformed.reasoning_effort = "high";
-					modified = true;
-				} else if (effort === "minimal") {
-					transformed.reasoning_effort = "low";
-					modified = true;
-				} else if (effort === "off" || effort === "none" || effort === "") {
+			} else {
+				const isNonReasoningModel =
+					ctx.model?.reasoning === false ||
+					(typeof payloadModel === "string" && (payloadModel.startsWith("jev-") || payloadModel.startsWith("ling-2.6-flash")));
+
+				if (isNonReasoningModel && "reasoning_effort" in transformed) {
 					delete transformed.reasoning_effort;
 					modified = true;
-				} else if (!["low", "medium", "high"].includes(effort)) {
-					transformed.reasoning_effort = "high";
+				} else if (typeof transformed.reasoning_effort === "string") {
+					const effort = transformed.reasoning_effort.toLowerCase();
+					if (effort === "max" || effort === "xhigh") {
+						transformed.reasoning_effort = "high";
+						modified = true;
+					} else if (effort === "minimal") {
+						transformed.reasoning_effort = "low";
+						modified = true;
+					} else if (effort === "off" || effort === "none" || effort === "") {
+						delete transformed.reasoning_effort;
+						modified = true;
+					} else if (!["low", "medium", "high"].includes(effort)) {
+						transformed.reasoning_effort = "high";
+						modified = true;
+					}
+				}
+
+				// E. 移除 OpenAI 兼容接口不识别的额外 thinking 顶层对象 (如 Anthropic 遗留字段)
+				if ("thinking" in transformed && typeof transformed.thinking === "object") {
+					delete transformed.thinking;
 					modified = true;
 				}
 			}
 
-			// E. 移除 OpenAI 兼容接口不识别的额外 thinking 顶层对象 (如 Anthropic 遗留字段)
-			if ("thinking" in transformed && typeof transformed.thinking === "object") {
-				delete transformed.thinking;
+			// F. 安全上限钳位与防死循环微调 (防止超长 max_tokens 失控导致 400 报错)
+			const maxAllowedOutput = isCompaction ? 8192 : 32768;
+			if (typeof transformed.max_tokens === "number" && (transformed.max_tokens as number) > maxAllowedOutput) {
+				transformed.max_tokens = maxAllowedOutput;
 				modified = true;
 			}
-
-			// F. 安全上限钳位与防死循环微调 (防止超长 max_tokens 失控)
-			const safeLimit = 32768;
-			if (typeof transformed.max_tokens === "number" && (transformed.max_tokens as number) > safeLimit) {
-				transformed.max_tokens = safeLimit;
-				modified = true;
-			}
-			if (typeof transformed.max_completion_tokens === "number" && (transformed.max_completion_tokens as number) > safeLimit) {
-				transformed.max_completion_tokens = safeLimit;
+			if (typeof transformed.max_completion_tokens === "number" && (transformed.max_completion_tokens as number) > maxAllowedOutput) {
+				transformed.max_completion_tokens = maxAllowedOutput;
 				modified = true;
 			}
 			if (transformed.frequency_penalty === undefined) {
