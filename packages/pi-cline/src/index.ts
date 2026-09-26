@@ -378,29 +378,32 @@ export function installClineFetchInterceptor(targetGlobal: typeof globalThis = g
 			body: newBody,
 		};
 
-		let res = await originalFetch.call(this, targetUrl, newInit);
+		let res!: Response;
+		const maxRetries = 3;
 
-		// 故障自动转移重试 (Auto-Failover): 若遇 500/502/503/504/429 报错，且为 Cline 模型，透明使用高可用备份模型重试
-		if ((res.status >= 500 || res.status === 429) && targetUrl.includes("chat/completions") && typeof newBody === "string") {
+		// 核心同模型指数退避重试 (Exponential Backoff Retry on Same Model)
+		// 严守模型质量底线：遭遇 500/502/503/504/524 或 429 时，透明进行同模型指数退避重试，绝不擅自降级或切换备用模型
+		for (let attempt = 0; attempt <= maxRetries; attempt++) {
 			try {
-				const payload = JSON.parse(newBody);
-				const origModel = payload.model || "";
-				const backupModel = origModel === "inclusionai/ling-3.0-flash-fin:free"
-					? "openrouter/free"
-					: "inclusionai/ling-3.0-flash-fin:free";
-
-				payload.model = backupModel;
-				const retryInit: RequestInit = {
-					...newInit,
-					body: JSON.stringify(payload),
-				};
-				const retryRes = await originalFetch.call(this, targetUrl, retryInit);
-				if (retryRes.ok) {
-					res = retryRes;
-					targetModelId = backupModel;
+				res = await originalFetch.call(this, targetUrl, newInit);
+				// 若不是重试状态码（500/502/503/504/524/429），或者已经是成功的 2xx，直接返回/退出重试循环
+				if (res.ok || (res.status < 500 && res.status !== 429)) {
+					break;
 				}
-			} catch {
-				// 忽略重试异常，正常进入保护流
+				// 遭遇 500/502/503/504/524 或 429 报错，且还有重试机会
+				if (attempt < maxRetries) {
+					const isTestEnv = !!process.env.TEST_PI_MODELS_PATH || process.env.NODE_ENV === "test";
+					const delayMs = isTestEnv ? 10 : Math.min(1000 * Math.pow(2, attempt), 5000);
+					await new Promise((resolve) => setTimeout(resolve, delayMs));
+				}
+			} catch (err) {
+				if (attempt < maxRetries) {
+					const isTestEnv = !!process.env.TEST_PI_MODELS_PATH || process.env.NODE_ENV === "test";
+					const delayMs = isTestEnv ? 10 : Math.min(1000 * Math.pow(2, attempt), 5000);
+					await new Promise((resolve) => setTimeout(resolve, delayMs));
+				} else {
+					throw err;
+				}
 			}
 		}
 

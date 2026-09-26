@@ -550,24 +550,26 @@ describe("Extension 钩子、命令与拦截测试", () => {
 		assert.ok(pingOutput.includes("Cline 免费模型连通性与时延实时探测"));
 	});
 
-	it("installClineFetchInterceptor 遭遇 500 异常时自动透明故障转移至备用模型重试", async () => {
+	it("installClineFetchInterceptor 遭遇 500 异常时保持同模型重试（绝不擅自降级模型）", async () => {
 		const requestLog: string[] = [];
+		let attempts = 0;
 		const mockGlobal: any = {
 			fetch: async (input: any, init: any) => {
 				const body = JSON.parse(init.body);
 				requestLog.push(body.model);
-				if (body.model === "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free") {
-					// 模拟第一次主模型服务 500 故障
-					return new Response(JSON.stringify({ error: "Nvidia 502 limit reached" }), {
+				attempts++;
+				if (attempts === 1) {
+					// 模拟第一次主模型服务遭遇临时 502 Bad Gateway
+					return new Response(JSON.stringify({ error: "Upstream 502 Bad Gateway" }), {
 						status: 502,
 						headers: { "Content-Type": "application/json" },
 					});
 				}
-				// 模拟备用模型重试成功
+				// 模拟第二次同模型指数退避重试成功
 				return new Response(
 					JSON.stringify({
 						data: {
-							choices: [{ message: { role: "assistant", content: "Failover Success!" } }],
+							choices: [{ message: { role: "assistant", content: "Same Model Retry Success!" } }],
 						},
 					}),
 					{ status: 200, headers: { "Content-Type": "application/json" } },
@@ -587,8 +589,9 @@ describe("Extension 钩子、命令与拦截测试", () => {
 
 		assert.equal(res.status, 200);
 		const json = await res.json();
-		assert.equal(json.choices[0].message.content, "Failover Success!");
+		assert.equal(json.choices[0].message.content, "Same Model Retry Success!");
+		assert.equal(requestLog.length, 2);
 		assert.equal(requestLog[0], "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free");
-		assert.equal(requestLog[1], "inclusionai/ling-3.0-flash-fin:free", "失败后必须自动重试高可用备用免费模型");
+		assert.equal(requestLog[1], "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", "失败重试必须保持同一高品质模型，绝不降级或替换模型");
 	});
 });

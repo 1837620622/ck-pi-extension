@@ -20,7 +20,7 @@
   - [3. 空输出死锁防御机制 (Empty Output Guard Invariant)](#3-空输出死锁防御机制-empty-output-guard-invariant)
   - [4. 隐身模型识别与零额度白嫖判定机理 (Stealth Models & Zero-Cost Guard)](#4-隐身模型识别与零额度白嫖判定机理-stealth-models--zero-cost-guard)
   - [5. 深度思考推理链映射 (Reasoning Tokens Alignment)](#5-深度思考推理链映射-reasoning-tokens-alignment)
-  - [6. 透明故障转移重试机制 (Auto-Failover Circuit Breaker)](#6-透明故障转移重试机制-auto-failover-circuit-breaker)
+  - [6. 同模型指数退避重试机制 (Same-Model Exponential Backoff Retry)](#6-同模型指数退避重试机制-same-model-exponential-backoff-retry)
   - [7. 全链路上下文超限修剪 (Context Pruning Engine)](#7-全链路上下文超限修剪-context-pruning-engine)
 - [三、实测 21 款零额度模型全量矩阵](#三实测-21-款零额度模型全量矩阵)
   - [1. 隐身与智能路由零消耗模型 (Stealth & Smart Routers)](#1-隐身与智能路由零消耗模型-stealth--smart-routers)
@@ -41,6 +41,11 @@
 ## 一、项目概述
 
 `ck-pi-cline` 是专为 **Pi Coding Agent** 打造的高可用 Cline 官方 API 逆向代理、客户端指纹伪装、全量零额度模型智能路由与本地 OpenAI 兼容反向代理插件。
+
+> **架构与运行原则**：
+> * **默认原生极简直连**：启动运行时默认**不开启本地反代端口**，仅在 Pi 进程内通过 fetch 拦截器与 Provider 注册直接直连官方网关（零本地代理开销，架构与 `ck-pi-zen-session` 完全对齐）；
+> * **按需启动反向代理**：仅在显式执行 `/cline proxy start` 命令或需要供第三方工具（如 CC-Switch、Cursor）使用时才启动本地 4116 端口；
+> * **同模型指数退避重试**：遭遇 500/502/503/504/429 报错时，坚守模型质量底线，自动进行同模型指数退避重试，绝不擅自降级或切换低配备用模型。
 
 在实际使用官方 Cline 接口时，开发者普遍面临以下技术痛点：
 1. **防盗刷指纹拦截**：非官方客户端直接请求 `https://api.cline.bot/api/v1` 会遭遇 403 阻断或限制；
@@ -63,7 +68,7 @@
                                          | (HTTP / SSE Requests)
                                          v
 +-----------------------------------------------------------------------------------+
-|                 ck-pi-cline Local Proxy & Hook Layer (Port: 4116)                 |
+|                 ck-pi-cline Hook & Local Proxy Layer                              |
 |                                                                                   |
 |  [1. Fingerprint Injector]                                                        |
 |      - x-client-version: 4.1.16 | User-Agent: Cline/4.1.16 | vscode headers       |
@@ -82,8 +87,8 @@
 |      - Normalize delta.reasoning -> delta.reasoning_content                       |
 |      - Invariant Guard: Force synthetic chunk on stream close if empty            |
 |                                                                                   |
-|  [5. Auto-Failover Circuit Breaker]                                               |
-|      - Transparent retry on 500/502/503/504/429 to high-availability backups     |
+|  [5. Same-Model Exponential Backoff Retry]                                        |
+|      - Transparent retry on 500/502/503/504/429 preserving target model & context|
 +-----------------------------------------------------------------------------------+
                                          | (Disguised HTTPS Upstream)
                                          v
@@ -161,11 +166,11 @@ if (choice?.delta?.reasoning && !choice.delta.reasoning_content) {
 }
 ```
 
-### 6. 透明故障转移重试机制 (Auto-Failover Circuit Breaker)
-当免费模型遭遇上游节点 500、502、503、504 或 429 限流时，插件拦截器自动启动透明故障转移：
-* 自动判定请求类型；
-* 立即使用高可用兜底模型（`inclusionai/ling-3.0-flash-fin:free` 或 `openrouter/free`）重新发起请求；
-* 对上层业务透明，保障长程代理自动化任务平稳执行。
+### 6. 同模型指数退避重试机制 (Same-Model Exponential Backoff Retry)
+当免费模型遭遇上游节点 500、502、503、504、524 或 429 限流时，插件绝不随意切换备用模型（避免降级模型质量或截断上下文窗口），而是采用严谨的同模型指数退避重试 (Exponential Backoff Retry)：
+* **同模型不降级**：严格保持原请求的模型 ID 与 Payload 负载完全一致，坚守超大上下文（如 1M/2M）与高精推理品质，拒绝以牺牲模型质量为代价；
+* **指数退避重试**：自动进行最多 3 轮指数退避重试（Backoff Jitter，1s、2s、4s 递增），从容抵御上游临时网络抖动与并发高峰；
+* **透明护航**：对上层业务调用完全透明，保障长程复杂智能体任务连续平稳执行。
 
 ### 7. 全链路上下文超限修剪 (Context Pruning Engine)
 在会话压缩 (Compaction) 或包含海量 Tool 执行日志的场景下：
@@ -377,6 +382,11 @@ console.log(completion.choices[0].message.content);
 
 ## 六、版本变更记录 (Changelog)
 
+### v0.1.2 (2026-09-26)
+* **严守模型品质（坚决杜绝模型降级）**：彻底移除遭遇 500 报错时切换备用模型的妥协策略，改为严谨的同模型指数退避重试（Same-Model Exponential Backoff Retry），确保百万上下文与高精推理质量绝不被削弱；
+* **极简默认运行模式**：启动时默认不启动本地代理端口（4116），直接将 Cline 提供商模型注入 Pi 运行时（直连官方网关，零额外开销，与 `ck-pi-zen-session` 架构完全一致），仅在显式执行 `/cline proxy start` 时启动反代服务；
+* **本地代理与拦截器双轨重试**：Fetch 拦截器与独立反向代理服务器统一配备最大 3 轮指数退避重试机制，从容抵御上游短暂网络与并发波动。
+
 ### v0.1.1 (2026-09-26)
 * **指令体系全面对称**：`/cline` 与 `/zen` 深度对齐，支持无参直接拉取远端模型、直接传入 Key 自动验证并热载入模型库、`refresh`/`sync`、`list`/`models`/`free`、`ping` 实时探针与 `model` 快捷切换；
 * **思考链 (CoT) 双向保全**：SSE 流式传输中同时双向写入 `delta.reasoning` 与 `delta.reasoning_content`，杜绝思考内容在部分客户端被遗漏；
@@ -396,6 +406,6 @@ console.log(completion.choices[0].message.content);
   * SSE 流式转换管道自动拦截 `choices: []` 与网关异常帧；
   * 流关闭时断言保护，杜绝两字段皆空的运行时崩溃；
 * **思考链归一化**：自动将 `delta.reasoning` / `message.reasoning` 映射为标准 `reasoning_content`；
-* **透明容灾重试 (Auto-Failover)**：遭遇 500/502/503/504/429 报错时，自动无缝重试高可用备用免费模型；
+* **同模型指数退避重试**：遭遇 500/502/503/504/524/429 报错时，自动进行多轮同模型退避重试，绝不降级或替换模型；
 * **会话修剪与上下文保护**：拦截海量 Tool 日志与会话压缩标签，防止上下文溢出；
 * **视觉美化**：去除所有 Emoji，全面采用纯净结构化 ANSI 与专业标签设计。

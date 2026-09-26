@@ -1,6 +1,6 @@
 {
   "name": "ck-pi-cline",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Cline Account API provider, official client header disguise, free model catalog synchronization, reverse proxy, and session management for the Pi coding agent.",
   "keywords": [
     "pi-package",

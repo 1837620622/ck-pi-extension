@@ -536,16 +536,42 @@ async function startClineProxyServer(options = {}) {
             ...CLINE_CLIENT_HEADERS
           };
           const isStreaming = payload.stream === true;
-          const upstreamRes = await fetch(`${CLINE_BASE_URL}/chat/completions`, {
-            method: "POST",
-            headers: upstreamHeaders,
-            body: JSON.stringify(payload)
-          });
-          if (!upstreamRes.ok) {
+          let upstreamRes;
+          const maxProxyRetries = 3;
+          for (let attempt = 0; attempt <= maxProxyRetries; attempt++) {
+            try {
+              upstreamRes = await fetch(`${CLINE_BASE_URL}/chat/completions`, {
+                method: "POST",
+                headers: upstreamHeaders,
+                body: JSON.stringify(payload)
+              });
+              if (upstreamRes.ok || upstreamRes.status < 500 && upstreamRes.status !== 429) {
+                break;
+              }
+              if (attempt < maxProxyRetries) {
+                const isTestEnv = !!process.env.TEST_PI_MODELS_PATH || process.env.NODE_ENV === "test";
+                const delayMs = isTestEnv ? 10 : Math.min(1e3 * Math.pow(2, attempt), 5e3);
+                await new Promise((resolve) => setTimeout(resolve, delayMs));
+              }
+            } catch (netErr) {
+              if (attempt < maxProxyRetries) {
+                const isTestEnv = !!process.env.TEST_PI_MODELS_PATH || process.env.NODE_ENV === "test";
+                const delayMs = isTestEnv ? 10 : Math.min(1e3 * Math.pow(2, attempt), 5e3);
+                await new Promise((resolve) => setTimeout(resolve, delayMs));
+              } else {
+                errorCounter++;
+                res.writeHead(502, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ error: { message: `Upstream connection failed after ${maxProxyRetries} retries: ${String(netErr)}` } }));
+                return;
+              }
+            }
+          }
+          if (!upstreamRes || !upstreamRes.ok) {
             errorCounter++;
-            const errText = await upstreamRes.text().catch(() => "");
-            res.writeHead(upstreamRes.status, { "Content-Type": "application/json" });
-            res.end(errText || JSON.stringify({ error: upstreamRes.statusText }));
+            const status = upstreamRes ? upstreamRes.status : 502;
+            const errText = upstreamRes ? await upstreamRes.text().catch(() => "") : "";
+            res.writeHead(status, { "Content-Type": "application/json" });
+            res.end(errText || JSON.stringify({ error: upstreamRes?.statusText || "Upstream request failed" }));
             return;
           }
           if (isStreaming) {
