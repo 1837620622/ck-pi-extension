@@ -3,7 +3,7 @@
  *
  * 核心特色：
  * 1. 深度思考后脱机守卫：彻底解决 DeepSeek 等推理模型思考完毕后直接发 stop 导致会话意外停顿的缺陷；
- * 2. 边缘网关状态码拦截重试：专门拦截 Cloudflare / 反向代理层的 504, 520, 521, 522, 524, 533 状态码与网络瞬断；
+ * 2. 边缘网关状态码拦截重试：专门拦截 Cloudflare / 反向代理层的 502, 503, 504, 520, 521, 522, 523, 524, 525, 533 状态码与网络瞬断；
  * 3. 严格职责隔离：业务状态码与原有 retry 保持 100% 独立，绝不冲突重合；
  * 4. 熔断与安全边界：用户中断 (Ctrl+C) 立即放行，连续 3 次异常自动熔断，0 风险。
  */
@@ -15,8 +15,21 @@ import { registerSentinelHooks } from "./sentinel.js";
 
 export { DEFAULT_GUARD_CONFIG } from "./types.js";
 export type { GuardConfig, GuardStats } from "./types.js";
-export { installGatewayFetchInterceptor, restoreGatewayFetchInterceptor } from "./retry.js";
-export { registerSentinelHooks, extractContentInfo } from "./sentinel.js";
+export {
+	installGatewayFetchInterceptor,
+	restoreGatewayFetchInterceptor,
+	isGatewayRetryCandidate,
+	isEligibleLLMEndpoint,
+	calculateBackoffDelay,
+	sleepWithSignal,
+	shouldBypassDuplicatePluginRetry,
+} from "./retry.js";
+export {
+	registerSentinelHooks,
+	extractContentInfo,
+	isOperationAborted,
+	type ContentInfo,
+} from "./sentinel.js";
 
 const config: GuardConfig = { ...DEFAULT_GUARD_CONFIG };
 const stats: GuardStats = {
@@ -26,10 +39,10 @@ const stats: GuardStats = {
 };
 
 export default function piGuard(pi: ExtensionAPI): void {
-	// 1. 安装边缘网关 Fetch 拦截器 (504, 522, 533 等超时保护)
+	// 1. 安装边缘网关 Fetch 拦截器 (502, 503, 504, 522, 533 等超时保护)
 	installGatewayFetchInterceptor(config, stats);
 
-	// 2. 注册思考后脱机守卫钩子 (turn_end / agent_end)
+	// 2. 注册思考后脱机守卫钩子 (turn_end / agent_end / before_agent_start / session_start / input)
 	registerSentinelHooks(pi, config, stats);
 
 	// 3. 注册 /guard 诊断与控制指令
@@ -72,7 +85,7 @@ export default function piGuard(pi: ExtensionAPI): void {
 				`• 守护总开关: ${config.enabled ? "已启用 (Active)" : "已暂停 (Disabled)"}`,
 				`• 思考脱机守卫: 已累计无感续行 ${stats.totalAutoContinues} 次`,
 				`• 当前连续触发计数: ${stats.consecutiveContinues} / ${config.maxConsecutiveContinues}`,
-				`• 网关超时重试 (504/522/533): 已累计救援重试 ${stats.totalGatewayRetries} 次`,
+				`• 网关超时重试 (502/503/504/520-525/533): 已累计救援重试 ${stats.totalGatewayRetries} 次`,
 				`• 最近一次脱机续行: ${stats.lastAutoContinueAt || "无"} (${stats.lastAutoContinueReason || "无"})`,
 				`• 最近一次网关重试: ${stats.lastGatewayRetryAt || "无"} (状态码: ${stats.lastGatewayRetryStatus ?? "无"})`,
 				`• 监听网关状态码: [${config.retryStatusCodes.join(", ")}]`,

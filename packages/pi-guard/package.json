@@ -1,7 +1,7 @@
 {
   "name": "ck-pi-guard",
-  "version": "0.1.1",
-  "description": "Auto-continuation sentinel and edge gateway retry guard (504, 522, 533) for the Pi coding agent.",
+  "version": "0.1.2",
+  "description": "Auto-continuation thinking sentinel and edge gateway retry guard (502, 503, 504, 520-525, 533) for the Pi coding agent.",
   "keywords": [
     "pi-package",
     "pi-extension",

@@ -8,7 +8,7 @@ Pi 插件 monorepo：一个 GitHub 仓库，多个彼此独立的 npm 包，用�
 | Pi Redkit | `ck-pi-redkit` | 授权交战条令注入（渗透/逆向） | [README](packages/pi-redkit/README.md) |
 | Pi Zen Session | `ck-pi-zen-session` | OpenCode Zen 免费模型、全套请求头伪装与会话自动轮换 | [README](packages/pi-zen-session/README.md) |
 | Pi Cline | `ck-pi-cline` | Cline 官方指纹伪装、21 款零额度模型与本地反向代理 | [README](packages/pi-cline/README.md) |
-| Pi Guard | `ck-pi-guard` | 深度思考后脱机守卫与边缘网关超时拦截重试 (504, 522, 533) | [README](packages/pi-guard/README.md) |
+| Pi Guard | `ck-pi-guard` | 深度思考后脱机守卫与边缘网关超时拦截重试 (502, 503, 504, 520-525, 533) | [README](packages/pi-guard/README.md) |
 
 ## 安装
 
@@ -54,10 +54,10 @@ GitHub 源安装：`pi install git:github.com/1837620622/ck-pi-extension`。
 
 ## 更新日志
 
-- `ck-pi-guard 0.1.1`：全新发布！深度思考模型脱机守卫与边缘网关状态码拦截重试：
-  - **思考后脱机自动续行**：针对 DeepSeek 等推理模型思考结束直接 stop 导致 0 文本 0 工具调用提前脱机的问题，自动识别并在 turn 结束无感知派发 `followUp` 提示词自动恢复自主工具执行，内置 `WeakSet` 防重入去重与 `turn_end` 即时接续；
-  - **边缘网关状态码精准拦截**：在底层 Fetch 拦截 Cloudflare/代理网关超时与连接异常（504, 520, 521, 522, 524, 533, ECONNRESET, ETIMEDOUT），带 Full Jitter 指数退避透明重试，与 Pi 原生重试完全隔离解耦；
-  - **安全与控制边界**：包含 3 次连续异常脱机熔断保护，用户主动中止 (Ctrl+C) 立即放行绝不阻拦，提供 `/guard` 命令行进行状态查阅与启停控制。
+- `ck-pi-guard 0.1.2`：全新发布！深度思考模型脱机守卫与边缘网关状态码拦截重试（经双子代理架构与并发审计深度加固）：
+  - **全格式思考与内嵌标签剥离**：不仅支持结构化 thinking 块，全面自动剥离 `<think>...</think>`、`<thought>` 文本标签与顶层 `reasoning_content`，多协议兼容 toolCall、tool_use 与 function 调用；
+  - **10 大边缘网关状态码与防风暴协同**：覆盖 502, 503, 504, 520, 521, 522, 523, 524, 525, 533，支持 Retry-After 标头退避，主动让出已由 Cline/Zen 接管的端点，杜绝 16 倍乘法重试风暴；
+  - **生命周期隔离与安全契约**：在 before_agent_start、session_start 及用户 input 时重置脱机计数，防范误熔断；遵循 ctx.signal 取消信号与 followUp 队列调度规范，绝不返回非法 boundary continuation。
 - `ck-pi-cline 0.1.4` / `ck-pi-zen-session 0.1.19` / `ck-pi-rail 0.1.1` / `ck-pi-redkit 0.1.8`：系统级安全与架构深度审计全面加固：
   - **网络与本地代理安全**：强化 DNS Rebinding 防护、严格解析中括号 IPv6 主机头、受信任 CORS 来源白名单校验、SSE 帧缓存 2MB 熔断机制、客户端断开自动取消上游流式传输；
   - **同模型全抖动退避重试**：Fetch 拦截器遭遇 500/502/503/504 及 429 时，执行带 Full Jitter 全抖动的指数退避重试，绝不自动切换备用模型（严格保障模型质量不降级）；
