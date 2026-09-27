@@ -315,6 +315,61 @@ describe("ck-pi-guard: 深度思考后脱机守卫测试", () => {
 		assert.equal(sentMessages.length, 0, "达到熔断上限后必须暂停自动续行");
 		assert.equal(testStats.consecutiveContinues, 0, "熔断后重置连续计数");
 	});
+
+	it("turn_end 与 agent_end 双重兜底不重复触发（防重入去重）", async () => {
+		const sentMessages: any[] = [];
+		const handlers: Record<string, Function[]> = {};
+
+		const mockPi: any = {
+			on: (event: string, fn: Function) => {
+				handlers[event] = handlers[event] || [];
+				handlers[event].push(fn);
+			},
+			sendUserMessage: (text: string, options?: any) => {
+				sentMessages.push({ text, options });
+			},
+		};
+
+		const testConfig: GuardConfig = { ...DEFAULT_GUARD_CONFIG };
+		const testStats: GuardStats = {
+			totalAutoContinues: 0,
+			totalGatewayRetries: 0,
+			consecutiveContinues: 0,
+		};
+
+		registerSentinelHooks(mockPi, testConfig, testStats);
+
+		const mockCtx: any = {
+			hasUI: false,
+			getSignal: () => undefined,
+		};
+
+		const sameAssistantMessage = {
+			role: "assistant",
+			stopReason: "stop",
+			content: [
+				{
+					type: "thinking",
+					thinking: "I will read the file and write test now...",
+				},
+			],
+		};
+
+		// 模拟先触发 turn_end
+		const turnEndEvent = { message: sameAssistantMessage };
+		const res = await handlers["turn_end"][0](turnEndEvent, mockCtx);
+		assert.equal(res?.continue, true, "turn_end 应该返回 continue: true 以便无缝执行");
+		assert.equal(sentMessages.length, 1, "turn_end 应该派发一次续行");
+		assert.equal(testStats.consecutiveContinues, 1);
+
+		// 模拟随后触发 agent_end，包含同一条消息
+		const agentEndEvent = { messages: [sameAssistantMessage] };
+		await handlers["agent_end"][0](agentEndEvent, mockCtx);
+
+		// 验证：agent_end 绝不可二次派发！
+		assert.equal(sentMessages.length, 1, "同一消息经过 turn_end 处理后，agent_end 绝不能重复派发");
+		assert.equal(testStats.consecutiveContinues, 1, "计数器绝不重复增加");
+	});
 });
 
 describe("ck-pi-guard: /guard 命令行交互测试", () => {

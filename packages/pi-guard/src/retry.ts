@@ -92,11 +92,11 @@ export function installGatewayFetchInterceptor(
 		// 提取 signal 用于主动取消支持
 		const signal = init?.signal ?? (input instanceof Request ? input.signal : undefined);
 
-		// 如果请求体是已消耗的 ReadableStream，克隆支持可能受限，预读为 Buffer/ArrayBuffer
+		// 如果请求体是已消耗的 ReadableStream，克隆支持可能受限，预读为文本进行跨重试复用
 		let cachedBody: BodyInit | null | undefined = init?.body;
 		if (!cachedBody && input instanceof Request && input.body) {
 			try {
-				cachedBody = await input.clone().arrayBuffer();
+				cachedBody = await input.clone().text();
 			} catch {
 				// 无法克隆则退化为单次请求
 			}

@@ -54,6 +54,9 @@ export function registerSentinelHooks(
 	config: GuardConfig,
 	stats: GuardStats,
 ): void {
+	// 用于防止同一消息在 turn_end 与 agent_end 重复触发双重续行
+	const handledMessages = new WeakSet<object>();
+
 	// 1. 每轮结束 (turn_end) 检查
 	pi.on("turn_end", async (event, ctx: ExtensionContext) => {
 		if (!config.enabled) return;
@@ -81,6 +84,8 @@ export function registerSentinelHooks(
 
 		// 命中脱机特征：未调用工具，未输出正式文本，但存在深度思考内容
 		if (thinking.length > 0 && text.length === 0 && !hasToolCall) {
+			handledMessages.add(message);
+
 			if (stats.consecutiveContinues >= config.maxConsecutiveContinues) {
 				stats.consecutiveContinues = 0;
 				if (ctx.hasUI) {
@@ -112,6 +117,8 @@ export function registerSentinelHooks(
 			} catch {
 				pi.sendUserMessage(prompt);
 			}
+
+			return { continue: true };
 		}
 	});
 
@@ -125,6 +132,9 @@ export function registerSentinelHooks(
 		const lastMsg = messages[messages.length - 1] as any;
 		if (!lastMsg || lastMsg.role !== "assistant") return;
 
+		// 若已在 turn_end 处理过此消息，坚决不重复触发
+		if (handledMessages.has(lastMsg)) return;
+
 		if (lastMsg.stopReason === "aborted" || lastMsg.stopReason === "error") {
 			stats.consecutiveContinues = 0;
 			return;
@@ -137,6 +147,8 @@ export function registerSentinelHooks(
 		const { hasToolCall, text, thinking } = extractContentInfo(lastMsg.content);
 
 		if (!hasToolCall && text.length === 0 && thinking.length > 0) {
+			handledMessages.add(lastMsg);
+
 			if (stats.consecutiveContinues >= config.maxConsecutiveContinues) {
 				stats.consecutiveContinues = 0;
 				return;
