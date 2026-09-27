@@ -725,7 +725,8 @@ export default function piCline(pi: ExtensionAPI): void {
 				transformed.max_completion_tokens = maxAllowedOutput;
 				modified = true;
 			}
-			if (transformed.frequency_penalty === undefined) {
+			const isReasoning = ctx.model?.reasoning === true || transformed.reasoning_effort !== undefined;
+			if (!isReasoning && transformed.frequency_penalty === undefined) {
 				transformed.frequency_penalty = 0.05;
 				modified = true;
 			}
