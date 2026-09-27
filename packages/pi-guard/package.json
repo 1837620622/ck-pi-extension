@@ -1,0 +1,44 @@
+{
+  "name": "ck-pi-guard",
+  "version": "0.1.0",
+  "description": "Auto-continuation sentinel and edge gateway retry guard (504, 522, 533) for the Pi coding agent.",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "pi-coding-agent",
+    "guard",
+    "auto-continue",
+    "gateway-retry",
+    "thinking-sentinel"
+  ],
+  "license": "MIT",
+  "author": "传康Kk（万能程序员）",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/1837620622/ck-pi-extension.git",
+    "directory": "packages/pi-guard"
+  },
+  "homepage": "https://github.com/1837620622/ck-pi-extension#pi-guard",
+  "bugs": {
+    "url": "https://github.com/1837620622/ck-pi-extension/issues"
+  },
+  "type": "module",
+  "files": [
+    "src",
+    "!src/**/*.test.ts",
+    "!src/**/__tests__/**",
+    "README.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.85.0"
+  },
+  "scripts": {
+    "test": "esbuild src/index.test.ts --bundle --packages=external --platform=node --format=esm --outfile=.test-dist/test.mjs --log-level=warning && node --test .test-dist/test.mjs"
+  }
+}

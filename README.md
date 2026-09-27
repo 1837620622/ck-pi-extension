@@ -8,6 +8,7 @@ Pi 插件 monorepo：一个 GitHub 仓库，多个彼此独立的 npm 包，用�
 | Pi Redkit | `ck-pi-redkit` | 授权交战条令注入（渗透/逆向） | [README](packages/pi-redkit/README.md) |
 | Pi Zen Session | `ck-pi-zen-session` | OpenCode Zen 免费模型、全套请求头伪装与会话自动轮换 | [README](packages/pi-zen-session/README.md) |
 | Pi Cline | `ck-pi-cline` | Cline 官方指纹伪装、21 款零额度模型与本地反向代理 | [README](packages/pi-cline/README.md) |
+| Pi Guard | `ck-pi-guard` | 深度思考后脱机守卫与边缘网关超时拦截重试 (504, 522, 533) | [README](packages/pi-guard/README.md) |
 
 ## 安装
 
@@ -18,6 +19,7 @@ pi install npm:ck-pi-rail        # 只要状态栏
 pi install npm:ck-pi-redkit      # 只要条令注入
 pi install npm:ck-pi-zen-session # 只要 OpenCode Zen 免费模型与 Session 自动维护
 pi install npm:ck-pi-cline       # 只要 Cline 官方指纹伪装、21 款零额度免费模型与本地反代
+pi install npm:ck-pi-guard       # 只要深度思考后脱机守卫与边缘网关重试
 ```
 
 旧合集包 `ck-pi-extension` 已废弃（不再更新），新用户请装上面单包。
@@ -45,10 +47,17 @@ GitHub 源安装：`pi install git:github.com/1837620622/ck-pi-extension`。
 /cline free          查看 21 款零额度模型注册表（含 1M 隐身模型与 2M 代码专精模型）
 /cline ping          实时探测免费模型连通性与网络时延
 /cline proxy start   在后台启动本地 OpenAI 兼容反向代理服务 (默认端口 4116)
+/guard status        查看思考脱机守卫与网关重试实时指标与熔断状态
+/guard reset         重置守卫统计计数与熔断状态
+/guard on / off      开启或关闭守卫与网关拦截
 ```
 
 ## 更新日志
 
+- `ck-pi-guard 0.1.0`：全新发布！深度思考模型脱机守卫与边缘网关状态码拦截重试：
+  - **思考后脱机自动续行**：针对 DeepSeek 等推理模型思考结束直接 stop 导致 0 文本 0 工具调用提前脱机的问题，自动识别并在 turn 结束无感知派发 `followUp` 提示词自动恢复自主工具执行；
+  - **边缘网关状态码精准拦截**：在底层 Fetch 拦截 Cloudflare/代理网关超时与连接异常（504, 520, 521, 522, 524, 533, ECONNRESET, ETIMEDOUT），带 Full Jitter 指数退避透明重试，与 Pi 原生重试完全隔离解耦；
+  - **安全与控制边界**：包含 3 次连续异常脱机熔断保护，用户主动中止 (Ctrl+C) 立即放行绝不阻拦，提供 `/guard` 命令行进行状态查阅与启停控制。
 - `ck-pi-cline 0.1.3` / `ck-pi-zen-session 0.1.19` / `ck-pi-rail 0.1.1` / `ck-pi-redkit 0.1.8`：系统级安全与架构深度审计全面加固：
   - **网络与本地代理安全**：强化 DNS Rebinding 防护、严格解析中括号 IPv6 主机头、受信任 CORS 来源白名单校验、SSE 帧缓存 2MB 熔断机制、客户端断开自动取消上游流式传输；
   - **同模型全抖动退避重试**：Fetch 拦截器遭遇 500/502/503/504 及 429 时，执行带 Full Jitter 全抖动的指数退避重试，绝不自动切换备用模型（严格保障模型质量不降级）；
