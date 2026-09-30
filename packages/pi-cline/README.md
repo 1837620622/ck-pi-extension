@@ -1,7 +1,7 @@
 # ck-pi-cline
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.1.3-blue.svg?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.1.5-blue.svg?style=flat-square" alt="Version" />
   <img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License" />
   <img src="https://img.shields.io/badge/runtime-Pi%20Agent%20%3E%3D0.85.0-orange.svg?style=flat-square" alt="Pi Runtime" />
   <img src="https://img.shields.io/badge/protocol-OpenAI%20Compatible-informational.svg?style=flat-square" alt="Protocol" />
@@ -381,6 +381,18 @@ console.log(completion.choices[0].message.content);
 ---
 
 ## 六、版本变更记录 (Changelog)
+
+### v0.1.5 (2026-09-30)
+* **供应商节点空响应自动同模型重试 3 次 (`Provider returned an empty response`)**：首创首包无损流式 Stream Peek 预读探测技术，当上游节点返回伪 200 但实际为 `Provider returned an empty response` 错误帧或 0 字节空流时，底层连接立即中断并自动进行指数退避 3 次同模型重试，彻底消除偶发性空响应弹窗；
+* **Pi 运行态与 `models.json` 严格 JSON 校验与防畸变过滤 (`sanitizePiModelDefinition`)**：严格规范化 `id`、`name`、`contextWindow`、`maxTokens`、`input`、`cost` 等字段，非法或缺省字段自动回退至安全默认值，清洗根级历史残留键，杜绝注入畸变或非法 JSON；
+* **零额度隐身模型与免扣费后台实时目录拉取**：深度识别 `stealth/space-bunny-alpha` 等隐身零消耗模型与定价为 0 的元数据，每次启动与每 30 分钟后台静默拉取远端目录（0 Token 0 扣费），并支持 `~/.pi/agent/cline-models.json` 本地扩展与 `/cline add <id> [name]`；
+* **模型去重保障**：彻底移除冗余人工别名注入，统一以规范 canonical ID 唯一键去重，杜绝 `/model` 菜单出现重复项。
+
+### v0.1.4 (2026-09-27)
+* **系统安全审计全面加固**：
+  * **网络与本地代理安全**：强化 DNS Rebinding 防护、严格解析中括号 IPv6 主机头、受信任 CORS 来源白名单校验、SSE 帧缓存 2MB 熔断机制、客户端断开自动取消上游流式传输；
+  * **同模型全抖动退避重试**：Fetch 拦截器遭遇 500/502/503/504 及 429 时，执行带 Full Jitter 全抖动的指数退避重试，绝不自动切换备用模型（严格保障模型质量不降级）；
+  * **凭据安全**：`auth.json` 与 `models.json` 目录与文件权限严格限制为 0700 / 0600。
 
 ### v0.1.2 (2026-09-26)
 * **严守模型品质（坚决杜绝模型降级）**：彻底移除遭遇 500 报错时切换备用模型的妥协策略，改为严谨的同模型指数退避重试（Same-Model Exponential Backoff Retry），确保百万上下文与高精推理质量绝不被削弱；

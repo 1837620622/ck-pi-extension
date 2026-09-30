@@ -38,6 +38,7 @@ GitHub 源安装：`pi install git:github.com/1837620622/ck-pi-extension`。
 /zen status          查看 Zen 会话年龄、请求头保护与模型库状态
 /zen refresh         强制生成全新降序 Session ID 并刷新请求头
 /zen list            查看所有已激活的 Zen 免费模型规格清单（精确上下文、最大输出、思考等级）
+/zen add <id> [name] 自定义登记新增的免费模型至本地模型库
 /zen ping            实时探测 Zen 免费模型网络连通性与往返时延
 /cline               无参运行：自动拉取远端模型、刷新配置并热重载 Pi 模型库
 /cline <key>         配置/更新 Cline API Key，自动在线探测 21 款零额度模型、上下文与思考等级
@@ -45,6 +46,7 @@ GitHub 源安装：`pi install git:github.com/1837620622/ck-pi-extension`。
 /cline refresh       强制在线拉取远端模型并刷新本地配置
 /cline list          查看所有 21 款可用免费模型详细规格清单（精确上下文、最大输出、思考等级）
 /cline free          查看 21 款零额度模型注册表（含 1M 隐身模型与 2M 代码专精模型）
+/cline add <id> [name] 自定义登记新增的零额度免费模型至本地模型库
 /cline ping          实时探测免费模型连通性与网络时延
 /cline proxy start   在后台启动本地 OpenAI 兼容反向代理服务 (默认端口 4116)
 /guard status        查看思考脱机守卫与网关重试实时指标与熔断状态
@@ -54,6 +56,11 @@ GitHub 源安装：`pi install git:github.com/1837620622/ck-pi-extension`。
 
 ## 更新日志
 
+- `ck-pi-cline 0.1.5` / `ck-pi-zen-session 0.1.20`：
+  - **供应商节点空响应自动同模型重试 3 次 (`Provider returned an empty response`)**：首创无损首包 Stream Peek 预读探测，当上游节点返回伪 200 但首包为 `empty response` 错误帧或 0 字节空流时，立即断开并自动进行指数退避 3 次同模型重试，彻底消除偶发性空响应弹窗；
+  - **Pi 运行态与 `models.json` 严格 JSON 校验与防畸变过滤 (`sanitizePiModelDefinition`)**：严格校验 `contextWindow`、`maxTokens`、`input`、`cost` 四维参数，非法值自动回退安全默认值，清洗根级历史残留键，杜绝注入畸变或非法 JSON；
+  - **零额度隐身模型智能识别与零扣费后台实时目录拉取**：深度识别 `stealth/space-bunny-alpha` 等隐身零消耗模型与定价为 0 的元数据，每次启动与每 30 分钟后台静默拉取远端目录（0 Token 0 扣费），并支持 `~/.pi/agent/cline-models.json` 与 `~/.pi/agent/zen-models.json` 本地扩展；
+  - **模型去重保障**：彻底移除冗余人工别名注入，统一以规范 canonical ID 唯一键去重，杜绝 `/model` 菜单出现重复项。
 - `ck-pi-guard 0.1.2`：全新发布！深度思考模型脱机守卫与边缘网关状态码拦截重试（经双子代理架构与并发审计深度加固）：
   - **全格式思考与内嵌标签剥离**：不仅支持结构化 thinking 块，全面自动剥离 `<think>...</think>`、`<thought>` 文本标签与顶层 `reasoning_content`，多协议兼容 toolCall、tool_use 与 function 调用；
   - **10 大边缘网关状态码与防风暴协同**：覆盖 502, 503, 504, 520, 521, 522, 523, 524, 525, 533，支持 Retry-After 标头退避，主动让出已由 Cline/Zen 接管的端点，杜绝 16 倍乘法重试风暴；

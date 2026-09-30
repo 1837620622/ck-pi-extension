@@ -1,7 +1,7 @@
 # ck-pi-zen-session
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.1.18-blue.svg?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.1.20-blue.svg?style=flat-square" alt="Version" />
   <img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License" />
   <img src="https://img.shields.io/badge/runtime-Pi%20Agent%20%3E%3D0.85.0-orange.svg?style=flat-square" alt="Pi Runtime" />
   <img src="https://img.shields.io/badge/protocol-OpenAI%20Compatible-informational.svg?style=flat-square" alt="Protocol" />
@@ -59,7 +59,8 @@ OpenCode Zen 免费模型同步、请求头伪装与 Session 会话自动维护�
 - **全面深度优化：极速压缩修剪、透明三重重试自愈与多场景护航**：
   - **Compaction 标签级深度修剪与极速响应 (`pruneZenContext`)**：当历史累积超 100K 字符时，智能保留前 30,000 字符的任务目标与后 60,000 字符的最新上下文执行状态，安全剪除中间冗余过程并完整修复 XML 标签，使超大上下文压缩耗时从 142 秒直降至 8~10 秒，彻底消除 Cloudflare 网关超时；
   - **Tool 巨型输出智能截断**：单个 Tool 命令自动截断在 25,000 字符以内，杜绝单条命令撑爆上下文窗口；
-  - **底层透明三重重试循环 (Transparent Retry Loop)**：在 Fetch 拦截器内深度集成自动重试机制：遇 401/403 立即轮换生成全新的合规降序 Session ID 并重试；遇 502/503/504/524 网关超时或网络临时掉线自动指数退避重试，Pi 业务层直接接收到 200 OK，全程无感、零报错、零中断；
+  - **底层透明三重重试循环 (Transparent Retry Loop) 与空响应自愈**：在 Fetch 拦截器内深度集成自动重试机制：遇 401/403 立即轮换生成全新的合规降序 Session ID 并重试；遇 500/502/503/504/520/521/522/524/533 网关超时或网络临时掉线自动指数退避重试；遇上游伪 200 空响应（`Provider returned an empty response` 或 0 字节空流）时，底层无损预读并在内存中自动进行 3 次同模型重试，Pi 业务层全程无感、零报错、零中断；
+  - **Pi 运行态与 `models.json` 严格 JSON 规范化注入 (`sanitizePiModelDefinition`)**：严格校验 `contextWindow`、`maxTokens`、`input`、`cost` 等字段，清洗根级历史残留键，杜绝注入畸变或非法 JSON；
   - **新开对话与会话轮换新鲜度保障**：将会话续期阈值优化至 25 分钟，彻底避免踩中 30 分钟硬过期边界；
   - **反序列化支持深度思考 (`reasoning_content`)**：SSE-to-JSON 汇聚引擎完整提取并输出 `reasoning_content`，完美兼容思考模型的离线总结与非流式调用。
 - **全自动多端持久化同步**：自动双写 Pi 本地配置（`~/.pi/agent/models.json` 和 `~/.pi/agent/auth.json`），若检测到 CC-Switch 亦无缝同步其 SQLite 数据库。
@@ -76,6 +77,7 @@ OpenCode Zen 免费模型同步、请求头伪装与 Session 会话自动维护�
 | `/zen <key>` 或 `/zen key <key>` | **更新 API Key**：设置/更换 OpenCode Zen API Key，自动在线验证并全量同步模型与全套请求头 | 输出新 Key 验证结果与模型卡片 |
 | `/zen refresh` 或 `/zen sync` | **强制换新 Session**：强制生成全新的合法降序 Session ID 并更新所有请求头与落盘配置 | 输出全新 Session ID 与就绪状态 |
 | `/zen list` 或 `/zen models` 或 `/zen free` | **查看模型列表**：展示全部可用免费模型详细规格卡片（上下文、最大输出、思考等级、模态） | 输出分级卡片列表 |
+| `/zen add <模型ID> [名称]` | **登记自定义模型**：支持将新上线的免费模型登记至 `~/.pi/agent/zen-models.json` 并实时热载入 | 输出新增模型配置状态 |
 | `/zen status` | **查看运行状态**：查看当前 API Key 掩码、活跃会话精确存活时间、模型库与请求头保护状态 | 输出运行状态仪表盘 |
 | `/zen ping [模型ID]` | **网络时延探针**：实时探测 Zen 免费模型网络连通性与往返延迟 (RTT) | 输出各模型网络时延与评级 |
 | `/zen model <模型ID>` | **快速切换模型**：一键切换当前 Pi 会话所使用的 Zen 模型 | 即刻切换生效 |
