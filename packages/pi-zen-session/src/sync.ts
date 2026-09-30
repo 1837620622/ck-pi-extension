@@ -36,8 +36,10 @@ import {
 	formatModelCard,
 	formatThinkingSummary,
 	formatTokens,
+	inferModelCapabilities,
 	KNOWN_ZEN_FREE_MODELS,
 	resolveModelDefinitions,
+	sanitizePiModelDefinition,
 	ZEN_BASE_URL,
 	ZEN_PROVIDER_ID,
 	ZEN_USER_AGENT,
@@ -65,6 +67,101 @@ export function defaultCcSwitchDbPath(): string {
 	return join(homedir(), ".cc-switch", "cc-switch.db");
 }
 
+export function defaultCustomZenModelsPath(): string {
+	if (process.env.TEST_ZEN_CUSTOM_MODELS_PATH) return process.env.TEST_ZEN_CUSTOM_MODELS_PATH;
+	return join(homedir(), ".pi", "agent", "zen-models.json");
+}
+
+/**
+ * 载入用户本地自定义或新增的 OpenCode Zen 免费模型列表 (~/.pi/agent/zen-models.json)
+ */
+export function loadCustomZenModels(customPath = defaultCustomZenModelsPath()): ZenModelDefinition[] {
+	if (!existsSync(customPath)) {
+		return [];
+	}
+	try {
+		const content = readFileSync(customPath, "utf-8");
+		const parsed = JSON.parse(content);
+		const list: ZenModelDefinition[] = [];
+		const rawItems: any[] = Array.isArray(parsed)
+			? parsed
+			: parsed && typeof parsed === "object" && Array.isArray(parsed.models)
+			? parsed.models
+			: parsed && typeof parsed === "object"
+			? Object.values(parsed)
+			: [];
+
+		for (const item of rawItems) {
+			if (typeof item === "string" && item.trim()) {
+				list.push(inferModelCapabilities(item.trim()));
+			} else if (item && typeof item === "object" && typeof item.id === "string" && item.id.trim()) {
+				const inferred = inferModelCapabilities(item.id.trim(), item);
+				list.push({
+					...inferred,
+					name: typeof item.name === "string" && item.name.trim() ? item.name.trim() : inferred.name,
+					contextWindow:
+						typeof item.contextWindow === "number" && item.contextWindow > 0
+							? item.contextWindow
+							: inferred.contextWindow,
+					maxTokens:
+						typeof item.maxTokens === "number" && item.maxTokens > 0
+							? item.maxTokens
+							: inferred.maxTokens,
+					reasoning: typeof item.reasoning === "boolean" ? item.reasoning : inferred.reasoning,
+				});
+			}
+		}
+		return list;
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * 登记自定义或新增的 Zen 免费模型至 ~/.pi/agent/zen-models.json (0 消耗)
+ */
+export function addCustomZenModel(
+	modelId: string,
+	options?: { name?: string; contextWindow?: number; maxTokens?: number; reasoning?: boolean },
+	customPath = defaultCustomZenModelsPath(),
+): ZenModelDefinition {
+	mkdirSync(dirname(customPath), { recursive: true, mode: 0o700 });
+	let existing: any[] = [];
+	try {
+		if (existsSync(customPath)) {
+			const content = readFileSync(customPath, "utf-8");
+			const parsed = JSON.parse(content);
+			if (Array.isArray(parsed)) {
+				existing = parsed;
+			}
+		}
+	} catch {}
+
+	const def = inferModelCapabilities(modelId, options);
+	if (options?.name) def.name = options.name;
+	if (options?.contextWindow) def.contextWindow = options.contextWindow;
+	if (options?.maxTokens) def.maxTokens = options.maxTokens;
+	if (typeof options?.reasoning === "boolean") def.reasoning = options.reasoning;
+
+	const filtered = existing.filter((item) => {
+		const id = typeof item === "string" ? item : item?.id;
+		return id !== modelId;
+	});
+	filtered.push({
+		id: def.id,
+		name: def.name,
+		contextWindow: def.contextWindow,
+		maxTokens: def.maxTokens,
+		reasoning: def.reasoning,
+	});
+
+	writeFileSync(customPath, JSON.stringify(filtered, null, 2), { encoding: "utf-8", mode: 0o600 });
+	try {
+		chmodSync(customPath, 0o600);
+	} catch {}
+	return def;
+}
+
 /**
  * 校验 API Key 并拉取 OpenCode Zen 在线模型清单，自动识别所有免费与零额度模型 ID
  */
@@ -76,61 +173,78 @@ export async function fetchZenFreeModels(apiKey: string): Promise<string[]> {
 /**
  * 校验 API Key 并拉取 OpenCode Zen 完整免费模型目录，深度解析上下文与思考等级
  */
-export async function fetchZenModelCatalog(apiKey: string): Promise<ZenModelDefinition[]> {
-	const res = await fetch(`${ZEN_BASE_URL}/models`, {
-		method: "GET",
-		headers: {
-			Authorization: `Bearer ${apiKey.trim()}`,
-			"User-Agent": ZEN_USER_AGENT,
-		},
-		signal: AbortSignal.timeout(15_000),
-	});
-
-	if (!res.ok) {
-		const text = await res.text().catch(() => "");
-		throw new Error(`OpenCode Zen API 验证失败 (HTTP ${res.status}): ${text || res.statusText}`);
+export async function fetchZenModelCatalog(
+	apiKey: string,
+	customPath = defaultCustomZenModelsPath(),
+): Promise<ZenModelDefinition[]> {
+	const modelsMap = new Map<string, ZenModelDefinition>();
+	for (const [id, m] of Object.entries(KNOWN_ZEN_FREE_MODELS)) {
+		modelsMap.set(id, m);
+	}
+	const customModels = loadCustomZenModels(customPath);
+	for (const m of customModels) {
+		modelsMap.set(m.id, m);
 	}
 
-	const data = (await res.json()) as { data?: Array<{ id: string; [key: string]: unknown }> };
-	if (!data || !Array.isArray(data.data)) {
-		return Object.values(KNOWN_ZEN_FREE_MODELS);
-	}
+	try {
+		const res = await fetch(`${ZEN_BASE_URL}/models`, {
+			method: "GET",
+			headers: {
+				Authorization: `Bearer ${apiKey.trim()}`,
+				"User-Agent": ZEN_USER_AGENT,
+			},
+			signal: AbortSignal.timeout(15_000),
+		});
 
-	// 自动识别所有带 free / zero / pickle / trial / demo / community 标识或零额度的免费模型
-	const freeItems = data.data.filter((item) => {
-		const id = String(item.id || "");
-		const lower = id.toLowerCase();
+		if (res.ok) {
+			const data = (await res.json()) as { data?: Array<{ id: string; [key: string]: unknown }> };
+			if (data && Array.isArray(data.data)) {
+				// 自动识别所有带 free / zero / pickle / trial / demo / community 标识或零额度的免费模型
+				const freeItems = data.data.filter((item) => {
+					const id = String(item.id || "");
+					const lower = id.toLowerCase();
 
-		// 排除非对话类模型 (如 TypeSafe Jev 等 decision-only 模型，不支持 Chat/Completions 协议)
-		if (lower.startsWith("jev-") || lower.includes("jev") || lower.includes("system-1")) {
-			return false;
+					// 排除非对话类模型 (如 TypeSafe Jev 等 decision-only 模型，不支持 Chat/Completions 协议)
+					if (lower.startsWith("jev-") || lower.includes("jev") || lower.includes("system-1")) {
+						return false;
+					}
+
+					const isFreeByKeyword =
+						lower.includes("free") ||
+						lower.includes("pickle") ||
+						lower.includes("zero") ||
+						lower.includes("trial") ||
+						lower.includes("demo") ||
+						lower.includes("community") ||
+						lower.endsWith("-free");
+
+					const isFreeByMetadata =
+						(item as { free?: boolean }).free === true ||
+						(item as { is_free?: boolean }).is_free === true ||
+						(item as { tier?: string }).tier === "free" ||
+						((item as { cost?: { input?: number; output?: number } }).cost &&
+							(item as { cost: { input: number; output: number } }).cost.input === 0 &&
+							(item as { cost: { input: number; output: number } }).cost.output === 0) ||
+						((item as { pricing?: { input?: number } }).pricing &&
+							(item as { pricing: { input: number } }).pricing.input === 0);
+
+					const isKnown = KNOWN_ZEN_FREE_MODELS[id] !== undefined;
+
+					return isFreeByKeyword || isFreeByMetadata || isKnown;
+				});
+
+				if (freeItems.length > 0) {
+					for (const m of resolveModelDefinitions(freeItems)) {
+						modelsMap.set(m.id, m);
+					}
+				}
+			}
 		}
+	} catch {
+		// 网络故障或离线时，基于已知与本地自定义模型安全运行
+	}
 
-		const isFreeByKeyword =
-			lower.includes("free") ||
-			lower.includes("pickle") ||
-			lower.includes("zero") ||
-			lower.includes("trial") ||
-			lower.includes("demo") ||
-			lower.includes("community") ||
-			lower.endsWith("-free");
-
-		const isFreeByMetadata =
-			(item as { free?: boolean }).free === true ||
-			(item as { is_free?: boolean }).is_free === true ||
-			(item as { tier?: string }).tier === "free" ||
-			((item as { cost?: { input?: number; output?: number } }).cost &&
-				(item as { cost: { input: number; output: number } }).cost.input === 0 &&
-				(item as { cost: { input: number; output: number } }).cost.output === 0) ||
-			((item as { pricing?: { input?: number } }).pricing &&
-				(item as { pricing: { input: number } }).pricing.input === 0);
-
-		const isKnown = KNOWN_ZEN_FREE_MODELS[id] !== undefined;
-
-		return isFreeByKeyword || isFreeByMetadata || isKnown;
-	});
-
-	return freeItems.length > 0 ? resolveModelDefinitions(freeItems) : Object.values(KNOWN_ZEN_FREE_MODELS);
+	return Array.from(modelsMap.values());
 }
 
 /**
@@ -381,7 +495,7 @@ async function doSyncZenConfiguration(options: ZenSyncOptions = {}): Promise<Zen
 		}
 	} else {
 		try {
-			resolvedModels = await fetchZenModelCatalog(resolvedApiKey);
+			resolvedModels = await fetchZenModelCatalog(resolvedApiKey, options.customModelsPath);
 		} catch (error) {
 			if (!options.apiKey) {
 				resolvedModels = Object.values(KNOWN_ZEN_FREE_MODELS);
@@ -390,7 +504,15 @@ async function doSyncZenConfiguration(options: ZenSyncOptions = {}): Promise<Zen
 			}
 		}
 	}
-	const freeModelIds = resolvedModels.map((m) => m.id);
+	// 严格去重防护：以 canonical ID 唯一键去重，绝不混入重复项
+	const uniqueZenMap = new Map<string, ZenModelDefinition>();
+	for (const m of resolvedModels) {
+		if (m && m.id && !uniqueZenMap.has(m.id)) {
+			uniqueZenMap.set(m.id, m);
+		}
+	}
+	const uniqueZenModels = Array.from(uniqueZenMap.values());
+	const freeModelIds = uniqueZenModels.map((m) => m.id);
 
 	// 2. 确定 Session ID：若显式强制更新或当前已过期，则生成全新合规 Session
 	const currentSession = getStoredZenSessionId(modelsPath);
@@ -415,10 +537,21 @@ async function doSyncZenConfiguration(options: ZenSyncOptions = {}): Promise<Zen
 		modelsDoc.providers = {};
 	}
 
+	// 清理根节点历史遗留键，避免注入错误 JSON 结构
+	delete (modelsDoc as any).zen;
+	delete (modelsDoc as any)[ZEN_PROVIDER_ID];
+	if (modelsDoc.providers) {
+		delete (modelsDoc.providers as any).zen;
+	}
+
+	const sanitizedZenModels = uniqueZenModels
+		.map(sanitizePiModelDefinition)
+		.filter((m): m is NonNullable<typeof m> => m !== null);
+
 	modelsDoc.providers[ZEN_PROVIDER_ID] = {
 		baseUrl: ZEN_BASE_URL,
 		api: "openai-completions",
-		apiKey: resolvedApiKey,
+		apiKey: resolvedApiKey || "",
 		headers: {
 			"User-Agent": ZEN_USER_AGENT,
 			"x-opencode-client": "cli",
@@ -434,7 +567,7 @@ async function doSyncZenConfiguration(options: ZenSyncOptions = {}): Promise<Zen
 			supportsStore: false,
 			supportsUsageInStreaming: true,
 		},
-		models: resolvedModels,
+		models: sanitizedZenModels,
 	};
 
 	mkdirSync(dirname(modelsPath), { recursive: true, mode: 0o700 });

@@ -596,3 +596,153 @@ export const OPENCODE_OFFICIAL_TOOLS = [
 		},
 	},
 ];
+
+/**
+ * 免费模型路由映射与别名解析算法 (Zen Model Alias Router)
+ */
+export function resolveZenModelId(rawId?: string): string {
+	if (!rawId || typeof rawId !== "string" || !rawId.trim()) {
+		return "big-pickle";
+	}
+
+	let id = rawId.trim();
+
+	// 1. 剔除客户端或供应商前缀
+	id = id.replace(/^(opencode-zen-free|zen|opencode)\//i, "");
+
+	// 2. 快捷别名转换
+	const lower = id.toLowerCase();
+	if (lower === "pickle" || lower === "big-pickle") {
+		return "big-pickle";
+	}
+	if (
+		lower === "bunny" ||
+		lower === "space-bunny" ||
+		lower === "space-bunny-free" ||
+		lower === "space-bunny-alpha"
+	) {
+		return "space-bunny-free";
+	}
+	if (lower === "mimo" || lower === "mimo-v2.5" || lower === "mimo-v2.5-free") {
+		return "mimo-v2.5-free";
+	}
+	if (lower === "flash" || lower === "mimo-flash" || lower === "mimo-v2.6-flash-free") {
+		return "mimo-v2.6-flash-free";
+	}
+	if (lower === "ultra" || lower === "nemotron-ultra" || lower === "550b" || lower === "nemotron-3-ultra-free") {
+		return "nemotron-3-ultra-free";
+	}
+	if (lower === "lightning" || lower === "nemotron-lightning" || lower === "nemotron-3.5-lightning-free") {
+		return "nemotron-3.5-lightning-free";
+	}
+	if (lower === "ling" || lower === "flash-fin" || lower === "ling-3.0-flash-fin-free") {
+		return "ling-3.0-flash-fin-free";
+	}
+	if (lower === "spark" || lower === "muse" || lower === "muse-spark" || lower === "muse-spark-1.3-contributor-free") {
+		return "muse-spark-1.3-contributor-free";
+	}
+	if (lower === "spark12" || lower === "muse-1.2" || lower === "muse-spark-1.2-contributor-free") {
+		return "muse-spark-1.2-contributor-free";
+	}
+	if (lower === "longcat" || lower === "longcat-free" || lower === "longcat-2.5-preview-free") {
+		return "longcat-2.5-preview-free";
+	}
+
+	// 3. 若直接匹配已知免费模型
+	if (KNOWN_ZEN_FREE_MODELS[id]) {
+		return id;
+	}
+
+	// 4. 自动追加 -free 保护
+	const withFree = `${id}-free`;
+	if (KNOWN_ZEN_FREE_MODELS[withFree]) {
+		return withFree;
+	}
+
+	return id;
+}
+
+export interface PiModelEntry {
+	id: string;
+	name: string;
+	contextWindow: number;
+	maxTokens: number;
+	reasoning: boolean;
+	input: ("text" | "image")[];
+	cost: {
+		input: number;
+		output: number;
+		cacheRead: number;
+		cacheWrite: number;
+	};
+	thinkingLevelMap?: Record<string, string | null>;
+}
+
+/**
+ * 校验并规范化 Pi 运行态与 models.json 模型定义
+ * 杜绝任何 undefined、NaN、空 ID 或格式畸变，确保写入完全合规的严格 JSON
+ */
+export function sanitizePiModelDefinition(raw: any): PiModelEntry | null {
+	if (!raw || typeof raw !== "object") return null;
+	const id = typeof raw.id === "string" ? raw.id.trim() : "";
+	if (!id) return null;
+
+	const name =
+		typeof raw.name === "string" && raw.name.trim()
+			? raw.name.trim()
+			: id;
+
+	const contextWindow =
+		typeof raw.contextWindow === "number" && Number.isFinite(raw.contextWindow) && raw.contextWindow > 0
+			? Math.floor(raw.contextWindow)
+			: 131072;
+
+	const maxTokens =
+		typeof raw.maxTokens === "number" && Number.isFinite(raw.maxTokens) && raw.maxTokens > 0
+			? Math.floor(raw.maxTokens)
+			: 32768;
+
+	const reasoning = Boolean(raw.reasoning);
+
+	const rawInput = Array.isArray(raw.input) ? raw.input : [];
+	const input: ("text" | "image")[] = [];
+	for (const item of rawInput) {
+		if (item === "text" || item === "image") {
+			if (!input.includes(item)) input.push(item);
+		}
+	}
+	if (input.length === 0) {
+		input.push("text");
+	}
+
+	const cost = {
+		input: typeof raw.cost?.input === "number" && Number.isFinite(raw.cost.input) ? raw.cost.input : 0,
+		output: typeof raw.cost?.output === "number" && Number.isFinite(raw.cost.output) ? raw.cost.output : 0,
+		cacheRead: typeof raw.cost?.cacheRead === "number" && Number.isFinite(raw.cost.cacheRead) ? raw.cost.cacheRead : 0,
+		cacheWrite: typeof raw.cost?.cacheWrite === "number" && Number.isFinite(raw.cost.cacheWrite) ? raw.cost.cacheWrite : 0,
+	};
+
+	const result: PiModelEntry = {
+		id,
+		name,
+		contextWindow,
+		maxTokens,
+		reasoning,
+		input,
+		cost,
+	};
+
+	if (raw.thinkingLevelMap && typeof raw.thinkingLevelMap === "object" && !Array.isArray(raw.thinkingLevelMap)) {
+		const cleanMap: Record<string, string | null> = {};
+		for (const [k, v] of Object.entries(raw.thinkingLevelMap)) {
+			if (typeof v === "string" || v === null) {
+				cleanMap[k] = v;
+			}
+		}
+		if (Object.keys(cleanMap).length > 0) {
+			result.thinkingLevelMap = cleanMap;
+		}
+	}
+
+	return result;
+}

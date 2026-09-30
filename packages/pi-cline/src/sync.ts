@@ -30,6 +30,7 @@ import {
 	CLINE_PROVIDER_ID,
 	inferClineModelCapabilities,
 	KNOWN_CLINE_FREE_MODELS,
+	sanitizePiModelDefinition,
 } from "./models-registry.js";
 import type { ClineModelDefinition, ClineSyncOptions, ClineSyncResult } from "./types.js";
 
@@ -94,10 +95,123 @@ export function getStoredClineApiKey(
 	return CLINE_DEFAULT_KEY;
 }
 
+export function defaultCustomModelsPath(): string {
+	if (process.env.TEST_CLINE_CUSTOM_MODELS_PATH) return process.env.TEST_CLINE_CUSTOM_MODELS_PATH;
+	return join(homedir(), ".pi", "agent", "cline-models.json");
+}
+
 /**
- * 校验 API Key 并拉取 Cline 在线模型目录
+ * 载入用户本地自定义或新增的 Cline 免费/隐身模型列表 (~/.pi/agent/cline-models.json)
  */
-export async function fetchClineModelCatalog(apiKey: string): Promise<ClineModelDefinition[]> {
+export function loadCustomClineModels(customPath = defaultCustomModelsPath()): ClineModelDefinition[] {
+	if (!existsSync(customPath)) {
+		return [];
+	}
+	try {
+		const content = readFileSync(customPath, "utf-8");
+		const parsed = JSON.parse(content);
+		const list: ClineModelDefinition[] = [];
+		const rawItems: any[] = Array.isArray(parsed)
+			? parsed
+			: parsed && typeof parsed === "object" && Array.isArray(parsed.models)
+			? parsed.models
+			: parsed && typeof parsed === "object"
+			? Object.values(parsed)
+			: [];
+
+		for (const item of rawItems) {
+			if (typeof item === "string" && item.trim()) {
+				list.push(inferClineModelCapabilities(item.trim(), { is_free: true }));
+			} else if (item && typeof item === "object" && typeof item.id === "string" && item.id.trim()) {
+				const inferred = inferClineModelCapabilities(item.id.trim(), { ...item, is_free: true });
+				list.push({
+					...inferred,
+					name: typeof item.name === "string" && item.name.trim() ? item.name.trim() : inferred.name,
+					contextWindow:
+						typeof item.contextWindow === "number" && item.contextWindow > 0
+							? item.contextWindow
+							: inferred.contextWindow,
+					maxTokens:
+						typeof item.maxTokens === "number" && item.maxTokens > 0
+							? item.maxTokens
+							: inferred.maxTokens,
+					reasoning: typeof item.reasoning === "boolean" ? item.reasoning : inferred.reasoning,
+				});
+			}
+		}
+		return list;
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * 登记自定义或新增的 Cline 免费/隐身模型至 ~/.pi/agent/cline-models.json (0 消耗)
+ */
+export function addCustomClineModel(
+	modelId: string,
+	options?: { name?: string; contextWindow?: number; maxTokens?: number; reasoning?: boolean },
+	customPath = defaultCustomModelsPath(),
+): ClineModelDefinition {
+	mkdirSync(dirname(customPath), { recursive: true, mode: 0o700 });
+	let existing: any[] = [];
+	try {
+		if (existsSync(customPath)) {
+			const content = readFileSync(customPath, "utf-8");
+			const parsed = JSON.parse(content);
+			if (Array.isArray(parsed)) {
+				existing = parsed;
+			}
+		}
+	} catch {}
+
+	const def = inferClineModelCapabilities(modelId, { ...options, is_free: true });
+	if (options?.name) def.name = options.name;
+	if (options?.contextWindow) def.contextWindow = options.contextWindow;
+	if (options?.maxTokens) def.maxTokens = options.maxTokens;
+	if (typeof options?.reasoning === "boolean") def.reasoning = options.reasoning;
+
+	const filtered = existing.filter((item) => {
+		const id = typeof item === "string" ? item : item?.id;
+		return id !== modelId;
+	});
+	filtered.push({
+		id: def.id,
+		name: def.name,
+		contextWindow: def.contextWindow,
+		maxTokens: def.maxTokens,
+		reasoning: def.reasoning,
+		isFree: true,
+	});
+
+	writeFileSync(customPath, JSON.stringify(filtered, null, 2), { encoding: "utf-8", mode: 0o600 });
+	try {
+		chmodSync(customPath, 0o600);
+	} catch {}
+	return def;
+}
+
+/**
+ * 校验 API Key 并拉取 Cline 在线模型目录 (0 Token 0 扣费消耗元数据查询)
+ */
+export async function fetchClineModelCatalog(
+	apiKey: string,
+	customPath = defaultCustomModelsPath(),
+): Promise<ClineModelDefinition[]> {
+	const modelsMap = new Map<string, ClineModelDefinition>();
+
+	// 1. 先载入已知精选免费模型保底 (包含 stealth/space-bunny-alpha 等 21 款零额度模型)
+	for (const [id, m] of Object.entries(KNOWN_CLINE_FREE_MODELS)) {
+		modelsMap.set(id, m);
+	}
+
+	// 2. 载入本地自定义与新增模型清单 (~/.pi/agent/cline-models.json)
+	const customModels = loadCustomClineModels(customPath);
+	for (const m of customModels) {
+		modelsMap.set(m.id, m);
+	}
+
+	// 3. 安全查询远端模型元数据列表 (严格仅使用 GET /models，绝不大批量测试 completions，0 Token 0 扣费消耗)
 	try {
 		const res = await fetch(`${CLINE_BASE_URL}/models`, {
 			method: "GET",
@@ -111,14 +225,7 @@ export async function fetchClineModelCatalog(apiKey: string): Promise<ClineModel
 		if (res.ok) {
 			const data = (await res.json()) as { data?: Array<{ id: string; [key: string]: unknown }> };
 			if (data && Array.isArray(data.data) && data.data.length > 0) {
-				const modelsMap = new Map<string, ClineModelDefinition>();
-
-				// 1. 先载入已知精选免费模型保底
-				for (const [id, m] of Object.entries(KNOWN_CLINE_FREE_MODELS)) {
-					modelsMap.set(id, m);
-				}
-
-				// 2. 将远端返回的免费模型推断并合入 (仅限零额度免费模型，与 Zen 保持一致)
+				// 将远端返回的免费模型推断并合入 (仅限零额度免费模型，与 Zen 保持一致)
 				for (const raw of data.data) {
 					const id = String(raw.id || "");
 					if (!id) continue;
@@ -128,15 +235,13 @@ export async function fetchClineModelCatalog(apiKey: string): Promise<ClineModel
 						modelsMap.set(id, inferred);
 					}
 				}
-
-				return Array.from(modelsMap.values());
 			}
 		}
 	} catch {
-		// 网络故障或超时，回退内置目录
+		// 网络故障或超时，回退内置目录与本地自定义目录
 	}
 
-	return Object.values(KNOWN_CLINE_FREE_MODELS);
+	return Array.from(modelsMap.values());
 }
 
 /**
@@ -149,11 +254,21 @@ export async function syncClineConfiguration(
 		const modelsPath = options.modelsPath || defaultModelsPath();
 		const authPath = options.authPath || defaultAuthPath();
 		const ccSwitchDbPath = options.ccSwitchDbPath || defaultCcSwitchDbPath();
+		const customModelsPath = options.customModelsPath || defaultCustomModelsPath();
 
 		const apiKey = options.apiKey?.trim() || getStoredClineApiKey(authPath, modelsPath);
-		const allModels = await fetchClineModelCatalog(apiKey);
+		const allModels = await fetchClineModelCatalog(apiKey, customModelsPath);
 		const freeModels = allModels.filter((m) => m.isFree ?? true);
-		const modelsToUse = freeModels.length > 0 ? freeModels : Object.values(KNOWN_CLINE_FREE_MODELS);
+		const baseModels = freeModels.length > 0 ? freeModels : Object.values(KNOWN_CLINE_FREE_MODELS);
+
+		// 严格去重防护：以 canonical ID 唯一键去重，绝不混入 alias 或重复项
+		const uniqueModelsMap = new Map<string, ClineModelDefinition>();
+		for (const m of baseModels) {
+			if (m && m.id && !uniqueModelsMap.has(m.id)) {
+				uniqueModelsMap.set(m.id, m);
+			}
+		}
+		const modelsToUse = Array.from(uniqueModelsMap.values());
 
 		const baseUrl = options.useLocalProxy
 			? `http://127.0.0.1:${options.proxyPort || 4116}/v1`
@@ -167,14 +282,33 @@ export async function syncClineConfiguration(
 		try {
 			let modelsData: Record<string, any> = {};
 			if (existsSync(modelsPath)) {
-				modelsData = JSON.parse(readFileSync(modelsPath, "utf-8"));
+				try {
+					modelsData = JSON.parse(readFileSync(modelsPath, "utf-8"));
+				} catch {
+					modelsData = {};
+				}
 			}
+
+			if (!modelsData.providers || typeof modelsData.providers !== "object") {
+				modelsData.providers = {};
+			}
+
+			// 清理根节点历史遗留键，避免注入错误 JSON 结构
+			delete modelsData.cline;
+			delete modelsData[CLINE_PROVIDER_ID];
+			if (modelsData.providers) {
+				delete modelsData.providers.cline;
+			}
+
+			const sanitizedModels = modelsToUse
+				.map(sanitizePiModelDefinition)
+				.filter((m): m is NonNullable<typeof m> => m !== null);
 
 			const providerConfig = {
 				name: "Cline (Free)",
 				baseUrl,
 				api: "openai-completions",
-				apiKey,
+				apiKey: apiKey || "",
 				headers: {
 					...CLINE_CLIENT_HEADERS,
 				},
@@ -185,55 +319,16 @@ export async function syncClineConfiguration(
 					supportsStore: false,
 					supportsUsageInStreaming: true,
 				},
-				models: [
-					...[
-						{ id: "bunny", ref: "stealth/space-bunny-alpha", name: "Cline Bunny (1M Stealth Free)" },
-						{ id: "ling", ref: "inclusionai/ling-3.0-flash-fin:free", name: "Cline Ling 3.0 Flash Fin (Free)" },
-						{ id: "code", ref: "openrouter/pareto-code", name: "Cline Pareto Code (2M Free)" },
-						{ id: "fusion", ref: "openrouter/fusion", name: "Cline Fusion (1M Free)" },
-						{ id: "free", ref: "openrouter/free", name: "Cline OpenRouter Free (200k)" },
-						{ id: "550b", ref: "nvidia/nemotron-3-ultra-550b-a55b:free", name: "Cline Nemotron 550B (1M Free)" },
-						{ id: "120b", ref: "nvidia/nemotron-3-super-120b-a12b:free", name: "Cline Nemotron 120B (Free)" },
-						{ id: "qwen", ref: "qwen/qwen3.8-27b:free", name: "Cline Qwen 3.8 27B (Free)" },
-					].map((a) => {
-						const base = KNOWN_CLINE_FREE_MODELS[a.ref] || modelsToUse.find((m) => m.id === a.ref);
-						return {
-							id: a.id,
-							name: a.name,
-							contextWindow: base?.contextWindow || 262144,
-							maxTokens: base?.maxTokens || 32768,
-							reasoning: base?.reasoning ?? true,
-							input: base?.input || (["text"] as ("text" | "image")[]),
-							thinkingLevelMap: base?.thinkingLevelMap,
-							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-						};
-					}),
-					...modelsToUse.map((m) => ({
-						id: m.id,
-						name: m.name,
-						contextWindow: m.contextWindow,
-						maxTokens: m.maxTokens,
-						reasoning: m.reasoning,
-						input: m.input,
-						thinkingLevelMap: m.thinkingLevelMap,
-						cost: m.cost,
-					})),
-				],
+				models: sanitizedModels,
 			};
 
-			if (modelsData.providers && typeof modelsData.providers === "object") {
-				delete modelsData.providers.cline;
-				modelsData.providers[CLINE_PROVIDER_ID] = providerConfig;
-			} else {
-				delete modelsData.cline;
-				modelsData[CLINE_PROVIDER_ID] = providerConfig;
-			}
+			modelsData.providers[CLINE_PROVIDER_ID] = providerConfig;
 
 			mkdirSync(dirname(modelsPath), { recursive: true, mode: 0o700 });
 			try {
 				chmodSync(dirname(modelsPath), 0o700);
 			} catch {}
-			writeFileSync(modelsPath, JSON.stringify(modelsData, null, 2), { encoding: "utf-8", mode: 0o600 });
+			writeFileSync(modelsPath, `${JSON.stringify(modelsData, null, 2)}\n`, { encoding: "utf-8", mode: 0o600 });
 			try {
 				chmodSync(modelsPath, 0o600);
 			} catch {}

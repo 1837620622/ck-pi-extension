@@ -46,7 +46,7 @@ export const KNOWN_CLINE_FREE_MODELS: Record<string, ClineModelDefinition> = {
 	// ==================== 1. 隐身与智能路由零消耗模型 (Stealth & Smart Routers) ====================
 	"stealth/space-bunny-alpha": {
 		id: "stealth/space-bunny-alpha",
-		name: "Stealth Space Bunny Alpha (1M Stealth Free)",
+		name: "Stealth Space Bunny Alpha (1M Free) (Cline Free)",
 		contextWindow: 1000000,
 		maxTokens: 32768,
 		reasoning: true,
@@ -57,7 +57,7 @@ export const KNOWN_CLINE_FREE_MODELS: Record<string, ClineModelDefinition> = {
 	},
 	"openrouter/fusion": {
 		id: "openrouter/fusion",
-		name: "OpenRouter Fusion (Smart Meta Router - Free)",
+		name: "OpenRouter Fusion (1M Meta Router) (Cline Free)",
 		contextWindow: 1000000,
 		maxTokens: 32768,
 		reasoning: true,
@@ -68,7 +68,7 @@ export const KNOWN_CLINE_FREE_MODELS: Record<string, ClineModelDefinition> = {
 	},
 	"openrouter/pareto-code": {
 		id: "openrouter/pareto-code",
-		name: "OpenRouter Pareto Code (Coding Specialist - Free)",
+		name: "OpenRouter Pareto Code (2M Free) (Cline Free)",
 		contextWindow: 2000000,
 		maxTokens: 32768,
 		reasoning: true,
@@ -79,7 +79,7 @@ export const KNOWN_CLINE_FREE_MODELS: Record<string, ClineModelDefinition> = {
 	},
 	"openrouter/free": {
 		id: "openrouter/free",
-		name: "OpenRouter Auto Free Router",
+		name: "OpenRouter Auto Free Router (200k) (Cline Free)",
 		contextWindow: 200000,
 		maxTokens: 32768,
 		reasoning: true,
@@ -92,7 +92,7 @@ export const KNOWN_CLINE_FREE_MODELS: Record<string, ClineModelDefinition> = {
 	// ==================== 2. 百万级超长上下文免费模型 (1M+ Giant Context) ====================
 	"nvidia/nemotron-3-ultra-550b-a55b:free": {
 		id: "nvidia/nemotron-3-ultra-550b-a55b:free",
-		name: "NVIDIA Nemotron 3 Ultra 550B (1M Free)",
+		name: "NVIDIA Nemotron 3 Ultra 550B (1M Free) (Cline Free)",
 		contextWindow: 1000000,
 		maxTokens: 32768,
 		reasoning: true,
@@ -103,7 +103,7 @@ export const KNOWN_CLINE_FREE_MODELS: Record<string, ClineModelDefinition> = {
 	},
 	"nvidia/nemotron-3.5-lightning:free": {
 		id: "nvidia/nemotron-3.5-lightning:free",
-		name: "NVIDIA Nemotron 3.5 Lightning (1M Free)",
+		name: "NVIDIA Nemotron 3.5 Lightning (1M Free) (Cline Free)",
 		contextWindow: 1000000,
 		maxTokens: 32768,
 		reasoning: true,
@@ -114,7 +114,7 @@ export const KNOWN_CLINE_FREE_MODELS: Record<string, ClineModelDefinition> = {
 	},
 	"thinkingmachines/inkling:free": {
 		id: "thinkingmachines/inkling:free",
-		name: "Thinking Machines Inkling (1M Free)",
+		name: "Thinking Machines Inkling (1M Free) (Cline Free)",
 		contextWindow: 1048576,
 		maxTokens: 32768,
 		reasoning: true,
@@ -125,7 +125,7 @@ export const KNOWN_CLINE_FREE_MODELS: Record<string, ClineModelDefinition> = {
 	},
 	"thinkingmachines/inkling-small:free": {
 		id: "thinkingmachines/inkling-small:free",
-		name: "Thinking Machines Inkling Small (1M Free)",
+		name: "Thinking Machines Inkling Small (1M Free) (Cline Free)",
 		contextWindow: 1048576,
 		maxTokens: 32768,
 		reasoning: true,
@@ -138,7 +138,7 @@ export const KNOWN_CLINE_FREE_MODELS: Record<string, ClineModelDefinition> = {
 	// ==================== 3. 主力代码与推理思考免费模型 (Core Coding & Reasoning) ====================
 	"inclusionai/ling-3.0-flash-fin:free": {
 		id: "inclusionai/ling-3.0-flash-fin:free",
-		name: "InclusionAI Ling 3.0 Flash Fin (262k Free)",
+		name: "InclusionAI Ling 3.0 Flash Fin (262k Free) (Cline Free)",
 		contextWindow: 262144,
 		maxTokens: 32768,
 		reasoning: true,
@@ -149,7 +149,7 @@ export const KNOWN_CLINE_FREE_MODELS: Record<string, ClineModelDefinition> = {
 	},
 	"inclusionai/ling-3.0-flash-sante:free": {
 		id: "inclusionai/ling-3.0-flash-sante:free",
-		name: "InclusionAI Ling 3.0 Flash Sante (262k Free)",
+		name: "InclusionAI Ling 3.0 Flash Sante (262k Free) (Cline Free)",
 		contextWindow: 262144,
 		maxTokens: 32768,
 		reasoning: true,
@@ -160,7 +160,7 @@ export const KNOWN_CLINE_FREE_MODELS: Record<string, ClineModelDefinition> = {
 	},
 	"qwen/qwen3.8-27b:free": {
 		id: "qwen/qwen3.8-27b:free",
-		name: "Qwen 3.8 27B (262k Free)",
+		name: "Qwen 3.8 27B (262k Free) (Cline Free)",
 		contextWindow: 262144,
 		maxTokens: 32768,
 		reasoning: true,
@@ -171,7 +171,7 @@ export const KNOWN_CLINE_FREE_MODELS: Record<string, ClineModelDefinition> = {
 	},
 	"nvidia/nemotron-3-super-120b-a12b:free": {
 		id: "nvidia/nemotron-3-super-120b-a12b:free",
-		name: "NVIDIA Nemotron 3 Super 120B (262k Free)",
+		name: "NVIDIA Nemotron 3 Super 120B (262k Free) (Cline Free)",
 		contextWindow: 262144,
 		maxTokens: 32768,
 		reasoning: true,
@@ -182,7 +182,7 @@ export const KNOWN_CLINE_FREE_MODELS: Record<string, ClineModelDefinition> = {
 	},
 	"nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free": {
 		id: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
-		name: "NVIDIA Nemotron 3 Nano Omni Reasoning (Free)",
+		name: "NVIDIA Nemotron 3 Nano Omni Reasoning (Free) (Cline Free)",
 		contextWindow: 131072,
 		maxTokens: 32768,
 		reasoning: true,
@@ -193,7 +193,7 @@ export const KNOWN_CLINE_FREE_MODELS: Record<string, ClineModelDefinition> = {
 	},
 	"cohere/north-mini-code:free": {
 		id: "cohere/north-mini-code:free",
-		name: "Cohere North Mini Code (Free)",
+		name: "Cohere North Mini Code (Free) (Cline Free)",
 		contextWindow: 131072,
 		maxTokens: 32768,
 		reasoning: true,
@@ -204,7 +204,7 @@ export const KNOWN_CLINE_FREE_MODELS: Record<string, ClineModelDefinition> = {
 	},
 	"poolside/laguna-s-2.1:free": {
 		id: "poolside/laguna-s-2.1:free",
-		name: "Poolside Laguna S 2.1 (Free)",
+		name: "Poolside Laguna S 2.1 (Free) (Cline Free)",
 		contextWindow: 131072,
 		maxTokens: 32768,
 		reasoning: true,
@@ -215,7 +215,7 @@ export const KNOWN_CLINE_FREE_MODELS: Record<string, ClineModelDefinition> = {
 	},
 	"poolside/laguna-xs-2.1:free": {
 		id: "poolside/laguna-xs-2.1:free",
-		name: "Poolside Laguna XS 2.1 (Free)",
+		name: "Poolside Laguna XS 2.1 (Free) (Cline Free)",
 		contextWindow: 131072,
 		maxTokens: 32768,
 		reasoning: true,
@@ -228,7 +228,7 @@ export const KNOWN_CLINE_FREE_MODELS: Record<string, ClineModelDefinition> = {
 	// ==================== 4. 轻量极速与专用工具模型 (Lightweight & Tools) ====================
 	"google/gemma-4-26b-a4b-it:free": {
 		id: "google/gemma-4-26b-a4b-it:free",
-		name: "Google Gemma 4 26B A4B IT (Free)",
+		name: "Google Gemma 4 26B A4B IT (Free) (Cline Free)",
 		contextWindow: 262144,
 		maxTokens: 32768,
 		reasoning: true,
@@ -239,7 +239,7 @@ export const KNOWN_CLINE_FREE_MODELS: Record<string, ClineModelDefinition> = {
 	},
 	"google/gemma-4-31b-it:free": {
 		id: "google/gemma-4-31b-it:free",
-		name: "Google Gemma 4 31B IT (Free)",
+		name: "Google Gemma 4 31B IT (Free) (Cline Free)",
 		contextWindow: 262144,
 		maxTokens: 32768,
 		reasoning: true,
@@ -250,7 +250,7 @@ export const KNOWN_CLINE_FREE_MODELS: Record<string, ClineModelDefinition> = {
 	},
 	"dots-studio/dots-3-note-preview:free": {
 		id: "dots-studio/dots-3-note-preview:free",
-		name: "Dots Studio Dots 3 Note Preview (Free)",
+		name: "Dots Studio Dots 3 Note Preview (Free) (Cline Free)",
 		contextWindow: 131072,
 		maxTokens: 32768,
 		reasoning: true,
@@ -261,7 +261,7 @@ export const KNOWN_CLINE_FREE_MODELS: Record<string, ClineModelDefinition> = {
 	},
 	"liquid/lfm-2.5-2.6b:free": {
 		id: "liquid/lfm-2.5-2.6b:free",
-		name: "Liquid LFM 2.5 2.6B (Free)",
+		name: "Liquid LFM 2.5 2.6B (Free) (Cline Free)",
 		contextWindow: 32768,
 		maxTokens: 8192,
 		reasoning: false,
@@ -271,7 +271,7 @@ export const KNOWN_CLINE_FREE_MODELS: Record<string, ClineModelDefinition> = {
 	},
 	"nvidia/nemotron-3.5-content-safety:free": {
 		id: "nvidia/nemotron-3.5-content-safety:free",
-		name: "NVIDIA Nemotron 3.5 Content Safety (Free)",
+		name: "NVIDIA Nemotron 3.5 Content Safety (Free) (Cline Free)",
 		contextWindow: 131072,
 		maxTokens: 16384,
 		reasoning: false,
@@ -310,10 +310,12 @@ export function resolveFreeModelId(rawId?: string): string {
 	if (lower === "code" || lower === "pareto" || lower === "pareto-code") {
 		return "openrouter/pareto-code";
 	}
-	if (lower === "luna" || lower === "jev") {
-		return "typesafe/jev-router";
-	}
-	if (lower === "bunny" || lower === "stealth" || lower === "space-bunny") {
+	if (
+		lower === "bunny" ||
+		lower === "stealth" ||
+		lower === "space-bunny" ||
+		lower === "space-bunny-alpha"
+	) {
 		return "stealth/space-bunny-alpha";
 	}
 	if (lower === "ling" || lower === "flash" || lower === "flash-fin") {
@@ -361,6 +363,11 @@ export function resolveFreeModelId(rawId?: string): string {
 		return id;
 	}
 
+	// 自动追加 stealth/ 前缀（如调用者输入 space-bunny-alpha）
+	if (KNOWN_CLINE_FREE_MODELS[`stealth/${id}`]) {
+		return `stealth/${id}`;
+	}
+
 	// 4. 自动追加 :free 保护（若同名免费版存在，如用户只写了 inclusionai/ling-3.0-flash-fin）
 	const withFree = `${id}:free`;
 	if (KNOWN_CLINE_FREE_MODELS[withFree]) {
@@ -380,11 +387,12 @@ export function isClineFreeModel(rawId: string): boolean {
 	return (
 		lower.includes("free") ||
 		lower.endsWith(":free") ||
-		lower === "stealth/space-bunny-alpha" ||
+		lower.startsWith("stealth/") ||
+		lower.startsWith("openrouter/free") ||
 		lower === "openrouter/free" ||
 		lower === "openrouter/fusion" ||
 		lower === "openrouter/pareto-code" ||
-		lower === "typesafe/jev-router"
+		lower.includes("space-bunny")
 	);
 }
 
@@ -409,11 +417,12 @@ export function inferClineModelCapabilities(
 	let isFree =
 		lower.includes("free") ||
 		lower.endsWith(":free") ||
-		lower === "stealth/space-bunny-alpha" ||
+		lower.startsWith("stealth/") ||
+		lower.startsWith("openrouter/free") ||
 		lower === "openrouter/free" ||
 		lower === "openrouter/fusion" ||
 		lower === "openrouter/pareto-code" ||
-		lower === "typesafe/jev-router";
+		lower.includes("space-bunny");
 
 	if (!isFree && raw && typeof raw === "object") {
 		// 1. 显式布尔免费标记
@@ -440,6 +449,13 @@ export function inferClineModelCapabilities(
 		) {
 			isFree = true;
 		}
+		// 4. tags 与 tier 免费标记检测
+		if (Array.isArray(raw.tags) && raw.tags.some((t: any) => String(t).toLowerCase().includes("free"))) {
+			isFree = true;
+		}
+		if (typeof (raw as any).tier === "string" && (raw as any).tier.toLowerCase() === "free") {
+			isFree = true;
+		}
 	}
 
 	// 1. 上下文窗口识别
@@ -458,6 +474,7 @@ export function inferClineModelCapabilities(
 		lower.includes("ultra") ||
 		lower.includes("550b") ||
 		lower.includes("bunny") ||
+		lower.startsWith("stealth/") ||
 		lower.includes("fusion") ||
 		lower.includes("inkling")
 	) {
@@ -497,7 +514,8 @@ export function inferClineModelCapabilities(
 		lower.includes("north") ||
 		lower.includes("note") ||
 		lower.includes("pareto") ||
-		lower.includes("bunny");
+		lower.includes("bunny") ||
+		lower.startsWith("stealth/");
 
 	// 4. 多模态识别
 	const input: ("text" | "image")[] =
@@ -615,5 +633,90 @@ export function formatClineModelsTable(models: ClineModelDefinition[]): string {
 	}
 
 	return lines.join("\n");
+}
+
+export interface PiModelEntry {
+	id: string;
+	name: string;
+	contextWindow: number;
+	maxTokens: number;
+	reasoning: boolean;
+	input: ("text" | "image")[];
+	cost: {
+		input: number;
+		output: number;
+		cacheRead: number;
+		cacheWrite: number;
+	};
+	thinkingLevelMap?: Record<string, string | null>;
+}
+
+/**
+ * 校验并规范化 Pi 运行态与 models.json 模型定义
+ * 杜绝任何 undefined、NaN、空 ID 或格式畸变，确保写入完全合规的严格 JSON
+ */
+export function sanitizePiModelDefinition(raw: any): PiModelEntry | null {
+	if (!raw || typeof raw !== "object") return null;
+	const id = typeof raw.id === "string" ? raw.id.trim() : "";
+	if (!id) return null;
+
+	const name =
+		typeof raw.name === "string" && raw.name.trim()
+			? raw.name.trim()
+			: id;
+
+	const contextWindow =
+		typeof raw.contextWindow === "number" && Number.isFinite(raw.contextWindow) && raw.contextWindow > 0
+			? Math.floor(raw.contextWindow)
+			: 131072;
+
+	const maxTokens =
+		typeof raw.maxTokens === "number" && Number.isFinite(raw.maxTokens) && raw.maxTokens > 0
+			? Math.floor(raw.maxTokens)
+			: 32768;
+
+	const reasoning = Boolean(raw.reasoning);
+
+	const rawInput = Array.isArray(raw.input) ? raw.input : [];
+	const input: ("text" | "image")[] = [];
+	for (const item of rawInput) {
+		if (item === "text" || item === "image") {
+			if (!input.includes(item)) input.push(item);
+		}
+	}
+	if (input.length === 0) {
+		input.push("text");
+	}
+
+	const cost = {
+		input: typeof raw.cost?.input === "number" && Number.isFinite(raw.cost.input) ? raw.cost.input : 0,
+		output: typeof raw.cost?.output === "number" && Number.isFinite(raw.cost.output) ? raw.cost.output : 0,
+		cacheRead: typeof raw.cost?.cacheRead === "number" && Number.isFinite(raw.cost.cacheRead) ? raw.cost.cacheRead : 0,
+		cacheWrite: typeof raw.cost?.cacheWrite === "number" && Number.isFinite(raw.cost.cacheWrite) ? raw.cost.cacheWrite : 0,
+	};
+
+	const result: PiModelEntry = {
+		id,
+		name,
+		contextWindow,
+		maxTokens,
+		reasoning,
+		input,
+		cost,
+	};
+
+	if (raw.thinkingLevelMap && typeof raw.thinkingLevelMap === "object" && !Array.isArray(raw.thinkingLevelMap)) {
+		const cleanMap: Record<string, string | null> = {};
+		for (const [k, v] of Object.entries(raw.thinkingLevelMap)) {
+			if (typeof v === "string" || v === null) {
+				cleanMap[k] = v;
+			}
+		}
+		if (Object.keys(cleanMap).length > 0) {
+			result.thinkingLevelMap = cleanMap;
+		}
+	}
+
+	return result;
 }
 

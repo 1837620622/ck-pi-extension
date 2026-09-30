@@ -10,6 +10,19 @@
  */
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import {
+	formatModelCard,
+	formatThinkingSummary,
+	formatTokens,
+	inferModelCapabilities,
+	KNOWN_ZEN_FREE_MODELS,
+	OPENCODE_OFFICIAL_TOOLS,
+	resolveZenModelId,
+	sanitizePiModelDefinition,
+	ZEN_BASE_URL,
+	ZEN_PROVIDER_ID,
+	ZEN_USER_AGENT,
+} from "./models-registry.js";
 export {
 	formatModelCard,
 	formatThinkingSummary,
@@ -17,29 +30,24 @@ export {
 	inferModelCapabilities,
 	KNOWN_ZEN_FREE_MODELS,
 	OPENCODE_OFFICIAL_TOOLS,
+	resolveZenModelId,
+	sanitizePiModelDefinition,
 	ZEN_BASE_URL,
 	ZEN_PROVIDER_ID,
 	ZEN_USER_AGENT,
-} from "./models-registry.js";
+};
 import {
-	formatModelCard,
-	formatThinkingSummary,
-	formatTokens,
-	KNOWN_ZEN_FREE_MODELS,
-	OPENCODE_OFFICIAL_TOOLS,
-	ZEN_BASE_URL,
-	ZEN_PROVIDER_ID,
-	ZEN_USER_AGENT,
-} from "./models-registry.js";
-import {
+	addCustomZenModel,
 	getActiveZenSessionId,
 	getStoredZenApiKey,
 	getStoredZenModels,
 	getStoredZenSessionId,
 	getZenStatusInfo,
+	loadCustomZenModels,
 	setActiveZenSessionId,
 	syncZenConfiguration,
 } from "./sync.js";
+export { addCustomZenModel, loadCustomZenModels };
 import {
 	DEFAULT_SESSION_MAX_AGE_MS,
 	PROACTIVE_REFRESH_AGE_MS,
@@ -58,10 +66,15 @@ export function registerZenProviderToPi(
 	models: ZenModelDefinition[] = getStoredZenModels(),
 ): void {
 	try {
+		const rawModels = models && models.length > 0 ? models : Object.values(KNOWN_ZEN_FREE_MODELS);
+		const sanitizedModels = rawModels
+			.map(sanitizePiModelDefinition)
+			.filter((m): m is NonNullable<typeof m> => m !== null);
+
 		pi.registerProvider(ZEN_PROVIDER_ID, {
 			name: "OpenCode Zen (Free)",
 			baseUrl: ZEN_BASE_URL,
-			apiKey: apiKey,
+			apiKey: apiKey || "",
 			api: "openai-completions",
 			headers: {
 				"User-Agent": ZEN_USER_AGENT,
@@ -78,7 +91,7 @@ export function registerZenProviderToPi(
 				supportsStore: false,
 				supportsUsageInStreaming: true,
 			},
-			models: models && models.length > 0 ? models : Object.values(KNOWN_ZEN_FREE_MODELS),
+			models: sanitizedModels,
 		});
 	} catch {
 		// 忽略重复注册
@@ -548,8 +561,12 @@ export function installZenFetchInterceptor(targetGlobal: typeof globalThis = glo
 					}
 				}
 
-				// 遇 500/502/503/504/524/429 临时网络抖动或上游过载进行同模型退避重试 (Full Jitter)
-				if ([500, 502, 503, 504, 524, 429].includes(response.status)) {
+				// 遇 500/502/503/504/520/521/522/524/533/429 临时网络抖动或上游过载进行同模型退避重试 (Full Jitter)
+				const isGatewayError =
+					[429, 500, 502, 503, 504, 520, 521, 522, 524, 533].includes(response.status) ||
+					response.status >= 500;
+
+				if (isGatewayError) {
 					if (attempt < maxAttempts) {
 						const isTestEnv = !!process.env.TEST_PI_MODELS_PATH || process.env.NODE_ENV === "test";
 						const baseDelay = isTestEnv ? 10 : Math.min(1000 * Math.pow(2, attempt - 1), 5000);
@@ -557,6 +574,99 @@ export function installZenFetchInterceptor(targetGlobal: typeof globalThis = glo
 						await sleepWithSignal(backoffMs, init?.signal);
 						continue;
 					}
+					break;
+				}
+
+				if (!response.ok) {
+					break;
+				}
+
+				// HTTP 200 响应深度探测：重点排查上游伪成功错误（如 Content-Type 为 SSE，但首包即为 Provider returned an empty response 或空 stream）
+				const cType = (response.headers.get("content-type") || "").toLowerCase();
+				if (cType.includes("text/event-stream") && response.body) {
+					const reader = response.body.getReader();
+					const decoder = new TextDecoder();
+					const initialChunks: Uint8Array[] = [];
+					let peekedText = "";
+					let isEmptyResponseError = false;
+
+					try {
+						for (let i = 0; i < 3; i++) {
+							const { value, done } = await reader.read();
+							if (done) {
+								if (peekedText.trim().length === 0 || !peekedText.includes('"choices"')) {
+									isEmptyResponseError = true;
+								}
+								break;
+							}
+							if (value) {
+								initialChunks.push(value);
+								peekedText += decoder.decode(value, { stream: true });
+
+								if (
+									peekedText.includes("Provider returned an empty response") ||
+									(peekedText.includes('"error"') && peekedText.includes("empty response"))
+								) {
+									isEmptyResponseError = true;
+									break;
+								}
+
+								if (
+									peekedText.includes('"choices"') &&
+									(peekedText.includes('"delta"') || peekedText.includes('"content"') || peekedText.includes('"tool_calls"'))
+								) {
+									break;
+								}
+							}
+						}
+					} catch {
+						isEmptyResponseError = true;
+					}
+
+					if (isEmptyResponseError && attempt < maxAttempts) {
+						await reader.cancel().catch(() => {});
+						const isTestEnv = !!process.env.TEST_PI_MODELS_PATH || process.env.NODE_ENV === "test";
+						const baseDelay = isTestEnv ? 10 : Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+						const backoffMs = isTestEnv ? 10 : Math.max(10, Math.floor(Math.random() * baseDelay));
+						await sleepWithSignal(backoffMs, init?.signal);
+						continue;
+					}
+
+					let readerConsumed = false;
+					const reconstructedStream = new ReadableStream<Uint8Array>({
+						start(controller) {
+							for (const chunk of initialChunks) {
+								controller.enqueue(chunk);
+							}
+						},
+						async pull(controller) {
+							if (readerConsumed) {
+								controller.close();
+								return;
+							}
+							try {
+								const { value, done } = await reader.read();
+								if (done) {
+									readerConsumed = true;
+									controller.close();
+								} else if (value) {
+									controller.enqueue(value);
+								}
+							} catch (streamErr) {
+								controller.error(streamErr);
+							}
+						},
+						cancel(reason) {
+							return reader.cancel(reason);
+						},
+					});
+
+					response = new Response(reconstructedStream, {
+						status: response.status,
+						statusText: response.statusText,
+						headers: response.headers,
+					});
+					break;
 				}
 
 				// 正常 200 或业务状态码，跳出重试
@@ -726,14 +836,16 @@ export default function piZenSession(pi: ExtensionAPI): void {
 		const storedModels = getStoredZenModels();
 		registerZenProviderToPi(pi, existingKey, storedSession || generateZenSessionId(), storedModels);
 
-		// 若已有 Key 但还没有持久化模型列表，后台静默自动探测一次
-		if (!storedModels || storedModels.length === 0) {
-			syncZenConfiguration()
-				.then((res) => {
+		// 每次载入时：后台实时校验并拉取最新远端模型目录（0 Token 0 扣费元数据查询，捕获任何新上线免费模型与本地新增模型，并同步落盘 models.json）
+		syncZenConfiguration({ forceSession: false })
+			.then((res) => {
+				try {
 					registerZenProviderToPi(pi, res.apiKey, res.sessionId, res.resolvedModels);
-				})
-				.catch(() => {});
-		}
+				} catch {
+					// 忽略生命周期异常
+				}
+			})
+			.catch(() => {});
 	}
 
 	// 2. 核心请求头拦截钩子：在每一次请求发往 Provider 前注入完整官方客户端对齐请求头
@@ -923,6 +1035,7 @@ export default function piZenSession(pi: ExtensionAPI): void {
 				"free",
 				"key",
 				"model",
+				"add",
 				"ping",
 			]
 				.filter((cmd) => cmd.startsWith(prefix.toLowerCase()))
@@ -1032,11 +1145,46 @@ export async function handleZenCommand(
 		}
 	}
 
-	// 4. /zen ping [modelId]：网络时延实时探测
+	// 4. /zen ping [modelId]：网络时延安全探测 (默认 0 Token 0 扣费消耗)
 	if (command === "ping") {
-		const target = sub[1] || "big-pickle";
+		const target = sub[1];
 		const key = getStoredZenApiKey();
-		notify(ctx, "正在探测 OpenCode Zen 免费模型网络时延与连通性...", "info");
+
+		// 未指定特定模型时：安全探测官方端点可用性与网络时延 (采用 GET /models 元数据端点，严格 0 扣费 0 Token 消耗)
+		if (!target) {
+			notify(ctx, "正在安全探测 OpenCode Zen 官方端点网络连通性与时延 (0 Token 0 扣费消耗)...", "info");
+			const start = Date.now();
+			try {
+				const res = await fetch(`${ZEN_BASE_URL}/models`, {
+					method: "GET",
+					headers: {
+						Authorization: `Bearer ${key}`,
+						"User-Agent": ZEN_USER_AGENT,
+					},
+					signal: AbortSignal.timeout(10_000),
+				});
+				const ms = Date.now() - start;
+				if (res.ok) {
+					const speedTag = ms < 500 ? "极速" : ms < 1500 ? "良好" : "稍慢";
+					const msg = `[OK] OpenCode Zen 官方端点连通性良好！\n• 端点: ${ZEN_BASE_URL}\n• 响应时延: ${ms}ms (${speedTag})\n• HTTP状态: 200 OK\n• 消耗额度: $0.00 (安全元数据查询，未产生任何 Token 消耗)\n如需对单款特定模型进行单次快速探测，可执行: /zen ping <模型ID>`;
+					notify(ctx, msg, "info");
+					return msg;
+				} else {
+					const msg = `[WARN] OpenCode Zen 端点响应异常: HTTP ${res.status} (${ms}ms)`;
+					notify(ctx, msg, "warning");
+					return msg;
+				}
+			} catch (e: any) {
+				const ms = Date.now() - start;
+				const msg = `[ERR] OpenCode Zen 端点连接失败 (${ms}ms): ${e.message}`;
+				notify(ctx, msg, "error");
+				return msg;
+			}
+		}
+
+		// 用户显式指定了单款模型：仅对该指定模型发送极简单次探测 (max_tokens: 1)
+		const resolvedTarget = resolveZenModelId(target);
+		notify(ctx, `正在测试单款模型 ${resolvedTarget} 连通性...`, "info");
 		const start = Date.now();
 		try {
 			const res = await fetch(`${ZEN_BASE_URL}/chat/completions`, {
@@ -1049,34 +1197,73 @@ export async function handleZenCommand(
 					"x-opencode-session": getStoredZenSessionId() || generateZenSessionId(),
 				},
 				body: JSON.stringify({
-					model: target,
+					model: resolvedTarget,
 					messages: [{ role: "user", content: "ping" }],
-					max_tokens: 5,
+					max_tokens: 1,
 					stream: false,
 				}),
+				signal: AbortSignal.timeout(15_000),
 			});
 			const ms = Date.now() - start;
 			const statusTag = res.ok ? "[200 OK]" : `[HTTP ${res.status}]`;
 			const speedTag = ms < 800 ? "极速" : ms < 2000 ? "良好" : "稍慢";
-			const pingMsg = `• ${target}: ${statusTag} (${ms}ms, ${speedTag})`;
+			const pingMsg = `• ${resolvedTarget}: ${statusTag} (${ms}ms, ${speedTag})`;
 			notify(ctx, pingMsg, "info");
 			return pingMsg;
 		} catch (e: any) {
 			const ms = Date.now() - start;
-			const pingMsg = `• ${target}: [FAILED] (${ms}ms, ${e.message})`;
-			notify(ctx, pingMsg, "info");
+			const pingMsg = `• ${resolvedTarget}: [FAILED] (${ms}ms, ${e.message})`;
+			notify(ctx, pingMsg, "error");
 			return pingMsg;
 		}
 	}
 
-	// 5. /zen model <modelId>：快速切换模型
-	if (command === "model") {
-		const targetId = sub[1];
-		if (!targetId) {
-			const err = "[ERR] 用法: /zen model <模型ID>\n示例: /zen model big-pickle";
+	// 5. /zen add <modelId> [displayName]：登记并激活新的免费模型 (0 消耗)
+	if (command === "add") {
+		const rawTargetId = sub[1];
+		if (!rawTargetId) {
+			const err = "[ERR] 用法: /zen add <模型ID> [显示名称]\n示例: /zen add custom-coder-free \"Custom Coder (Free)\"";
 			notify(ctx, err, "warning");
 			return err;
 		}
+		const targetId = resolveZenModelId(rawTargetId);
+		const customName = sub.slice(2).join(" ").trim() || undefined;
+		const addedDef = addCustomZenModel(targetId, { name: customName });
+		const syncRes = await syncZenConfiguration({ forceSession: false });
+		if (pi) {
+			registerZenProviderToPi(pi, syncRes.apiKey, syncRes.sessionId, syncRes.resolvedModels);
+		}
+		if ((ctx as any).modelRegistry?.refresh) {
+			await (ctx as any).modelRegistry.refresh({ providers: [ZEN_PROVIDER_ID] }).catch(() => {});
+		}
+		const msg = `[OK] 已成功登记新模型至本地模型库 (~/.pi/agent/zen-models.json)！\n• 模型ID: ${addedDef.id}\n• 名称: ${addedDef.name}\n• 上下文: ${formatTokens(addedDef.contextWindow)}\n• 深度思考: ${addedDef.reasoning ? "支持" : "否"}\n• 计费: 0免费 (零额度消耗)\n现已生效，可通过 /zen model ${addedDef.id} 或 /model 选用。`;
+		notify(ctx, msg, "info");
+		return msg;
+	}
+
+	// 6. /zen model <modelId>：快速切换模型 (支持短别名与动态注册)
+	if (command === "model") {
+		const rawTargetId = sub[1];
+		if (!rawTargetId) {
+			const err = "[ERR] 用法: /zen model <模型ID或别名>\n示例: /zen model big-pickle 或 /zen model bunny";
+			notify(ctx, err, "warning");
+			return err;
+		}
+		const targetId = resolveZenModelId(rawTargetId);
+
+		// 如果该模型尚未在当前 models.json 中，自动推断并写入 zen-models.json 实现热生效
+		const currentModels = await fetchZenModelCatalog(getStoredZenApiKey()).catch(() => Object.values(KNOWN_ZEN_FREE_MODELS));
+		if (!currentModels.some((m) => m.id === targetId)) {
+			addCustomZenModel(targetId);
+			const syncRes = await syncZenConfiguration({ forceSession: false });
+			if (pi) {
+				registerZenProviderToPi(pi, syncRes.apiKey, syncRes.sessionId, syncRes.resolvedModels);
+			}
+			if ((ctx as any).modelRegistry?.refresh) {
+				await (ctx as any).modelRegistry.refresh({ providers: [ZEN_PROVIDER_ID] }).catch(() => {});
+			}
+		}
+
 		if (typeof (ctx as any).setModel === "function") {
 			await (ctx as any).setModel({ provider: ZEN_PROVIDER_ID, id: targetId });
 			const msg = `[OK] 已成功切换至 Zen 模型: ${targetId}`;
@@ -1088,7 +1275,7 @@ export async function handleZenCommand(
 		return warnMsg;
 	}
 
-	// 6. 输入了具体的 API Key: /zen oc_sk_... 或 /zen key oc_sk_...
+	// 7. 输入了具体的 API Key: /zen oc_sk_... 或 /zen key oc_sk_...
 	let zenApiKey: string | undefined;
 	if (command === "key" && sub[1]) {
 		zenApiKey = sub[1].trim();
@@ -1096,7 +1283,7 @@ export async function handleZenCommand(
 		zenApiKey = rawArg;
 	} else if (
 		rawArg.length > 0 &&
-		!["status", "refresh", "sync", "list", "models", "free", "ping", "model"].includes(command)
+		!["status", "refresh", "sync", "list", "models", "free", "ping", "model", "add"].includes(command)
 	) {
 		zenApiKey = rawArg;
 	}

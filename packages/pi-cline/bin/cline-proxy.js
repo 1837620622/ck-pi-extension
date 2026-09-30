@@ -29,7 +29,7 @@ var KNOWN_CLINE_FREE_MODELS = {
   // ==================== 1. 隐身与智能路由零消耗模型 (Stealth & Smart Routers) ====================
   "stealth/space-bunny-alpha": {
     id: "stealth/space-bunny-alpha",
-    name: "Stealth Space Bunny Alpha (1M Stealth Free)",
+    name: "Stealth Space Bunny Alpha (1M Free) (Cline Free)",
     contextWindow: 1e6,
     maxTokens: 32768,
     reasoning: true,
@@ -40,7 +40,7 @@ var KNOWN_CLINE_FREE_MODELS = {
   },
   "openrouter/fusion": {
     id: "openrouter/fusion",
-    name: "OpenRouter Fusion (Smart Meta Router - Free)",
+    name: "OpenRouter Fusion (1M Meta Router) (Cline Free)",
     contextWindow: 1e6,
     maxTokens: 32768,
     reasoning: true,
@@ -51,7 +51,7 @@ var KNOWN_CLINE_FREE_MODELS = {
   },
   "openrouter/pareto-code": {
     id: "openrouter/pareto-code",
-    name: "OpenRouter Pareto Code (Coding Specialist - Free)",
+    name: "OpenRouter Pareto Code (2M Free) (Cline Free)",
     contextWindow: 2e6,
     maxTokens: 32768,
     reasoning: true,
@@ -62,7 +62,7 @@ var KNOWN_CLINE_FREE_MODELS = {
   },
   "openrouter/free": {
     id: "openrouter/free",
-    name: "OpenRouter Auto Free Router",
+    name: "OpenRouter Auto Free Router (200k) (Cline Free)",
     contextWindow: 2e5,
     maxTokens: 32768,
     reasoning: true,
@@ -74,7 +74,7 @@ var KNOWN_CLINE_FREE_MODELS = {
   // ==================== 2. 百万级超长上下文免费模型 (1M+ Giant Context) ====================
   "nvidia/nemotron-3-ultra-550b-a55b:free": {
     id: "nvidia/nemotron-3-ultra-550b-a55b:free",
-    name: "NVIDIA Nemotron 3 Ultra 550B (1M Free)",
+    name: "NVIDIA Nemotron 3 Ultra 550B (1M Free) (Cline Free)",
     contextWindow: 1e6,
     maxTokens: 32768,
     reasoning: true,
@@ -85,7 +85,7 @@ var KNOWN_CLINE_FREE_MODELS = {
   },
   "nvidia/nemotron-3.5-lightning:free": {
     id: "nvidia/nemotron-3.5-lightning:free",
-    name: "NVIDIA Nemotron 3.5 Lightning (1M Free)",
+    name: "NVIDIA Nemotron 3.5 Lightning (1M Free) (Cline Free)",
     contextWindow: 1e6,
     maxTokens: 32768,
     reasoning: true,
@@ -96,7 +96,7 @@ var KNOWN_CLINE_FREE_MODELS = {
   },
   "thinkingmachines/inkling:free": {
     id: "thinkingmachines/inkling:free",
-    name: "Thinking Machines Inkling (1M Free)",
+    name: "Thinking Machines Inkling (1M Free) (Cline Free)",
     contextWindow: 1048576,
     maxTokens: 32768,
     reasoning: true,
@@ -107,7 +107,7 @@ var KNOWN_CLINE_FREE_MODELS = {
   },
   "thinkingmachines/inkling-small:free": {
     id: "thinkingmachines/inkling-small:free",
-    name: "Thinking Machines Inkling Small (1M Free)",
+    name: "Thinking Machines Inkling Small (1M Free) (Cline Free)",
     contextWindow: 1048576,
     maxTokens: 32768,
     reasoning: true,
@@ -119,7 +119,7 @@ var KNOWN_CLINE_FREE_MODELS = {
   // ==================== 3. 主力代码与推理思考免费模型 (Core Coding & Reasoning) ====================
   "inclusionai/ling-3.0-flash-fin:free": {
     id: "inclusionai/ling-3.0-flash-fin:free",
-    name: "InclusionAI Ling 3.0 Flash Fin (262k Free)",
+    name: "InclusionAI Ling 3.0 Flash Fin (262k Free) (Cline Free)",
     contextWindow: 262144,
     maxTokens: 32768,
     reasoning: true,
@@ -130,7 +130,7 @@ var KNOWN_CLINE_FREE_MODELS = {
   },
   "inclusionai/ling-3.0-flash-sante:free": {
     id: "inclusionai/ling-3.0-flash-sante:free",
-    name: "InclusionAI Ling 3.0 Flash Sante (262k Free)",
+    name: "InclusionAI Ling 3.0 Flash Sante (262k Free) (Cline Free)",
     contextWindow: 262144,
     maxTokens: 32768,
     reasoning: true,
@@ -141,7 +141,7 @@ var KNOWN_CLINE_FREE_MODELS = {
   },
   "qwen/qwen3.8-27b:free": {
     id: "qwen/qwen3.8-27b:free",
-    name: "Qwen 3.8 27B (262k Free)",
+    name: "Qwen 3.8 27B (262k Free) (Cline Free)",
     contextWindow: 262144,
     maxTokens: 32768,
     reasoning: true,
@@ -152,7 +152,7 @@ var KNOWN_CLINE_FREE_MODELS = {
   },
   "nvidia/nemotron-3-super-120b-a12b:free": {
     id: "nvidia/nemotron-3-super-120b-a12b:free",
-    name: "NVIDIA Nemotron 3 Super 120B (262k Free)",
+    name: "NVIDIA Nemotron 3 Super 120B (262k Free) (Cline Free)",
     contextWindow: 262144,
     maxTokens: 32768,
     reasoning: true,
@@ -163,7 +163,7 @@ var KNOWN_CLINE_FREE_MODELS = {
   },
   "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free": {
     id: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
-    name: "NVIDIA Nemotron 3 Nano Omni Reasoning (Free)",
+    name: "NVIDIA Nemotron 3 Nano Omni Reasoning (Free) (Cline Free)",
     contextWindow: 131072,
     maxTokens: 32768,
     reasoning: true,
@@ -174,7 +174,7 @@ var KNOWN_CLINE_FREE_MODELS = {
   },
   "cohere/north-mini-code:free": {
     id: "cohere/north-mini-code:free",
-    name: "Cohere North Mini Code (Free)",
+    name: "Cohere North Mini Code (Free) (Cline Free)",
     contextWindow: 131072,
     maxTokens: 32768,
     reasoning: true,
@@ -185,7 +185,7 @@ var KNOWN_CLINE_FREE_MODELS = {
   },
   "poolside/laguna-s-2.1:free": {
     id: "poolside/laguna-s-2.1:free",
-    name: "Poolside Laguna S 2.1 (Free)",
+    name: "Poolside Laguna S 2.1 (Free) (Cline Free)",
     contextWindow: 131072,
     maxTokens: 32768,
     reasoning: true,
@@ -196,7 +196,7 @@ var KNOWN_CLINE_FREE_MODELS = {
   },
   "poolside/laguna-xs-2.1:free": {
     id: "poolside/laguna-xs-2.1:free",
-    name: "Poolside Laguna XS 2.1 (Free)",
+    name: "Poolside Laguna XS 2.1 (Free) (Cline Free)",
     contextWindow: 131072,
     maxTokens: 32768,
     reasoning: true,
@@ -208,7 +208,7 @@ var KNOWN_CLINE_FREE_MODELS = {
   // ==================== 4. 轻量极速与专用工具模型 (Lightweight & Tools) ====================
   "google/gemma-4-26b-a4b-it:free": {
     id: "google/gemma-4-26b-a4b-it:free",
-    name: "Google Gemma 4 26B A4B IT (Free)",
+    name: "Google Gemma 4 26B A4B IT (Free) (Cline Free)",
     contextWindow: 262144,
     maxTokens: 32768,
     reasoning: true,
@@ -219,7 +219,7 @@ var KNOWN_CLINE_FREE_MODELS = {
   },
   "google/gemma-4-31b-it:free": {
     id: "google/gemma-4-31b-it:free",
-    name: "Google Gemma 4 31B IT (Free)",
+    name: "Google Gemma 4 31B IT (Free) (Cline Free)",
     contextWindow: 262144,
     maxTokens: 32768,
     reasoning: true,
@@ -230,7 +230,7 @@ var KNOWN_CLINE_FREE_MODELS = {
   },
   "dots-studio/dots-3-note-preview:free": {
     id: "dots-studio/dots-3-note-preview:free",
-    name: "Dots Studio Dots 3 Note Preview (Free)",
+    name: "Dots Studio Dots 3 Note Preview (Free) (Cline Free)",
     contextWindow: 131072,
     maxTokens: 32768,
     reasoning: true,
@@ -241,7 +241,7 @@ var KNOWN_CLINE_FREE_MODELS = {
   },
   "liquid/lfm-2.5-2.6b:free": {
     id: "liquid/lfm-2.5-2.6b:free",
-    name: "Liquid LFM 2.5 2.6B (Free)",
+    name: "Liquid LFM 2.5 2.6B (Free) (Cline Free)",
     contextWindow: 32768,
     maxTokens: 8192,
     reasoning: false,
@@ -251,7 +251,7 @@ var KNOWN_CLINE_FREE_MODELS = {
   },
   "nvidia/nemotron-3.5-content-safety:free": {
     id: "nvidia/nemotron-3.5-content-safety:free",
-    name: "NVIDIA Nemotron 3.5 Content Safety (Free)",
+    name: "NVIDIA Nemotron 3.5 Content Safety (Free) (Cline Free)",
     contextWindow: 131072,
     maxTokens: 16384,
     reasoning: false,
@@ -276,10 +276,7 @@ function resolveFreeModelId(rawId) {
   if (lower === "code" || lower === "pareto" || lower === "pareto-code") {
     return "openrouter/pareto-code";
   }
-  if (lower === "luna" || lower === "jev") {
-    return "typesafe/jev-router";
-  }
-  if (lower === "bunny" || lower === "stealth" || lower === "space-bunny") {
+  if (lower === "bunny" || lower === "stealth" || lower === "space-bunny" || lower === "space-bunny-alpha") {
     return "stealth/space-bunny-alpha";
   }
   if (lower === "ling" || lower === "flash" || lower === "flash-fin") {
@@ -323,6 +320,9 @@ function resolveFreeModelId(rawId) {
   }
   if (KNOWN_CLINE_FREE_MODELS[id]) {
     return id;
+  }
+  if (KNOWN_CLINE_FREE_MODELS[`stealth/${id}`]) {
+    return `stealth/${id}`;
   }
   const withFree = `${id}:free`;
   if (KNOWN_CLINE_FREE_MODELS[withFree]) {

@@ -27,6 +27,7 @@ export interface ClineSyncOptions {
 	silent?: boolean;
 	useLocalProxy?: boolean;
 	proxyPort?: number;
+	customModelsPath?: string;
 }
 
 export interface ClineSyncResult {

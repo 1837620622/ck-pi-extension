@@ -16,6 +16,8 @@ import {
 	formatTokens,
 	formatThinkingSummary,
 	formatModelCard,
+	resolveZenModelId,
+	sanitizePiModelDefinition,
 	ZEN_PROVIDER_ID,
 } from "./models-registry.js";
 import { DatabaseSync } from "node:sqlite";
@@ -204,6 +206,37 @@ describe("OpenCode Zen 模型库与参数注册表测试", () => {
 		assert.ok(card.includes("上下文: 195K (200,000 tokens)"));
 		assert.ok(card.includes("模态: 文本 + 视觉 (多模态)"));
 		assert.ok(card.includes("额度: 0免费"));
+	});
+
+	it("resolveZenModelId: 能够正确解析短别名与供应商前缀", () => {
+		assert.equal(resolveZenModelId("pickle"), "big-pickle");
+		assert.equal(resolveZenModelId("bunny"), "space-bunny-free");
+		assert.equal(resolveZenModelId("space-bunny"), "space-bunny-free");
+		assert.equal(resolveZenModelId("space-bunny-alpha"), "space-bunny-free");
+		assert.equal(resolveZenModelId("mimo"), "mimo-v2.5-free");
+		assert.equal(resolveZenModelId("flash"), "mimo-v2.6-flash-free");
+		assert.equal(resolveZenModelId("ultra"), "nemotron-3-ultra-free");
+		assert.equal(resolveZenModelId("550b"), "nemotron-3-ultra-free");
+		assert.equal(resolveZenModelId("lightning"), "nemotron-3.5-lightning-free");
+		assert.equal(resolveZenModelId("ling"), "ling-3.0-flash-fin-free");
+		assert.equal(resolveZenModelId("spark"), "muse-spark-1.3-contributor-free");
+		assert.equal(resolveZenModelId("opencode-zen-free/big-pickle"), "big-pickle");
+		assert.equal(resolveZenModelId(""), "big-pickle");
+		assert.equal(resolveZenModelId(undefined), "big-pickle");
+	});
+
+	it("loadCustomZenModels 与 addCustomZenModel: 支持本地自定义模型发现与落盘", () => {
+		const { addCustomZenModel, loadCustomZenModels } = require("./index.js");
+		const customZenPath = join(tmpdir(), `test-custom-zen-${Date.now()}.json`);
+		const added = addCustomZenModel("custom-free-coder", { name: "Custom Free Coder" }, customZenPath);
+		assert.equal(added.id, "custom-free-coder");
+		assert.equal(added.name, "Custom Free Coder");
+		assert.equal(added.cost.input, 0);
+
+		const loaded = loadCustomZenModels(customZenPath);
+		assert.equal(loaded.length, 1);
+		assert.equal(loaded[0].id, "custom-free-coder");
+		assert.equal(loaded[0].name, "Custom Free Coder");
 	});
 });
 
@@ -985,6 +1018,85 @@ describe("Compaction 压缩防护、深度上下文修剪与透明重试机制�
 		assert.equal(json.choices[0].message.content, "Final answer.");
 		assert.equal(json.choices[0].message.reasoning_content, "Thinking step 1... Step 2 complete.");
 		assert.equal(json.usage.total_tokens, 80);
+	});
+
+	it("installZenFetchInterceptor: 遇 Provider returned an empty response 自动同模型重试成功", async () => {
+		const { installZenFetchInterceptor } = require("./index.js");
+		let attempts = 0;
+		const mockGlobal: any = {
+			fetch: async () => {
+				attempts++;
+				if (attempts < 3) {
+					const errorChunk = `data: {"error": {"message": "Provider returned an empty response", "code": 502}}\n\n`;
+					const stream = new ReadableStream({
+						start(controller) {
+							controller.enqueue(new TextEncoder().encode(errorChunk));
+							controller.close();
+						},
+					});
+					return new Response(stream, {
+						status: 200,
+						headers: { "content-type": "text/event-stream" },
+					});
+				}
+
+				const okChunk = `data: {"id":"zen-ok","choices":[{"index":0,"delta":{"content":"Zen retry success!"}}]}\n\ndata: [DONE]\n\n`;
+				const stream = new ReadableStream({
+					start(controller) {
+						controller.enqueue(new TextEncoder().encode(okChunk));
+						controller.close();
+					},
+				});
+				return new Response(stream, {
+					status: 200,
+					headers: { "content-type": "text/event-stream" },
+				});
+			},
+		};
+
+		installZenFetchInterceptor(mockGlobal);
+
+		const res = await mockGlobal.fetch("https://opencode.ai/zen/v1/chat/completions", {
+			method: "POST",
+			headers: { Authorization: "Bearer test_key" },
+			body: JSON.stringify({
+				model: "mimo-v2.5-free",
+				messages: [{ role: "user", content: "test" }],
+				stream: true,
+			}),
+		});
+
+		assert.equal(res.status, 200);
+		assert.equal(attempts, 3, "必须重试 2 次并在第 3 次成功返回");
+	});
+
+	it("sanitizePiModelDefinition: 严格规范化 Zen 模型定义并过滤缺失或非法字段", () => {
+		const valid = sanitizePiModelDefinition({
+			id: "mimo-v2.5-free",
+			name: "Mimo v2.5 Free",
+			contextWindow: 1048576,
+			maxTokens: 32768,
+			reasoning: true,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		});
+		assert.ok(valid);
+		assert.equal(valid.id, "mimo-v2.5-free");
+		assert.equal(valid.contextWindow, 1048576);
+		assert.equal(valid.cost.input, 0);
+
+		const repaired = sanitizePiModelDefinition({
+			id: "custom-free",
+			contextWindow: -1,
+			maxTokens: undefined,
+			reasoning: false,
+		});
+		assert.ok(repaired);
+		assert.equal(repaired.id, "custom-free");
+		assert.equal(repaired.contextWindow, 131072);
+		assert.equal(repaired.maxTokens, 32768);
+		assert.deepEqual(repaired.input, ["text"]);
+		assert.deepEqual(repaired.cost, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
 	});
 });
 

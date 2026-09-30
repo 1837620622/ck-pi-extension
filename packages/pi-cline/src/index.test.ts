@@ -21,12 +21,15 @@ import piCline, {
 	KNOWN_CLINE_FREE_MODELS,
 	pruneClineContext,
 	registerClineProviderToPi,
+	addCustomClineModel,
+	loadCustomClineModels,
 	resolveFreeModelId,
 	startClineProxyServer,
 	stopClineProxyServer,
 	syncClineConfiguration,
 	updateCcSwitchDbForCline,
 	updateMessageText,
+	sanitizePiModelDefinition,
 } from "./index.js";
 
 const globalTestDir = mkdtempSync(join(tmpdir(), "cline-global-test-"));
@@ -118,8 +121,9 @@ describe("Cline 模型注册表与能力推断测试", () => {
 		assert.equal(resolveFreeModelId("fusion"), "openrouter/fusion");
 		assert.equal(resolveFreeModelId("code"), "openrouter/pareto-code");
 		assert.equal(resolveFreeModelId("bunny"), "stealth/space-bunny-alpha");
-		assert.equal(resolveFreeModelId("stealth"), "stealth/space-bunny-alpha");
-		assert.equal(resolveFreeModelId("luna"), "typesafe/jev-router");
+		assert.equal(resolveFreeModelId("space-bunny"), "stealth/space-bunny-alpha");
+		assert.equal(resolveFreeModelId("space-bunny-alpha"), "stealth/space-bunny-alpha");
+		assert.equal(resolveFreeModelId("qwen"), "qwen/qwen3.8-27b:free");
 		assert.equal(resolveFreeModelId("ling"), "inclusionai/ling-3.0-flash-fin:free");
 		assert.equal(resolveFreeModelId("550b"), "nvidia/nemotron-3-ultra-550b-a55b:free");
 		assert.equal(resolveFreeModelId("reasoning"), "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free");
@@ -291,6 +295,15 @@ describe("配置同步与落盘逻辑测试", () => {
 		assert.equal(modelsData.providers["cline-free"].apiKey, "sk_test_sync_key_12345");
 		assert.equal(modelsData.providers["cline-free"].headers["User-Agent"], "Cline/4.1.16");
 		assert.equal(modelsData.providers["cline-free"].headers["x-client-type"], "cline-vscode");
+
+		// 验证模型列表绝无重复，且无短别名污染
+		const clineModels = modelsData.providers["cline-free"].models;
+		const modelIds = clineModels.map((m: any) => m.id);
+		const uniqueIds = new Set(modelIds);
+		assert.equal(modelIds.length, uniqueIds.size, "cline-free 注册的模型 ID 必须完全唯一，绝无重复别名干扰");
+		assert.ok(!uniqueIds.has("bunny"), "短别名 bunny 绝不可作为独立模型注册");
+		assert.ok(!uniqueIds.has("550b"), "短别名 550b 绝不可作为独立模型注册");
+		assert.ok(uniqueIds.has("stealth/space-bunny-alpha"), "必须包含规范模型 ID stealth/space-bunny-alpha");
 
 		// 验证 auth.json
 		const authData = JSON.parse(readFileSync(tempAuthPath, "utf-8"));
@@ -577,9 +590,32 @@ describe("Extension 钩子、命令与拦截测试", () => {
 		const proxyOutput = await clineCmd.handler("proxy status", {});
 		assert.ok(proxyOutput.includes("Cline 本地反代"));
 
-		// 5. /cline ping
+		// 5. /cline ping (默认 0 Token 0 扣费探测)
 		const pingOutput = await clineCmd.handler("ping", {});
-		assert.ok(pingOutput.includes("Cline 免费模型连通性与时延实时探测"));
+		assert.ok(pingOutput.includes("连通性"));
+
+		// 6. /cline add <modelId> [name] (自定义免费模型登记)
+		const addOutput = await clineCmd.handler("add stealth/future-bunny-next 未来兔子测试版", {});
+		assert.ok(addOutput.includes("已成功登记新模型至本地模型库"));
+		assert.ok(addOutput.includes("stealth/future-bunny-next"));
+
+		// 7. /cline model <modelId>
+		const modelOutput = await clineCmd.handler("model stealth/future-bunny-next", {});
+		assert.ok(modelOutput.includes("已成功切换至 Cline 模型") || modelOutput.includes("stealth/future-bunny-next"));
+	});
+
+	it("loadCustomClineModels 与 addCustomClineModel: 支持持久化与动态发现自定义免费模型", () => {
+		const customTestPath = join(globalTestDir, "test-custom-cline-models.json");
+		const added = addCustomClineModel("stealth/test-router-model", { name: "Test Router (Free)" }, customTestPath);
+		assert.equal(added.id, "stealth/test-router-model");
+		assert.equal(added.isFree, true);
+		assert.equal(added.contextWindow, 1000000);
+		assert.equal(added.cost.input, 0);
+
+		const loaded = loadCustomClineModels(customTestPath);
+		assert.equal(loaded.length, 1);
+		assert.equal(loaded[0].id, "stealth/test-router-model");
+		assert.equal(loaded[0].name, "Test Router (Free)");
 	});
 
 	it("installClineFetchInterceptor 遭遇 500 异常时保持同模型重试（绝不擅自降级模型）", async () => {
@@ -625,5 +661,197 @@ describe("Extension 钩子、命令与拦截测试", () => {
 		assert.equal(requestLog.length, 2);
 		assert.equal(requestLog[0], "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free");
 		assert.equal(requestLog[1], "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", "失败重试必须保持同一高品质模型，绝不降级或替换模型");
+	});
+
+	it("installClineFetchInterceptor 遭遇 Provider returned an empty response SSE 错误帧时自动同模型重试并在成功后正常返回", async () => {
+		let attempts = 0;
+		const mockGlobal: any = {
+			fetch: async () => {
+				attempts++;
+				if (attempts < 3) {
+					// 前 2 次返回伪 200 SSE 但携带 Provider returned an empty response 错误帧
+					const errorChunk = `data: {"error": {"message": "Provider returned an empty response", "code": 502}}\n\n`;
+					const stream = new ReadableStream({
+						start(controller) {
+							controller.enqueue(new TextEncoder().encode(errorChunk));
+							controller.close();
+						},
+					});
+					return new Response(stream, {
+						status: 200,
+						headers: { "Content-Type": "text/event-stream" },
+					});
+				}
+
+				// 第 3 次同模型重试成功，输出有效响应
+				const okChunk = `data: {"id":"gen-test-ok","choices":[{"index":0,"delta":{"content":"Success after empty response retry!"}}]}\n\ndata: [DONE]\n\n`;
+				const stream = new ReadableStream({
+					start(controller) {
+						controller.enqueue(new TextEncoder().encode(okChunk));
+						controller.close();
+					},
+				});
+				return new Response(stream, {
+					status: 200,
+					headers: { "Content-Type": "text/event-stream" },
+				});
+			},
+		};
+
+		installClineFetchInterceptor(mockGlobal);
+
+		const res = await mockGlobal.fetch("https://api.cline.bot/api/v1/chat/completions", {
+			method: "POST",
+			body: JSON.stringify({
+				model: "stealth/space-bunny-alpha",
+				messages: [{ role: "user", content: "test" }],
+				stream: true,
+			}),
+		});
+
+		assert.equal(res.status, 200);
+		const reader = res.body.getReader();
+		const decoder = new TextDecoder();
+		let totalText = "";
+		while (true) {
+			const { value, done } = await reader.read();
+			if (done) break;
+			totalText += decoder.decode(value);
+		}
+
+		assert.equal(attempts, 3, "必须经历 2 次重试并在第 3 次成功返回");
+		assert.ok(totalText.includes("Success after empty response retry!"));
+		assert.ok(!totalText.includes("供应商节点异常"));
+	});
+
+	it("installClineFetchInterceptor 遭遇 Provider returned an empty response 连续 3 次重试耗尽后合成为供应商节点异常提示", async () => {
+		let attempts = 0;
+		const mockGlobal: any = {
+			fetch: async () => {
+				attempts++;
+				// 始终返回 Provider returned an empty response
+				const errorChunk = `data: {"error": {"message": "Provider returned an empty response", "code": 502}}\n\n`;
+				const stream = new ReadableStream({
+					start(controller) {
+						controller.enqueue(new TextEncoder().encode(errorChunk));
+						controller.close();
+					},
+				});
+				return new Response(stream, {
+					status: 200,
+					headers: { "Content-Type": "text/event-stream" },
+				});
+			},
+		};
+
+		installClineFetchInterceptor(mockGlobal);
+
+		const res = await mockGlobal.fetch("https://api.cline.bot/api/v1/chat/completions", {
+			method: "POST",
+			body: JSON.stringify({
+				model: "openrouter/fusion",
+				messages: [{ role: "user", content: "test" }],
+				stream: true,
+			}),
+		});
+
+		assert.equal(res.status, 200);
+		const reader = res.body.getReader();
+		const decoder = new TextDecoder();
+		let totalText = "";
+		while (true) {
+			const { value, done } = await reader.read();
+			if (done) break;
+			totalText += decoder.decode(value);
+		}
+
+		// 初始 1 次 + 最多 3 次重试 = 共 4 次尝试
+		assert.equal(attempts, 4, "最多进行 3 次重试（共 4 次尝试）");
+		assert.ok(
+			totalText.includes("[!][Cline 供应商节点异常: Provider returned an empty response，请尝试重试或切换其他免费模型]"),
+			"重试耗尽后合成为标准供应商节点异常指引提示",
+		);
+	});
+
+	it("installClineFetchInterceptor 遭遇 JSON 格式 Provider returned an empty response 时同样自动重试", async () => {
+		let attempts = 0;
+		const mockGlobal: any = {
+			fetch: async () => {
+				attempts++;
+				if (attempts === 1) {
+					return new Response(
+						JSON.stringify({ error: { message: "Provider returned an empty response", code: 502 } }),
+						{ status: 200, headers: { "Content-Type": "application/json" } },
+					);
+				}
+				return new Response(
+					JSON.stringify({
+						choices: [{ message: { role: "assistant", content: "JSON retry success" } }],
+					}),
+					{ status: 200, headers: { "Content-Type": "application/json" } },
+				);
+			},
+		};
+
+		installClineFetchInterceptor(mockGlobal);
+
+		const res = await mockGlobal.fetch("https://api.cline.bot/api/v1/chat/completions", {
+			method: "POST",
+			body: JSON.stringify({
+				model: "openrouter/free",
+				messages: [{ role: "user", content: "test" }],
+				stream: false,
+			}),
+		});
+
+		assert.equal(res.status, 200);
+		const json = await res.json();
+		assert.equal(attempts, 2);
+		assert.equal(json.choices[0].message.content, "JSON retry success");
+	});
+
+	it("sanitizePiModelDefinition 严格规范化模型定义并过滤格式畸变与缺失字段", () => {
+		// 1. 正常模型定义
+		const valid = sanitizePiModelDefinition({
+			id: "stealth/space-bunny-alpha",
+			name: "Stealth Space Bunny",
+			contextWindow: 1000000,
+			maxTokens: 32768,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			thinkingLevelMap: { high: "high", off: null },
+		});
+		assert.ok(valid);
+		assert.equal(valid.id, "stealth/space-bunny-alpha");
+		assert.equal(valid.contextWindow, 1000000);
+		assert.equal(valid.maxTokens, 32768);
+		assert.equal(valid.reasoning, true);
+		assert.deepEqual(valid.input, ["text", "image"]);
+		assert.deepEqual(valid.cost, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+		assert.equal(valid.thinkingLevelMap?.high, "high");
+
+		// 2. 缺失与非法畸变字段修复
+		const repaired = sanitizePiModelDefinition({
+			id: " incomplete-model ",
+			contextWindow: "invalid",
+			maxTokens: -50,
+			reasoning: 1,
+			cost: undefined,
+			input: null,
+		});
+		assert.ok(repaired);
+		assert.equal(repaired.id, "incomplete-model");
+		assert.equal(repaired.name, "incomplete-model");
+		assert.equal(repaired.contextWindow, 131072, "非法上下文自动回退 131072");
+		assert.equal(repaired.maxTokens, 32768, "非法最大 Token 自动回退 32768");
+		assert.equal(repaired.reasoning, true);
+		assert.deepEqual(repaired.input, ["text"]);
+		assert.deepEqual(repaired.cost, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+
+		// 3. 彻底无效的模型对象过滤
+		assert.equal(sanitizePiModelDefinition(null), null);
+		assert.equal(sanitizePiModelDefinition({}), null);
+		assert.equal(sanitizePiModelDefinition({ id: "   " }), null);
 	});
 });

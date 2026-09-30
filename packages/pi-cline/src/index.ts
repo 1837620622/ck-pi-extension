@@ -23,6 +23,7 @@ import {
 	inferClineModelCapabilities,
 	KNOWN_CLINE_FREE_MODELS,
 	resolveFreeModelId,
+	sanitizePiModelDefinition,
 } from "./models-registry.js";
 export {
 	CLINE_BASE_URL,
@@ -37,6 +38,7 @@ export {
 	inferClineModelCapabilities,
 	KNOWN_CLINE_FREE_MODELS,
 	resolveFreeModelId,
+	sanitizePiModelDefinition,
 };
 import {
 	getClineProxyStatus,
@@ -46,14 +48,18 @@ import {
 } from "./proxy.js";
 export { getClineProxyStatus, setProxyDefaultApiKey, startClineProxyServer, stopClineProxyServer };
 import {
+	addCustomClineModel,
 	fetchClineModelCatalog,
 	getStoredClineApiKey,
+	loadCustomClineModels,
 	syncClineConfiguration,
 	updateCcSwitchDbForCline,
 } from "./sync.js";
 export {
+	addCustomClineModel,
 	fetchClineModelCatalog,
 	getStoredClineApiKey,
+	loadCustomClineModels,
 	syncClineConfiguration,
 	updateCcSwitchDbForCline,
 };
@@ -410,21 +416,165 @@ export function installClineFetchInterceptor(targetGlobal: typeof globalThis = g
 		const maxRetries = 3;
 
 		// 核心同模型指数退避重试 (Exponential Backoff Retry on Same Model)
-		// 严守模型质量底线：遭遇 500/502/503/504/524 或 429 时，透明进行同模型指数退避重试，绝不擅自降级或切换备用模型
+		// 严守模型质量底线：遭遇 500/502/503/504/520/521/522/524/533 或 429 时，以及上游伪 200 但返回 empty response 时，
+		// 透明进行同模型退避重试（最多 3 次），绝不擅自降级或切换备用模型
 		for (let attempt = 0; attempt <= maxRetries; attempt++) {
 			if (newInit.signal?.aborted) break;
 			try {
 				res = await originalFetch.call(this, targetUrl, newInit);
-				// 若不是重试状态码（500/502/503/504/524/429），或者已经是成功的 2xx，直接返回/退出重试循环
-				if (res.ok || (res.status < 500 && res.status !== 429)) {
+
+				// 1. 若遇到网关状态码（500/502/503/504/520/521/522/524/533/429）或 5xx，进行退避重试
+				const isGatewayError =
+					[429, 500, 502, 503, 504, 520, 521, 522, 524, 533].includes(res.status) ||
+					res.status >= 500;
+
+				if (isGatewayError) {
+					if (attempt < maxRetries) {
+						const isTestEnv = !!process.env.TEST_PI_MODELS_PATH || process.env.NODE_ENV === "test";
+						const baseDelay = isTestEnv ? 10 : Math.min(1000 * Math.pow(2, attempt), 5000);
+						const delayMs = isTestEnv ? 10 : Math.max(10, Math.floor(Math.random() * baseDelay));
+						await sleepWithSignal(delayMs, newInit.signal);
+						continue;
+					}
 					break;
 				}
-				// 遭遇 500/502/503/504/524 或 429 报错，且还有重试机会
-				if (attempt < maxRetries) {
-					const isTestEnv = !!process.env.TEST_PI_MODELS_PATH || process.env.NODE_ENV === "test";
-					const baseDelay = isTestEnv ? 10 : Math.min(1000 * Math.pow(2, attempt), 5000);
-					const delayMs = isTestEnv ? 10 : Math.max(10, Math.floor(Math.random() * baseDelay));
-					await sleepWithSignal(delayMs, newInit.signal);
+
+				if (!res.ok) {
+					// 4xx 等业务错误直接返回
+					break;
+				}
+
+				// 2. HTTP 200 响应深度探测：重点排查上游伪成功错误（如 Content-Type 为 SSE 或 JSON，但首包即为 Provider returned an empty response 或空 stream）
+				const cType = (res.headers.get("content-type") || "").toLowerCase();
+
+				if (targetUrl.includes("chat/completions") && cType.includes("text/event-stream") && res.body) {
+					const reader = res.body.getReader();
+					const decoder = new TextDecoder();
+					const initialChunks: Uint8Array[] = [];
+					let peekedText = "";
+					let isEmptyResponseError = false;
+
+					try {
+						// 探测首 1~3 个数据包，检查是否包含节点异常或空响应
+						for (let i = 0; i < 3; i++) {
+							const { value, done } = await reader.read();
+							if (done) {
+								if (peekedText.trim().length === 0 || !peekedText.includes('"choices"')) {
+									isEmptyResponseError = true;
+								}
+								break;
+							}
+							if (value) {
+								initialChunks.push(value);
+								peekedText += decoder.decode(value, { stream: true });
+
+								// 匹配到 Provider returned an empty response 或 upstream empty response 报错
+								if (
+									peekedText.includes("Provider returned an empty response") ||
+									(peekedText.includes('"error"') && peekedText.includes("empty response"))
+								) {
+									isEmptyResponseError = true;
+									break;
+								}
+
+								// 若已经探测到正常的 choices 输出，说明节点正常，无需继续深查
+								if (
+									peekedText.includes('"choices"') &&
+									(peekedText.includes('"delta"') || peekedText.includes('"content"') || peekedText.includes('"tool_calls"'))
+								) {
+									break;
+								}
+							}
+						}
+					} catch {
+						isEmptyResponseError = true;
+					}
+
+					// 如果探测到供应商节点返回 empty response 且仍有重试机会，取消当前连接并自动重试 3 次
+					if (isEmptyResponseError && attempt < maxRetries) {
+						await reader.cancel().catch(() => {});
+						const isTestEnv = !!process.env.TEST_PI_MODELS_PATH || process.env.NODE_ENV === "test";
+						const baseDelay = isTestEnv ? 10 : Math.min(1000 * Math.pow(2, attempt), 5000);
+						const delayMs = isTestEnv ? 10 : Math.max(10, Math.floor(Math.random() * baseDelay));
+						await sleepWithSignal(delayMs, newInit.signal);
+						continue; // 自动重试！
+					}
+
+					// 重构流：将预读的 initialChunks 与后续流顺畅串联
+					let readerConsumed = false;
+					const reconstructedStream = new ReadableStream<Uint8Array>({
+						start(controller) {
+							for (const chunk of initialChunks) {
+								controller.enqueue(chunk);
+							}
+						},
+						async pull(controller) {
+							if (readerConsumed) {
+								controller.close();
+								return;
+							}
+							try {
+								const { value, done } = await reader.read();
+								if (done) {
+									readerConsumed = true;
+									controller.close();
+								} else if (value) {
+									controller.enqueue(value);
+								}
+							} catch (streamErr) {
+								controller.error(streamErr);
+							}
+						},
+						cancel(reason) {
+							return reader.cancel(reason);
+						},
+					});
+
+					res = new Response(reconstructedStream, {
+						status: res.status,
+						statusText: res.statusText,
+						headers: res.headers,
+					});
+					break;
+				} else if (targetUrl.includes("chat/completions") && cType.includes("application/json")) {
+					let jsonText = "";
+					try {
+						jsonText = await res.text();
+					} catch {
+						break;
+					}
+
+					let isEmptyResponseError = false;
+					try {
+						const parsed = JSON.parse(jsonText);
+						const errMsg = parsed?.error?.message || parsed?.data?.error?.message || "";
+						if (
+							typeof errMsg === "string" &&
+							(errMsg.includes("Provider returned an empty response") || errMsg.toLowerCase().includes("empty response"))
+						) {
+							isEmptyResponseError = true;
+						}
+					} catch {
+						// 忽略非标准 json
+					}
+
+					if (isEmptyResponseError && attempt < maxRetries) {
+						const isTestEnv = !!process.env.TEST_PI_MODELS_PATH || process.env.NODE_ENV === "test";
+						const baseDelay = isTestEnv ? 10 : Math.min(1000 * Math.pow(2, attempt), 5000);
+						const delayMs = isTestEnv ? 10 : Math.max(10, Math.floor(Math.random() * baseDelay));
+						await sleepWithSignal(delayMs, newInit.signal);
+						continue; // 自动重试！
+					}
+
+					res = new Response(jsonText, {
+						status: res.status,
+						statusText: res.statusText,
+						headers: res.headers,
+					});
+					break;
+				} else {
+					// 其他非 chat/completions 响应直接返回
+					break;
 				}
 			} catch (err: any) {
 				if (err?.name === "AbortError" || newInit.signal?.aborted) {
@@ -600,38 +750,19 @@ export function registerClineProviderToPi(
 	if (!pi || typeof pi.registerProvider !== "function") return;
 
 	try {
-		const aliasList = [
-			{ id: "bunny", ref: "stealth/space-bunny-alpha", name: "Cline Bunny (1M Stealth Free)" },
-			{ id: "ling", ref: "inclusionai/ling-3.0-flash-fin:free", name: "Cline Ling 3.0 Flash Fin (Free)" },
-			{ id: "code", ref: "openrouter/pareto-code", name: "Cline Pareto Code (2M Free)" },
-			{ id: "fusion", ref: "openrouter/fusion", name: "Cline Fusion (1M Free)" },
-			{ id: "free", ref: "openrouter/free", name: "Cline OpenRouter Free (200k)" },
-			{ id: "550b", ref: "nvidia/nemotron-3-ultra-550b-a55b:free", name: "Cline Nemotron 550B (1M Free)" },
-			{ id: "120b", ref: "nvidia/nemotron-3-super-120b-a12b:free", name: "Cline Nemotron 120B (Free)" },
-			{ id: "qwen", ref: "qwen/qwen3.8-27b:free", name: "Cline Qwen 3.8 27B (Free)" },
-		].map((a) => {
-			const base = KNOWN_CLINE_FREE_MODELS[a.ref] || models.find((m) => m.id === a.ref);
-			return {
-				id: a.id,
-				name: a.name,
-				contextWindow: base?.contextWindow || 262144,
-				maxTokens: base?.maxTokens || 32768,
-				reasoning: base?.reasoning ?? true,
-				input: base?.input || (["text"] as ("text" | "image")[]),
-				thinkingLevelMap: base?.thinkingLevelMap,
-				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-			};
-		});
-
 		// 严格只注入零额度免费模型，和 Zen 保持完全一致：provider 名称为 Cline (Free)
-		const freeOnly = (models || []).filter((m) => m.isFree ?? true);
+		const freeOnly = (models || []).filter((m) => m && (m.isFree ?? true));
 		const targetModels = freeOnly.length > 0 ? freeOnly : Object.values(KNOWN_CLINE_FREE_MODELS);
+
+		const sanitizedModels = targetModels
+			.map(sanitizePiModelDefinition)
+			.filter((m): m is NonNullable<typeof m> => m !== null);
 
 		pi.registerProvider(CLINE_PROVIDER_ID, {
 			name: "Cline (Free)",
 			baseUrl: CLINE_BASE_URL,
 			api: "openai-completions",
-			apiKey,
+			apiKey: apiKey || "",
 			headers: {
 				...CLINE_CLIENT_HEADERS,
 			},
@@ -642,19 +773,7 @@ export function registerClineProviderToPi(
 				supportsStore: false,
 				supportsUsageInStreaming: true,
 			},
-			models: [
-				...aliasList,
-				...targetModels.map((m) => ({
-					id: m.id,
-					name: m.name,
-					contextWindow: m.contextWindow,
-					maxTokens: m.maxTokens,
-					reasoning: m.reasoning,
-					input: m.input,
-					thinkingLevelMap: m.thinkingLevelMap,
-					cost: m.cost,
-				})),
-			],
+			models: sanitizedModels,
 		});
 	} catch {
 		// 忽略重复或上下文过期注册
@@ -670,16 +789,18 @@ export default function piCline(pi: ExtensionAPI): void {
 	const initialKey = getStoredClineApiKey();
 	setProxyDefaultApiKey(initialKey);
 
-	// 同步初始注册已知免费模型与短别名，保障冷启动零等待
+	// 同步初始注册已知免费模型，保障冷启动零等待
 	registerClineProviderToPi(pi, initialKey, Object.values(KNOWN_CLINE_FREE_MODELS));
 
-	// 后台静默拉取远端目录并更新
-	fetchClineModelCatalog(initialKey)
-		.then((catalog) => {
+	let lastClineSyncTime = Date.now();
+	// 每次载入时：后台实时同步远端最新模型目录（0 Token 0 扣费元数据查询，捕获任何新上线模型与本地新增模型，并同步落盘 models.json）
+	syncClineConfiguration({ apiKey: initialKey, silent: true })
+		.then((result) => {
 			try {
-				registerClineProviderToPi(pi, initialKey, catalog);
+				registerClineProviderToPi(pi, result.apiKey, result.models);
+				lastClineSyncTime = Date.now();
 			} catch {
-				// 忽略 session 替换后的旧 ctx
+				// 忽略生命周期异常
 			}
 		})
 		.catch(() => {});
@@ -693,7 +814,24 @@ export default function piCline(pi: ExtensionAPI): void {
 		}
 	});
 
-	// 2. 请求体拦截防护：短别名解析、上下文修剪与输出钳位
+	// 2. 常驻生命周期守卫：每次 Agent 回合启动前，若距上次模型检测已超 30 分钟，后台静默探测并拉取最新模型
+	pi.on("before_agent_start", async (_event, ctx) => {
+		try {
+			if (!isClineModelTarget(ctx.model)) return;
+			if (Date.now() - lastClineSyncTime > 1800_000) {
+				lastClineSyncTime = Date.now();
+				syncClineConfiguration({ silent: true })
+					.then((result) => {
+						registerClineProviderToPi(pi, result.apiKey, result.models);
+					})
+					.catch(() => {});
+			}
+		} catch {
+			// 静默容错
+		}
+	});
+
+	// 3. 请求体拦截防护：短别名解析、上下文修剪与输出钳位
 	pi.on("before_provider_request", (event, ctx) => {
 		const payload = event.payload as Record<string, unknown> | undefined;
 		const payloadModel = typeof payload?.model === "string" ? payload.model : undefined;
@@ -765,6 +903,7 @@ export default function piCline(pi: ExtensionAPI): void {
 				"free",
 				"key",
 				"model",
+				"add",
 				"ping",
 				"proxy",
 			]
@@ -863,7 +1002,7 @@ export async function handleClineCommand(
 		newKey = rawArg;
 	} else if (
 		rawArg.length > 20 &&
-		!["status", "refresh", "sync", "list", "models", "free", "ping", "proxy", "model"].includes(cmd)
+		!["status", "refresh", "sync", "list", "models", "free", "ping", "proxy", "model", "add", "remove"].includes(cmd)
 	) {
 		newKey = rawArg;
 	}
@@ -1013,67 +1152,128 @@ export async function handleClineCommand(
 		return msg;
 	}
 
-	// 7. /cline ping [modelId]：网络时延实时探测
+	// 7. /cline ping [modelId]：网络时延与连通性安全探测 (默认 0 Token 0 扣费消耗)
 	if (cmd === "ping") {
 		const target = sub[1];
 		const key = getStoredClineApiKey();
-		const testTargets = target
-			? [resolveFreeModelId(target)]
-			: [
-				"stealth/space-bunny-alpha",
-				"inclusionai/ling-3.0-flash-fin:free",
-				"openrouter/fusion",
-				"openrouter/pareto-code",
-				"openrouter/free",
-				"nvidia/nemotron-3-ultra-550b-a55b:free",
-			];
 
-		notify(ctx, "正在探测 Cline 免费模型网络时延与连通性...", "info");
-
-		const results: string[] = ["=== Cline 免费模型连通性与时延实时探测 ==="];
-		for (const m of testTargets) {
+		// 未指定特定模型时：安全探测官方端点可用性与网络时延 (采用 GET /models 元数据端点，严格 0 扣费 0 Token 消耗)
+		if (!target) {
+			notify(ctx, "正在安全探测 Cline 官方端点网络连通性与时延 (0 Token 0 扣费消耗)...", "info");
 			const start = Date.now();
 			try {
-				const res = await fetch(`${CLINE_BASE_URL}/chat/completions`, {
-					method: "POST",
+				const res = await fetch(`${CLINE_BASE_URL}/models`, {
+					method: "GET",
 					headers: {
 						Authorization: `Bearer ${key}`,
-						"Content-Type": "application/json",
 						...CLINE_CLIENT_HEADERS,
 					},
-					body: JSON.stringify({
-						model: m,
-						messages: [{ role: "user", content: "ping" }],
-						max_tokens: 5,
-						stream: false,
-					}),
+					signal: AbortSignal.timeout(10_000),
 				});
 				const ms = Date.now() - start;
 				if (res.ok) {
-					const speedTag = ms < 800 ? "极速" : ms < 2000 ? "良好" : "稍慢";
-					results.push(`  • ${m}: [200 OK] (${ms}ms, ${speedTag})`);
+					const speedTag = ms < 500 ? "极速" : ms < 1500 ? "良好" : "稍慢";
+					const msg = `[OK] Cline 官方端点连通性良好！\n• 端点: ${CLINE_BASE_URL}\n• 响应时延: ${ms}ms (${speedTag})\n• HTTP状态: 200 OK\n• 消耗额度: $0.00 (安全元数据查询，未产生任何 Token 消耗)\n如需对单款特定模型进行单次快速探测，可执行: /cline ping <模型ID>`;
+					notify(ctx, msg, "info");
+					return msg;
 				} else {
-					results.push(`  • ${m}: [HTTP ${res.status}] (${ms}ms)`);
+					const msg = `[WARN] Cline 端点响应异常: HTTP ${res.status} (${ms}ms)`;
+					notify(ctx, msg, "warning");
+					return msg;
 				}
 			} catch (e: any) {
 				const ms = Date.now() - start;
-				results.push(`  • ${m}: [FAILED] (${ms}ms, ${e.message})`);
+				const msg = `[ERR] Cline 端点连接失败 (${ms}ms): ${e.message}`;
+				notify(ctx, msg, "error");
+				return msg;
 			}
 		}
-		const pingMsg = results.join("\n");
-		notify(ctx, pingMsg, "info");
-		return pingMsg;
+
+		// 用户显式指定了单款模型：仅对该指定模型发送极简单次探测 (max_tokens: 1)
+		const resolvedTarget = resolveFreeModelId(target);
+		notify(ctx, `正在测试单款模型 ${resolvedTarget} 连通性...`, "info");
+		const start = Date.now();
+		try {
+			const res = await fetch(`${CLINE_BASE_URL}/chat/completions`, {
+				method: "POST",
+				headers: {
+					Authorization: `Bearer ${key}`,
+					"Content-Type": "application/json",
+					...CLINE_CLIENT_HEADERS,
+				},
+				body: JSON.stringify({
+					model: resolvedTarget,
+					messages: [{ role: "user", content: "ping" }],
+					max_tokens: 1,
+					stream: false,
+				}),
+				signal: AbortSignal.timeout(15_000),
+			});
+			const ms = Date.now() - start;
+			if (res.ok) {
+				const speedTag = ms < 800 ? "极速" : ms < 2000 ? "良好" : "稍慢";
+				const msg = `• ${resolvedTarget}: [200 OK] (${ms}ms, ${speedTag})`;
+				notify(ctx, msg, "info");
+				return msg;
+			} else {
+				const msg = `• ${resolvedTarget}: [HTTP ${res.status}] (${ms}ms)`;
+				notify(ctx, msg, "warning");
+				return msg;
+			}
+		} catch (e: any) {
+			const ms = Date.now() - start;
+			const msg = `• ${resolvedTarget}: [FAILED] (${ms}ms, ${e.message})`;
+			notify(ctx, msg, "error");
+			return msg;
+		}
 	}
 
-	// 8. /cline model <modelId>：快速切换模型
+	// 8. /cline add <modelId> [displayName]：登记并激活新的免费/隐身模型 (0 消耗)
+	if (cmd === "add") {
+		const rawTargetId = sub[1];
+		if (!rawTargetId) {
+			const err = "[ERR] 用法: /cline add <模型ID> [显示名称]\n示例: /cline add stealth/space-bunny-beta \"Cline Space Bunny Beta (Free)\"";
+			notify(ctx, err, "warning");
+			return err;
+		}
+		const resolvedId = resolveFreeModelId(rawTargetId);
+		const customName = sub.slice(2).join(" ").trim() || undefined;
+		const addedDef = addCustomClineModel(resolvedId, { name: customName });
+		const syncRes = await syncClineConfiguration({ silent: true });
+		if (pi) {
+			registerClineProviderToPi(pi, getStoredClineApiKey(), syncRes.models);
+		}
+		if ((ctx as any).modelRegistry?.refresh) {
+			await (ctx as any).modelRegistry.refresh({ providers: [CLINE_PROVIDER_ID] }).catch(() => {});
+		}
+		const msg = `[OK] 已成功登记新模型至本地模型库 (~/.pi/agent/cline-models.json)！\n• 模型ID: ${addedDef.id}\n• 名称: ${addedDef.name}\n• 上下文: ${formatTokens(addedDef.contextWindow)}\n• 深度思考: ${addedDef.reasoning ? "支持" : "否"}\n• 计费: 0免费 (零额度消耗)\n现已生效，可通过 /cline model ${addedDef.id} 或 /model 选用。`;
+		notify(ctx, msg, "info");
+		return msg;
+	}
+
+	// 9. /cline model <modelId>：快速切换模型 (支持别名与未录入新模型热登记)
 	if (cmd === "model") {
 		const targetId = sub[1];
 		if (!targetId) {
-			const err = "[ERR] 用法: /cline model <模型ID>\n示例: /cline model inclusionai/ling-3.0-flash-fin:free";
+			const err = "[ERR] 用法: /cline model <模型ID或别名>\n示例: /cline model bunny 或 /cline model stealth/space-bunny-alpha";
 			notify(ctx, err, "warning");
 			return err;
 		}
 		const resolvedId = resolveFreeModelId(targetId);
+
+		// 如果该模型尚未在当前 models.json 中，自动推断并写入 cline-models.json 实现热生效
+		const currentModels = await fetchClineModelCatalog(getStoredClineApiKey()).catch(() => Object.values(KNOWN_CLINE_FREE_MODELS));
+		if (!currentModels.some((m) => m.id === resolvedId)) {
+			addCustomClineModel(resolvedId);
+			const syncRes = await syncClineConfiguration({ silent: true });
+			if (pi) {
+				registerClineProviderToPi(pi, getStoredClineApiKey(), syncRes.models);
+			}
+			if ((ctx as any).modelRegistry?.refresh) {
+				await (ctx as any).modelRegistry.refresh({ providers: [CLINE_PROVIDER_ID] }).catch(() => {});
+			}
+		}
+
 		if (typeof (ctx as any).setModel === "function") {
 			await (ctx as any).setModel({ provider: CLINE_PROVIDER_ID, id: resolvedId });
 			const msg = `[OK] 已成功切换至 Cline 模型: ${resolvedId}`;
@@ -1085,7 +1285,7 @@ export async function handleClineCommand(
 		return warnMsg;
 	}
 
-	// 9. /cline proxy [start|stop|status] [port]：管理本地反向代理服务器
+	// 10. /cline proxy [start|stop|status] [port]：管理本地反向代理服务器
 	if (cmd === "proxy") {
 		const action = sub[1]?.toLowerCase() || "status";
 		if (action === "start") {
@@ -1121,7 +1321,7 @@ export async function handleClineCommand(
 	}
 
 	// 兜底提示
-	const fallback = `[INFO] 未知指令: ${cmd}。可用指令: /cline [key|refresh|sync|status|list|free|ping|proxy|model]`;
+	const fallback = `[INFO] 未知指令: ${cmd}。可用指令: /cline [key|refresh|sync|status|list|free|add|model|ping|proxy]`;
 	notify(ctx, fallback, "warning");
 	return fallback;
 }
