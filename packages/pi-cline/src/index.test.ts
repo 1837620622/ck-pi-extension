@@ -36,6 +36,7 @@ const globalTestDir = mkdtempSync(join(tmpdir(), "cline-global-test-"));
 const globalModelsPath = join(globalTestDir, "models.json");
 const globalAuthPath = join(globalTestDir, "auth.json");
 const globalDbPath = join(globalTestDir, "cc-switch.db");
+const globalCustomModelsPath = join(globalTestDir, "cline-models.json");
 
 writeFileSync(globalModelsPath, JSON.stringify({ providers: { relayhub: { baseUrl: "https://relay.example.com", models: [] } } }, null, 2));
 writeFileSync(globalAuthPath, JSON.stringify({ relayhub: { type: "api_key", key: "existing_key" } }, null, 2));
@@ -46,6 +47,7 @@ globalDb.close();
 process.env.TEST_PI_MODELS_PATH = globalModelsPath;
 process.env.TEST_PI_AUTH_PATH = globalAuthPath;
 process.env.TEST_CC_SWITCH_DB_PATH = globalDbPath;
+process.env.TEST_CLINE_CUSTOM_MODELS_PATH = globalCustomModelsPath;
 
 describe("Cline 模型注册表与能力推断测试", () => {
 	it("包含全部已确认的常用免费模型且计费均为 0", () => {
@@ -808,6 +810,86 @@ describe("Extension 钩子、命令与拦截测试", () => {
 		const json = await res.json();
 		assert.equal(attempts, 2);
 		assert.equal(json.choices[0].message.content, "JSON retry success");
+	});
+
+	it("installClineFetchInterceptor 在遇到包含多轮 OpenRouter processing keepalive 注释后才出现 Provider returned an empty response 时依然能正确捕获并自动重试 3 次", async () => {
+		let attempts = 0;
+		const mockGlobal: any = {
+			fetch: async () => {
+				attempts++;
+				if (attempts < 4) {
+					// 前 3 次请求：模拟真实 OpenRouter 场景，先发送 4 个 keepalive 注释包，第 5 包才出现 empty response 报错
+					const stream = new ReadableStream({
+						start(controller) {
+							const encoder = new TextEncoder();
+							controller.enqueue(encoder.encode(": OPENROUTER PROCESSING\n\n"));
+							controller.enqueue(encoder.encode(": OPENROUTER PROCESSING\n\n"));
+							controller.enqueue(encoder.encode(": OPENROUTER PROCESSING\n\n"));
+							controller.enqueue(encoder.encode(": OPENROUTER PROCESSING\n\n"));
+							controller.enqueue(
+								encoder.encode(
+									`data: {"error": {"message": "Provider returned an empty response", "code": 502}}\n\n`,
+								),
+							);
+							controller.close();
+						},
+					});
+					return new Response(stream, {
+						status: 200,
+						headers: { "Content-Type": "text/event-stream" },
+					});
+				}
+
+				// 第 4 次重试成功（第 3 次重试命中）：返回正常数据流
+				const stream = new ReadableStream({
+					start(controller) {
+						const encoder = new TextEncoder();
+						controller.enqueue(encoder.encode(": OPENROUTER PROCESSING\n\n"));
+						controller.enqueue(
+							encoder.encode(
+								`data: {"id":"chatcmpl-test","choices":[{"index":0,"delta":{"content":"Success after delayed keepalive error!"},"finish_reason":null}]}\n\n`,
+							),
+						);
+						controller.enqueue(
+							encoder.encode(
+								`data: {"id":"chatcmpl-test","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n`,
+							),
+						);
+						controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+						controller.close();
+					},
+				});
+				return new Response(stream, {
+					status: 200,
+					headers: { "Content-Type": "text/event-stream" },
+				});
+			},
+		};
+
+		installClineFetchInterceptor(mockGlobal);
+
+		const res = await mockGlobal.fetch("https://api.cline.bot/api/v1/chat/completions", {
+			method: "POST",
+			body: JSON.stringify({
+				model: "stealth/space-bunny-alpha",
+				messages: [{ role: "user", content: "hello" }],
+				stream: true,
+			}),
+		});
+
+		assert.equal(res.status, 200);
+		const reader = res.body.getReader();
+		const decoder = new TextDecoder();
+		let totalText = "";
+		while (true) {
+			const { value, done } = await reader.read();
+			if (done) break;
+			totalText += decoder.decode(value);
+		}
+
+		assert.equal(attempts, 4, "前 3 次遭遇带 processing 的 empty response 必须全部触发重试，第 4 次尝试成功");
+		assert.ok(totalText.includes("Success after delayed keepalive error!"), "最终成功接收模型内容");
+		assert.ok(!totalText.includes("供应商节点异常"), "不应向用户抛出供应商节点异常错误");
 	});
 
 	it("sanitizePiModelDefinition 严格规范化模型定义并过滤格式畸变与缺失字段", () => {

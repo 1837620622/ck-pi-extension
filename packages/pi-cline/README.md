@@ -1,7 +1,7 @@
 # ck-pi-cline
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.1.5-blue.svg?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.1.6-blue.svg?style=flat-square" alt="Version" />
   <img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License" />
   <img src="https://img.shields.io/badge/runtime-Pi%20Agent%20%3E%3D0.85.0-orange.svg?style=flat-square" alt="Pi Runtime" />
   <img src="https://img.shields.io/badge/protocol-OpenAI%20Compatible-informational.svg?style=flat-square" alt="Protocol" />
@@ -381,6 +381,14 @@ console.log(completion.choices[0].message.content);
 ---
 
 ## 六、版本变更记录 (Changelog)
+
+### v0.1.6 (2026-09-30)
+* **深度修复上游空响应重试机制 (Provider Returned an Empty Response)**：
+  * **流式预读循环穿透多轮注释包**：重构 SSE 流式深度探测器，上限提升至 30 个数据包与 64KB，彻底穿透网关初始下发的多轮 `: OPENROUTER PROCESSING\n\n` 或 keepalive 注释，精准捕捉延后出现的 `Provider returned an empty response` 错误帧；
+  * **严格限制错误匹配边界**：错误识别限定于 `data.error` 结构与标准错误提示，避免模型自身生成的正常文本（如含 "empty response" 解释）被误判；
+  * **真实指数退避重试**：设定生产环境最小退避底线（1.5s ~ 5.0s 带 Jitter 抖动），为上游算力集群提供充足故障转移窗口，严守 3 次自动同模型重试；
+  * **测试环境完全沙盒隔离**：测试环境强制注入临时配置路径，杜绝单元测试写入真实配置；
+  * **配置注入安全性规范**：集成 `sanitizePiModelDefinition` 机制，写入 `~/.pi/agent/models.json` 时严格类型校验与字段修剪，杜绝无效或畸变 JSON 注入。
 
 ### v0.1.5 (2026-09-30)
 * **供应商节点空响应自动同模型重试 3 次 (`Provider returned an empty response`)**：首创首包无损流式 Stream Peek 预读探测技术，当上游节点返回伪 200 但实际为 `Provider returned an empty response` 错误帧或 0 字节空流时，底层连接立即中断并自动进行指数退避 3 次同模型重试，彻底消除偶发性空响应弹窗；

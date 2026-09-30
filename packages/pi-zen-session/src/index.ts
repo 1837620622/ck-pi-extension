@@ -530,7 +530,7 @@ export function installZenFetchInterceptor(targetGlobal: typeof globalThis = glo
 		// 3. 透明重试循环 (解决 401/403 会话过期与 502/503/504 抖动)
 		let response: Response | undefined;
 		let lastError: unknown;
-		const maxAttempts = 3;
+		const maxAttempts = 4; // 初始 1 次 + 最多 3 次重试 = 共 4 次尝试
 
 		for (let attempt = 1; attempt <= maxAttempts; attempt++) {
 			if (init?.signal?.aborted) break;
@@ -569,9 +569,8 @@ export function installZenFetchInterceptor(targetGlobal: typeof globalThis = glo
 				if (isGatewayError) {
 					if (attempt < maxAttempts) {
 						const isTestEnv = !!process.env.TEST_PI_MODELS_PATH || process.env.NODE_ENV === "test";
-						const baseDelay = isTestEnv ? 10 : Math.min(1000 * Math.pow(2, attempt - 1), 5000);
-						const backoffMs = isTestEnv ? 10 : Math.max(10, Math.floor(Math.random() * baseDelay));
-						await sleepWithSignal(backoffMs, init?.signal);
+						const delayMs = isTestEnv ? 10 : 1500 * attempt + Math.floor(Math.random() * 500);
+						await sleepWithSignal(delayMs, init?.signal);
 						continue;
 					}
 					break;
@@ -581,7 +580,7 @@ export function installZenFetchInterceptor(targetGlobal: typeof globalThis = glo
 					break;
 				}
 
-				// HTTP 200 响应深度探测：重点排查上游伪成功错误（如 Content-Type 为 SSE，但首包即为 Provider returned an empty response 或空 stream）
+				// HTTP 200 响应深度探测：重点排查上游伪成功错误（如 Content-Type 为 SSE，但前序包为 keepalive 注释并在数包后出现 Provider returned an empty response 或空 stream）
 				const cType = (response.headers.get("content-type") || "").toLowerCase();
 				if (cType.includes("text/event-stream") && response.body) {
 					const reader = response.body.getReader();
@@ -589,32 +588,67 @@ export function installZenFetchInterceptor(targetGlobal: typeof globalThis = glo
 					const initialChunks: Uint8Array[] = [];
 					let peekedText = "";
 					let isEmptyResponseError = false;
+					const maxPeekChunks = 30; // 穿透多轮 OpenRouter processing 注释包（通常 1~5 包），绝不提前退出
+					const maxPeekBytes = 64 * 1024; // 64KB 防爆上限
+					let peekedBytes = 0;
 
 					try {
-						for (let i = 0; i < 3; i++) {
+						while (initialChunks.length < maxPeekChunks && peekedBytes < maxPeekBytes) {
+							if (init?.signal?.aborted) break;
 							const { value, done } = await reader.read();
 							if (done) {
-								if (peekedText.trim().length === 0 || !peekedText.includes('"choices"')) {
+								if (!peekedText.includes('"choices"') || peekedText.trim().length === 0) {
 									isEmptyResponseError = true;
 								}
 								break;
 							}
 							if (value) {
 								initialChunks.push(value);
+								peekedBytes += value.byteLength;
 								peekedText += decoder.decode(value, { stream: true });
 
-								if (
-									peekedText.includes("Provider returned an empty response") ||
-									(peekedText.includes('"error"') && peekedText.includes("empty response"))
-								) {
+								let hasErrorFrame = false;
+								let hasValidChoiceChunk = false;
+
+								// 针对 OpenRouter / 供应商明确的报错特征
+								if (peekedText.includes("Provider returned an empty response")) {
+									hasErrorFrame = true;
+								}
+
+								const lines = peekedText.split("\n");
+								for (const line of lines) {
+									const trimmed = line.trim();
+									if (trimmed.startsWith("data: ") && trimmed !== "data: [DONE]") {
+										try {
+											const data = JSON.parse(trimmed.slice(6));
+											if (data.error && (!data.choices || data.choices.length === 0)) {
+												hasErrorFrame = true;
+												break;
+											}
+											if (Array.isArray(data.choices) && data.choices.length > 0) {
+												const c = data.choices[0];
+												if (c?.delta || c?.message || c?.text || c?.finish_reason) {
+													hasValidChoiceChunk = true;
+												}
+											}
+										} catch {}
+									} else if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+										try {
+											const data = JSON.parse(trimmed);
+											if (data.error && (!data.choices || data.choices.length === 0)) {
+												hasErrorFrame = true;
+												break;
+											}
+										} catch {}
+									}
+								}
+
+								if (hasErrorFrame) {
 									isEmptyResponseError = true;
 									break;
 								}
 
-								if (
-									peekedText.includes('"choices"') &&
-									(peekedText.includes('"delta"') || peekedText.includes('"content"') || peekedText.includes('"tool_calls"'))
-								) {
+								if (hasValidChoiceChunk) {
 									break;
 								}
 							}
@@ -626,9 +660,8 @@ export function installZenFetchInterceptor(targetGlobal: typeof globalThis = glo
 					if (isEmptyResponseError && attempt < maxAttempts) {
 						await reader.cancel().catch(() => {});
 						const isTestEnv = !!process.env.TEST_PI_MODELS_PATH || process.env.NODE_ENV === "test";
-						const baseDelay = isTestEnv ? 10 : Math.min(1000 * Math.pow(2, attempt - 1), 5000);
-						const backoffMs = isTestEnv ? 10 : Math.max(10, Math.floor(Math.random() * baseDelay));
-						await sleepWithSignal(backoffMs, init?.signal);
+						const delayMs = isTestEnv ? 10 : 1500 * attempt + Math.floor(Math.random() * 500);
+						await sleepWithSignal(delayMs, init?.signal);
 						continue;
 					}
 

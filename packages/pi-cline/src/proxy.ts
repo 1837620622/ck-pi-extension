@@ -434,12 +434,131 @@ export async function startClineProxyServer(
 								signal: abortController.signal,
 							});
 							if (upstreamRes.ok || (upstreamRes.status < 500 && upstreamRes.status !== 429)) {
+								// 若返回 SSE 流，深入探测是否存在空响应异常
+								const cType = (upstreamRes.headers.get("content-type") || "").toLowerCase();
+								if (cType.includes("text/event-stream") && upstreamRes.body) {
+									const reader = upstreamRes.body.getReader();
+									const decoder = new TextDecoder();
+									const initialChunks: Uint8Array[] = [];
+									let peekedText = "";
+									let isEmptyResponseError = false;
+									const maxPeekChunks = 30;
+									const maxPeekBytes = 64 * 1024;
+									let peekedBytes = 0;
+
+									try {
+										while (initialChunks.length < maxPeekChunks && peekedBytes < maxPeekBytes) {
+											if (abortController.signal.aborted) break;
+											const { value, done } = await reader.read();
+											if (done) {
+												if (!peekedText.includes('"choices"') || peekedText.trim().length === 0) {
+													isEmptyResponseError = true;
+												}
+												break;
+											}
+											if (value) {
+												initialChunks.push(value);
+												peekedBytes += value.byteLength;
+												peekedText += decoder.decode(value, { stream: true });
+
+												let hasErrorFrame = false;
+												let hasValidChoiceChunk = false;
+
+												// 针对 OpenRouter 明确的报错特征
+												if (peekedText.includes("Provider returned an empty response")) {
+													hasErrorFrame = true;
+												}
+
+												const lines = peekedText.split("\n");
+												for (const line of lines) {
+													const trimmed = line.trim();
+													if (trimmed.startsWith("data: ") && trimmed !== "data: [DONE]") {
+														try {
+															const data = JSON.parse(trimmed.slice(6));
+															if (data.error && (!data.choices || data.choices.length === 0)) {
+																hasErrorFrame = true;
+																break;
+															}
+															if (Array.isArray(data.choices) && data.choices.length > 0) {
+																const c = data.choices[0];
+																if (c?.delta || c?.message || c?.text || c?.finish_reason) {
+																	hasValidChoiceChunk = true;
+																}
+															}
+														} catch {}
+													} else if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+														try {
+															const data = JSON.parse(trimmed);
+															if (data.error && (!data.choices || data.choices.length === 0)) {
+																hasErrorFrame = true;
+																break;
+															}
+														} catch {}
+													}
+												}
+
+												if (hasErrorFrame) {
+													isEmptyResponseError = true;
+													break;
+												}
+
+												if (hasValidChoiceChunk) {
+													break;
+												}
+											}
+										}
+									} catch {
+										isEmptyResponseError = true;
+									}
+
+									if (isEmptyResponseError && attempt < maxProxyRetries) {
+										await reader.cancel().catch(() => {});
+										const isTestEnv = !!process.env.TEST_PI_MODELS_PATH || process.env.NODE_ENV === "test";
+										const delayMs = isTestEnv ? 10 : 1500 * (attempt + 1) + Math.floor(Math.random() * 500);
+										await sleepWithSignal(delayMs, abortController.signal);
+										continue;
+									}
+
+									let readerConsumed = false;
+									const reconstructedStream = new ReadableStream<Uint8Array>({
+										start(controller) {
+											for (const chunk of initialChunks) {
+												controller.enqueue(chunk);
+											}
+										},
+										async pull(controller) {
+											if (readerConsumed) {
+												controller.close();
+												return;
+											}
+											try {
+												const { value, done } = await reader.read();
+												if (done) {
+													readerConsumed = true;
+													controller.close();
+												} else if (value) {
+													controller.enqueue(value);
+												}
+											} catch (streamErr) {
+												controller.error(streamErr);
+											}
+										},
+										cancel(reason) {
+											return reader.cancel(reason);
+										},
+									});
+
+									upstreamRes = new Response(reconstructedStream, {
+										status: upstreamRes.status,
+										statusText: upstreamRes.statusText,
+										headers: upstreamRes.headers,
+									});
+								}
 								break;
 							}
 							if (attempt < maxProxyRetries) {
 								const isTestEnv = !!process.env.TEST_PI_MODELS_PATH || process.env.NODE_ENV === "test";
-								const baseDelay = isTestEnv ? 10 : Math.min(1000 * Math.pow(2, attempt), 5000);
-								const delayMs = isTestEnv ? 10 : Math.max(10, Math.floor(Math.random() * baseDelay));
+								const delayMs = isTestEnv ? 10 : 1500 * (attempt + 1) + Math.floor(Math.random() * 500);
 								await sleepWithSignal(delayMs, abortController.signal);
 							}
 						} catch (netErr: any) {
@@ -448,8 +567,7 @@ export async function startClineProxyServer(
 							}
 							if (attempt < maxProxyRetries) {
 								const isTestEnv = !!process.env.TEST_PI_MODELS_PATH || process.env.NODE_ENV === "test";
-								const baseDelay = isTestEnv ? 10 : Math.min(1000 * Math.pow(2, attempt), 5000);
-								const delayMs = isTestEnv ? 10 : Math.max(10, Math.floor(Math.random() * baseDelay));
+								const delayMs = isTestEnv ? 10 : 1500 * (attempt + 1) + Math.floor(Math.random() * 500);
 								await sleepWithSignal(delayMs, abortController.signal);
 							} else {
 								errorCounter++;

@@ -56,6 +56,13 @@ GitHub 源安装：`pi install git:github.com/1837620622/ck-pi-extension`。
 
 ## 更新日志
 
+- `ck-pi-cline 0.1.6` / `ck-pi-zen-session 0.1.21`：
+  - **深度修复上游空响应重试机制 (`Provider returned an empty response`)**：
+    - **流式深度探测穿透多轮注释包**：SSE 流式预读上限提升至 30 个数据包与 64KB，彻底穿透网关初始下发的 3~5 轮 `: OPENROUTER PROCESSING\n\n` 或 keepalive 注释，精准捕捉延后出现的 `Provider returned an empty response` 错误帧；
+    - **严格限定错误匹配边界**：错误识别限定于 `data.error` 结构与标准错误提示，避免模型自身生成的正常文本（如含 "empty response" 解释）被误判；
+    - **真实指数退避重试**：设定生产环境最小退避底线（1.5s ~ 5.0s 带 Jitter 抖动），为上游算力集群提供充足故障转移窗口，严守 3 次自动同模型重试；
+    - **测试环境完全沙盒隔离**：测试环境强制注入临时配置路径，杜绝单元测试写入真实配置；
+    - **配置注入安全性规范**：集成 `sanitizePiModelDefinition` 机制，写入 `~/.pi/agent/models.json` 时严格类型校验与字段修剪，杜绝无效或畸变 JSON 注入。
 - `ck-pi-cline 0.1.5` / `ck-pi-zen-session 0.1.20`：
   - **供应商节点空响应自动同模型重试 3 次 (`Provider returned an empty response`)**：首创无损首包 Stream Peek 预读探测，当上游节点返回伪 200 但首包为 `empty response` 错误帧或 0 字节空流时，立即断开并自动进行指数退避 3 次同模型重试，彻底消除偶发性空响应弹窗；
   - **Pi 运行态与 `models.json` 严格 JSON 校验与防畸变过滤 (`sanitizePiModelDefinition`)**：严格校验 `contextWindow`、`maxTokens`、`input`、`cost` 四维参数，非法值自动回退安全默认值，清洗根级历史残留键，杜绝注入畸变或非法 JSON；

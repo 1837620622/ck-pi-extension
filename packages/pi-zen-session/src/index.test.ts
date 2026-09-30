@@ -8,6 +8,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
+
+process.env.NODE_ENV = "test";
 import {
 	KNOWN_ZEN_FREE_MODELS,
 	resolveModelDefinitions,

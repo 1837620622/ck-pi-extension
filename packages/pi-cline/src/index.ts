@@ -431,8 +431,7 @@ export function installClineFetchInterceptor(targetGlobal: typeof globalThis = g
 				if (isGatewayError) {
 					if (attempt < maxRetries) {
 						const isTestEnv = !!process.env.TEST_PI_MODELS_PATH || process.env.NODE_ENV === "test";
-						const baseDelay = isTestEnv ? 10 : Math.min(1000 * Math.pow(2, attempt), 5000);
-						const delayMs = isTestEnv ? 10 : Math.max(10, Math.floor(Math.random() * baseDelay));
+						const delayMs = isTestEnv ? 10 : 1500 * (attempt + 1) + Math.floor(Math.random() * 500);
 						await sleepWithSignal(delayMs, newInit.signal);
 						continue;
 					}
@@ -444,7 +443,7 @@ export function installClineFetchInterceptor(targetGlobal: typeof globalThis = g
 					break;
 				}
 
-				// 2. HTTP 200 响应深度探测：重点排查上游伪成功错误（如 Content-Type 为 SSE 或 JSON，但首包即为 Provider returned an empty response 或空 stream）
+				// 2. HTTP 200 响应深度探测：重点排查上游伪成功错误（如 Content-Type 为 SSE 或 JSON，但前序包为 keepalive 注释并在数包后出现 Provider returned an empty response 或空 stream）
 				const cType = (res.headers.get("content-type") || "").toLowerCase();
 
 				if (targetUrl.includes("chat/completions") && cType.includes("text/event-stream") && res.body) {
@@ -453,35 +452,70 @@ export function installClineFetchInterceptor(targetGlobal: typeof globalThis = g
 					const initialChunks: Uint8Array[] = [];
 					let peekedText = "";
 					let isEmptyResponseError = false;
+					const maxPeekChunks = 30; // 穿透多轮 OpenRouter processing 注释包（通常 1~5 包），绝不提前退出
+					const maxPeekBytes = 64 * 1024; // 64KB 防爆上限
+					let peekedBytes = 0;
 
 					try {
-						// 探测首 1~3 个数据包，检查是否包含节点异常或空响应
-						for (let i = 0; i < 3; i++) {
+						while (initialChunks.length < maxPeekChunks && peekedBytes < maxPeekBytes) {
+							if (newInit.signal?.aborted) break;
 							const { value, done } = await reader.read();
 							if (done) {
-								if (peekedText.trim().length === 0 || !peekedText.includes('"choices"')) {
+								if (!peekedText.includes('"choices"') || peekedText.trim().length === 0) {
 									isEmptyResponseError = true;
 								}
 								break;
 							}
 							if (value) {
 								initialChunks.push(value);
+								peekedBytes += value.byteLength;
 								peekedText += decoder.decode(value, { stream: true });
 
-								// 匹配到 Provider returned an empty response 或 upstream empty response 报错
-								if (
-									peekedText.includes("Provider returned an empty response") ||
-									(peekedText.includes('"error"') && peekedText.includes("empty response"))
-								) {
+								let hasErrorFrame = false;
+								let hasValidChoiceChunk = false;
+
+								// 针对 OpenRouter 明确的报错特征
+								if (peekedText.includes("Provider returned an empty response")) {
+									hasErrorFrame = true;
+								}
+
+								const lines = peekedText.split("\n");
+								for (const line of lines) {
+									const trimmed = line.trim();
+									if (trimmed.startsWith("data: ") && trimmed !== "data: [DONE]") {
+										try {
+											const data = JSON.parse(trimmed.slice(6));
+											if (data.error && (!data.choices || data.choices.length === 0)) {
+												hasErrorFrame = true;
+												break;
+											}
+											if (Array.isArray(data.choices) && data.choices.length > 0) {
+												const c = data.choices[0];
+												if (c?.delta || c?.message || c?.text || c?.finish_reason) {
+													hasValidChoiceChunk = true;
+												}
+											}
+										} catch {
+											// 忽略尚未完全拼齐的分片 JSON
+										}
+									} else if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+										try {
+											const data = JSON.parse(trimmed);
+											if (data.error && (!data.choices || data.choices.length === 0)) {
+												hasErrorFrame = true;
+												break;
+											}
+										} catch {}
+									}
+								}
+
+								if (hasErrorFrame) {
 									isEmptyResponseError = true;
 									break;
 								}
 
-								// 若已经探测到正常的 choices 输出，说明节点正常，无需继续深查
-								if (
-									peekedText.includes('"choices"') &&
-									(peekedText.includes('"delta"') || peekedText.includes('"content"') || peekedText.includes('"tool_calls"'))
-								) {
+								// 若已经探测到正常的 choices 输出，说明节点已正常吐出 token，无需继续深查
+								if (hasValidChoiceChunk) {
 									break;
 								}
 							}
@@ -494,10 +528,9 @@ export function installClineFetchInterceptor(targetGlobal: typeof globalThis = g
 					if (isEmptyResponseError && attempt < maxRetries) {
 						await reader.cancel().catch(() => {});
 						const isTestEnv = !!process.env.TEST_PI_MODELS_PATH || process.env.NODE_ENV === "test";
-						const baseDelay = isTestEnv ? 10 : Math.min(1000 * Math.pow(2, attempt), 5000);
-						const delayMs = isTestEnv ? 10 : Math.max(10, Math.floor(Math.random() * baseDelay));
+						const delayMs = isTestEnv ? 10 : 1500 * (attempt + 1) + Math.floor(Math.random() * 500);
 						await sleepWithSignal(delayMs, newInit.signal);
-						continue; // 自动重试！
+						continue; // 自动同模型重试！
 					}
 
 					// 重构流：将预读的 initialChunks 与后续流顺畅串联
@@ -547,10 +580,13 @@ export function installClineFetchInterceptor(targetGlobal: typeof globalThis = g
 					let isEmptyResponseError = false;
 					try {
 						const parsed = JSON.parse(jsonText);
-						const errMsg = parsed?.error?.message || parsed?.data?.error?.message || "";
+						const errMsg = (parsed?.error?.message || parsed?.data?.error?.message || "").toLowerCase();
 						if (
-							typeof errMsg === "string" &&
-							(errMsg.includes("Provider returned an empty response") || errMsg.toLowerCase().includes("empty response"))
+							(parsed?.error && (!parsed?.choices || parsed.choices.length === 0)) ||
+							errMsg.includes("provider returned an empty response") ||
+							errMsg.includes("empty response") ||
+							errMsg.includes("all providers failed") ||
+							errMsg.includes("no available providers")
 						) {
 							isEmptyResponseError = true;
 						}
@@ -560,8 +596,7 @@ export function installClineFetchInterceptor(targetGlobal: typeof globalThis = g
 
 					if (isEmptyResponseError && attempt < maxRetries) {
 						const isTestEnv = !!process.env.TEST_PI_MODELS_PATH || process.env.NODE_ENV === "test";
-						const baseDelay = isTestEnv ? 10 : Math.min(1000 * Math.pow(2, attempt), 5000);
-						const delayMs = isTestEnv ? 10 : Math.max(10, Math.floor(Math.random() * baseDelay));
+						const delayMs = isTestEnv ? 10 : 1500 * (attempt + 1) + Math.floor(Math.random() * 500);
 						await sleepWithSignal(delayMs, newInit.signal);
 						continue; // 自动重试！
 					}
@@ -582,8 +617,7 @@ export function installClineFetchInterceptor(targetGlobal: typeof globalThis = g
 				}
 				if (attempt < maxRetries) {
 					const isTestEnv = !!process.env.TEST_PI_MODELS_PATH || process.env.NODE_ENV === "test";
-					const baseDelay = isTestEnv ? 10 : Math.min(1000 * Math.pow(2, attempt), 5000);
-					const delayMs = isTestEnv ? 10 : Math.max(10, Math.floor(Math.random() * baseDelay));
+					const delayMs = isTestEnv ? 10 : 1500 * (attempt + 1) + Math.floor(Math.random() * 500);
 					await sleepWithSignal(delayMs, newInit.signal);
 				} else {
 					throw err;
