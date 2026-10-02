@@ -754,12 +754,27 @@ export function installClineFetchInterceptor(targetGlobal: typeof globalThis = g
 						}
 					} catch (streamErr) {
 						await upstreamReader.cancel(streamErr).catch(() => {});
-						// 防突发中断：若已输出有效内容，遭遇网络抖动时优雅以 [DONE] 收尾，保全用户已有生成内容
-						if (hasSentAnyContent) {
+						const isCallerAborted = !!newInit.signal?.aborted;
+						// 防突发中断：若非调用端主动取消且已输出有效内容，优雅追加截断通知与合法终止帧，保全成果并防止客户端崩溃
+						if (!isCallerAborted && hasSentAnyContent) {
 							if (buffer.trim()) {
 								controller.enqueue(encoder.encode(buffer + "\n"));
 								buffer = "";
 							}
+							const noticeChunk = {
+								id: `trunc-${Date.now()}`,
+								object: "chat.completion.chunk",
+								created: Math.floor(Date.now() / 1000),
+								model: targetModelId,
+								choices: [
+									{
+										index: 0,
+										delta: { content: "\n\n⚠️ [网络传输中途异常中断，已自动保全当前已生成的全部内容。您可以输入“继续”以接续输出]" },
+										finish_reason: "stop",
+									},
+								],
+							};
+							controller.enqueue(encoder.encode(`data: ${JSON.stringify(noticeChunk)}\n\n`));
 							controller.enqueue(encoder.encode("data: [DONE]\n\n"));
 							controller.close();
 						} else {

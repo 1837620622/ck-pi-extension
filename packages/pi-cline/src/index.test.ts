@@ -1002,6 +1002,8 @@ describe("Extension 钩子、命令与拦截测试", () => {
 
 		assert.ok(totalText.includes("function solveProblem() {"), "保留已生成的代码片段");
 		assert.ok(totalText.includes("return 42;"), "保留后续生成的代码片段");
+		assert.ok(totalText.includes("网络传输中途异常中断"), "包含友好且醒目的中断提示，告知用户接续");
+		assert.ok(totalText.includes('"finish_reason":"stop"'), "包含合法完备的 finish_reason 闭合帧，防止 SDK 挂起");
 		assert.ok(totalText.includes("data: [DONE]"), "优雅追加 [DONE] 结束标志，避免客户端崩溃");
 	});
 });

@@ -414,7 +414,9 @@ export async function startClineProxyServer(
 					const abortController = new AbortController();
 					let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
 
+					let isClientAborted = false;
 					const onClientAbort = () => {
+						isClientAborted = true;
 						abortController.abort();
 						reader?.cancel("Client disconnected").catch(() => {});
 					};
@@ -720,9 +722,23 @@ export async function startClineProxyServer(
 									res.writeHead(502, { "Content-Type": "application/json" });
 									res.end(JSON.stringify({ error: { message: "Stream reading failed" } }));
 								} else {
-									// 防突发网络中断：若已输出有效内容，优雅以 [DONE] 结束流，保留已生成的全部代码
-									if (hasSentAnyContent && !res.writableEnded) {
+									// 防突发网络中断：若非客户端主动取消且已输出有效内容，优雅追加截断通知与合法终止帧，保全成果并防止客户端崩溃或误判
+									if (!isClientAborted && hasSentAnyContent && !res.writableEnded) {
 										try {
+											const noticeChunk = {
+												id: `trunc-${Date.now()}`,
+												object: "chat.completion.chunk",
+												created: Math.floor(Date.now() / 1000),
+												model: modelId,
+												choices: [
+													{
+														index: 0,
+														delta: { content: "\n\n⚠️ [网络传输中途异常中断，已自动保全当前已生成的全部内容。您可以输入“继续”以接续输出]" },
+														finish_reason: "stop",
+													},
+												],
+											};
+											res.write(`data: ${JSON.stringify(noticeChunk)}\n\n`);
 											res.write("data: [DONE]\n\n");
 										} catch {}
 										res.end();

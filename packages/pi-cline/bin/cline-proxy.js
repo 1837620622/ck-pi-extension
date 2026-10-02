@@ -718,7 +718,9 @@ async function startClineProxyServer(options = {}) {
           const isStreaming = payload.stream === true;
           const abortController = new AbortController();
           let reader;
+          let isClientAborted = false;
           const onClientAbort = () => {
+            isClientAborted = true;
             abortController.abort();
             reader?.cancel("Client disconnected").catch(() => {
             });
@@ -1014,8 +1016,24 @@ async function startClineProxyServer(options = {}) {
                   res.writeHead(502, { "Content-Type": "application/json" });
                   res.end(JSON.stringify({ error: { message: "Stream reading failed" } }));
                 } else {
-                  if (hasSentAnyContent && !res.writableEnded) {
+                  if (!isClientAborted && hasSentAnyContent && !res.writableEnded) {
                     try {
+                      const noticeChunk = {
+                        id: `trunc-${Date.now()}`,
+                        object: "chat.completion.chunk",
+                        created: Math.floor(Date.now() / 1e3),
+                        model: modelId,
+                        choices: [
+                          {
+                            index: 0,
+                            delta: { content: "\n\n\u26A0\uFE0F [\u7F51\u7EDC\u4F20\u8F93\u4E2D\u9014\u5F02\u5E38\u4E2D\u65AD\uFF0C\u5DF2\u81EA\u52A8\u4FDD\u5168\u5F53\u524D\u5DF2\u751F\u6210\u7684\u5168\u90E8\u5185\u5BB9\u3002\u60A8\u53EF\u4EE5\u8F93\u5165\u201C\u7EE7\u7EED\u201D\u4EE5\u63A5\u7EED\u8F93\u51FA]" },
+                            finish_reason: "stop"
+                          }
+                        ]
+                      };
+                      res.write(`data: ${JSON.stringify(noticeChunk)}
+
+`);
                       res.write("data: [DONE]\n\n");
                     } catch {
                     }
