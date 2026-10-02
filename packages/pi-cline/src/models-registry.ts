@@ -290,6 +290,16 @@ export const KNOWN_CLINE_FREE_MODELS: Record<string, ClineModelDefinition> = {
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 		isFree: true,
 	},
+	"apodex/apodex-1.1-mini:free": {
+		id: "apodex/apodex-1.1-mini:free",
+		name: "Apodex 1.1 Mini (Free) (Cline Free)",
+		contextWindow: 131072,
+		maxTokens: 32768,
+		reasoning: false,
+		input: ["text"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		isFree: true,
+	},
 };
 
 /**
@@ -361,23 +371,35 @@ export function resolveFreeModelId(rawId?: string): string {
 	if (lower === "lightning") {
 		return "nvidia/nemotron-3.5-lightning:free";
 	}
-	if (lower === "laguna") {
+	if (lower === "laguna" || lower === "laguna-s" || lower === "laguna-s-2.1") {
 		return "poolside/laguna-s-2.1:free";
 	}
-	if (lower === "north") {
+	if (lower === "xs" || lower === "laguna-xs" || lower === "laguna-xs-2.1") {
+		return "poolside/laguna-xs-2.1:free";
+	}
+	if (lower === "north" || lower === "north-mini-code") {
 		return "cohere/north-mini-code:free";
 	}
-	if (lower === "gemma" || lower === "gemma-free") {
+	if (lower === "gemma" || lower === "gemma-free" || lower === "gemma-26b") {
 		return "google/gemma-4-26b-a4b-it:free";
+	}
+	if (lower === "gemma-31b") {
+		return "google/gemma-4-31b-it:free";
 	}
 	if (lower === "inkling") {
 		return "thinkingmachines/inkling:free";
 	}
-	if (lower === "note") {
+	if (lower === "inkling-small") {
+		return "thinkingmachines/inkling-small:free";
+	}
+	if (lower === "note" || lower === "dots-note") {
 		return "dots-studio/dots-3-note-preview:free";
 	}
-	if (lower === "lfm") {
+	if (lower === "lfm" || lower === "lfm-2.5") {
 		return "liquid/lfm-2.5-2.6b:free";
+	}
+	if (lower === "apodex" || lower === "apodex-mini" || lower === "apodex-1.1-mini") {
+		return "apodex/apodex-1.1-mini:free";
 	}
 
 	// 3. 若直接匹配已知免费或隐身模型
@@ -414,6 +436,7 @@ export function isClineFreeModel(rawId: string): boolean {
 		lower === "openrouter/free" ||
 		lower === "openrouter/fusion" ||
 		lower === "openrouter/pareto-code" ||
+		lower === "deepseek/deepseek-v4.1-flash" ||
 		lower.includes("space-bunny")
 	);
 }

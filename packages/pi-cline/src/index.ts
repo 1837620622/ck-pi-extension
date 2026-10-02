@@ -21,6 +21,7 @@ import {
 	formatThinkingSummary,
 	formatTokens,
 	inferClineModelCapabilities,
+	isClineFreeModel,
 	KNOWN_CLINE_FREE_MODELS,
 	resolveFreeModelId,
 	sanitizePiModelDefinition,
@@ -36,6 +37,7 @@ export {
 	formatThinkingSummary,
 	formatTokens,
 	inferClineModelCapabilities,
+	isClineFreeModel,
 	KNOWN_CLINE_FREE_MODELS,
 	resolveFreeModelId,
 	sanitizePiModelDefinition,
@@ -99,6 +101,11 @@ export function isClineModelTarget(
 		return true;
 	}
 
+	// 严格隔离：若明确指定了非 cline 供应商，绝不干涉
+	if (prov && !prov.includes("cline")) {
+		return false;
+	}
+
 	const id = (model?.id || payloadModel || "").toLowerCase();
 	if (
 		id.startsWith("inclusionai/") ||
@@ -108,9 +115,16 @@ export function isClineModelTarget(
 		id.startsWith("nvidia/nemotron") ||
 		id.startsWith("cohere/north") ||
 		id.startsWith("liquid/lfm") ||
+		id.startsWith("deepseek/") ||
+		id.startsWith("stealth/") ||
+		id.startsWith("google/gemma") ||
+		id.startsWith("qwen/") ||
+		id.startsWith("thinkingmachines/") ||
+		id.startsWith("apodex/") ||
 		id === "openrouter/free" ||
 		id === "openrouter/fusion" ||
-		id === "openrouter/pareto-code"
+		id === "openrouter/pareto-code" ||
+		isClineFreeModel(id)
 	) {
 		return true;
 	}
@@ -344,7 +358,12 @@ export function installClineFetchInterceptor(targetGlobal: typeof globalThis = g
 			return originalFetch.call(this, input, init);
 		}
 
-		if (!targetUrl.includes("api.cline.bot/api/v1") && !targetUrl.includes(":4116/v1")) {
+		const proxyStatus = getClineProxyStatus();
+		const isLocalProxy =
+			(proxyStatus.running && targetUrl.includes(`:${proxyStatus.port}/v1`)) ||
+			targetUrl.includes(":4116/v1");
+
+		if (!targetUrl.includes("api.cline.bot/api/v1") && !isLocalProxy) {
 			return originalFetch.call(this, input, init);
 		}
 
@@ -646,90 +665,114 @@ export function installClineFetchInterceptor(targetGlobal: typeof globalThis = g
 				}
 			}
 
-			const transform = new TransformStream({
-				transform(chunk, controller) {
-					buffer += decoder.decode(chunk, { stream: true });
-					if (buffer.length > 2 * 1024 * 1024) {
-						buffer = "";
-						controller.error(new Error("SSE stream line exceeded maximum allowable buffer size (2MB)"));
-						return;
-					}
-					const lines = buffer.split("\n");
-					buffer = lines.pop() || "";
-					for (const line of lines) {
-						const trimmed = line.trim();
-						if (trimmed.startsWith("data: ") && trimmed !== "data: [DONE]") {
-							try {
-								const data = JSON.parse(trimmed.slice(6));
-								// 拦截并合成上游隐式错误帧（如 HTTP 200 但 choices: [] 且带有 error 描述）
-								if (data.error && (!data.choices || data.choices.length === 0)) {
-									const errMsg = data.error.message || "Upstream provider error";
-									const synthetic = {
-										id: data.id || `err-${Date.now()}`,
-										object: "chat.completion.chunk",
-										created: Math.floor(Date.now() / 1000),
-										model: targetModelId,
-										choices: [
-											{
-												index: 0,
-												delta: { content: `\n\n[!][Cline 供应商节点异常: ${errMsg}，请尝试重试或切换其他免费模型]` },
-												finish_reason: "stop",
-											},
-										],
-									};
-									controller.enqueue(encoder.encode(`data: ${JSON.stringify(synthetic)}\n\n`));
-									hasSentAnyContent = true;
-									continue;
-								}
+			const upstreamReader = res.body.getReader();
+			const guardedStream = new ReadableStream<Uint8Array>({
+				async pull(controller) {
+					try {
+						const { done, value } = await upstreamReader.read();
+						if (done) {
+							// 核心防护：若整个流结束既无 content 也无 tool_calls，注入保底输出，彻底杜绝 Pi 的 model output error
+							if (!hasSentAnyContent) {
+								const emptyGuard = {
+									id: `guard-${Date.now()}`,
+									object: "chat.completion.chunk",
+									created: Math.floor(Date.now() / 1000),
+									model: targetModelId,
+									choices: [
+										{
+											index: 0,
+											delta: { content: "[!][当前模型节点暂时无输出，请重试或使用 /cline free 切换高可用模型]" },
+											finish_reason: "stop",
+										},
+									],
+								};
+								controller.enqueue(encoder.encode(`data: ${JSON.stringify(emptyGuard)}\n\n`));
+							}
+							if (buffer.trim()) {
+								controller.enqueue(encoder.encode(buffer + "\n"));
+								buffer = "";
+							}
+							controller.close();
+							return;
+						}
 
-								const choice = data.choices?.[0];
-								const rawReasoning = choice?.delta?.reasoning_content || choice?.delta?.reasoning || (choice?.delta as any)?.thinking;
+						if (value) {
+							buffer += decoder.decode(value, { stream: true });
+							if (buffer.length > 2 * 1024 * 1024) {
+								buffer = "";
+								controller.error(new Error("SSE stream line exceeded maximum allowable buffer size (2MB)"));
+								return;
+							}
+							const lines = buffer.split("\n");
+							buffer = lines.pop() || "";
+							for (const line of lines) {
+								const trimmed = line.trim();
+								if (trimmed.startsWith("data: ") && trimmed !== "data: [DONE]") {
+									try {
+										const data = JSON.parse(trimmed.slice(6));
+										// 拦截并合成上游隐式错误帧（如 HTTP 200 但 choices: [] 且带有 error 描述）
+										if (data.error && (!data.choices || data.choices.length === 0)) {
+											const errMsg = data.error.message || "Upstream provider error";
+											const synthetic = {
+												id: data.id || `err-${Date.now()}`,
+												object: "chat.completion.chunk",
+												created: Math.floor(Date.now() / 1000),
+												model: targetModelId,
+												choices: [
+													{
+														index: 0,
+														delta: { content: `\n\n[!][Cline 供应商节点异常: ${errMsg}，请尝试重试或切换其他免费模型]` },
+														finish_reason: "stop",
+													},
+												],
+											};
+											controller.enqueue(encoder.encode(`data: ${JSON.stringify(synthetic)}\n\n`));
+											hasSentAnyContent = true;
+											continue;
+										}
 
-								if (choice?.delta?.content || (Array.isArray(choice?.delta?.tool_calls) && choice.delta.tool_calls.length > 0) || rawReasoning) {
-									hasSentAnyContent = true;
-								}
+										const choice = data.choices?.[0];
+										const rawReasoning = choice?.delta?.reasoning_content || choice?.delta?.reasoning || (choice?.delta as any)?.thinking;
 
-								// 规范化思考过程：全量保障 CoT 完整转发（双向写入 reasoning 与 reasoning_content）
-								if (rawReasoning && choice?.delta) {
-									choice.delta.reasoning_content = rawReasoning;
-									choice.delta.reasoning = rawReasoning;
-									controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
-									continue;
+										if (choice?.delta?.content || (Array.isArray(choice?.delta?.tool_calls) && choice.delta.tool_calls.length > 0) || rawReasoning) {
+											hasSentAnyContent = true;
+										}
+
+										// 规范化思考过程：全量保障 CoT 完整转发（双向写入 reasoning 与 reasoning_content）
+										if (rawReasoning && choice?.delta) {
+											choice.delta.reasoning_content = rawReasoning;
+											choice.delta.reasoning = rawReasoning;
+											controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+											continue;
+										}
+									} catch {
+										// 忽略坏帧
+									}
 								}
-							} catch {
-								// 忽略坏帧
+								controller.enqueue(encoder.encode(line + "\n"));
 							}
 						}
-						controller.enqueue(encoder.encode(line + "\n"));
+					} catch (streamErr) {
+						await upstreamReader.cancel(streamErr).catch(() => {});
+						// 防突发中断：若已输出有效内容，遭遇网络抖动时优雅以 [DONE] 收尾，保全用户已有生成内容
+						if (hasSentAnyContent) {
+							if (buffer.trim()) {
+								controller.enqueue(encoder.encode(buffer + "\n"));
+								buffer = "";
+							}
+							controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+							controller.close();
+						} else {
+							controller.error(streamErr);
+						}
 					}
 				},
-				flush(controller) {
-					const remaining = decoder.decode();
-					if (remaining) buffer += remaining;
-					if (buffer.trim()) {
-						controller.enqueue(encoder.encode(buffer + "\n"));
-					}
-					// 核心防护：若整个流结束既无 content 也无 tool_calls，注入保底输出，彻底杜绝 Pi 的 model output error
-					if (!hasSentAnyContent) {
-						const emptyGuard = {
-							id: `guard-${Date.now()}`,
-							object: "chat.completion.chunk",
-							created: Math.floor(Date.now() / 1000),
-							model: targetModelId,
-							choices: [
-								{
-									index: 0,
-									delta: { content: "[!][当前模型节点暂时无输出，请重试或使用 /cline free 切换高可用模型]" },
-									finish_reason: "stop",
-								},
-							],
-						};
-						controller.enqueue(encoder.encode(`data: ${JSON.stringify(emptyGuard)}\n\n`));
-					}
+				cancel(reason) {
+					return upstreamReader.cancel(reason);
 				},
 			});
 
-			return new Response(res.body.pipeThrough(transform), {
+			return new Response(guardedStream, {
 				status: res.status,
 				statusText: res.statusText,
 				headers: res.headers,

@@ -426,13 +426,24 @@ export async function startClineProxyServer(
 					const maxProxyRetries = 3;
 					for (let attempt = 0; attempt <= maxProxyRetries; attempt++) {
 						if (abortController.signal.aborted) break;
+						let connectTimer: NodeJS.Timeout | null = setTimeout(() => {
+							abortController.abort(new Error("Upstream connection handshake timed out (45s)"));
+						}, 45000);
+						connectTimer.unref?.();
 						try {
-							upstreamRes = await fetch(`${CLINE_BASE_URL}/chat/completions`, {
-								method: "POST",
-								headers: upstreamHeaders,
-								body: JSON.stringify(payload),
-								signal: abortController.signal,
-							});
+							try {
+								upstreamRes = await fetch(`${CLINE_BASE_URL}/chat/completions`, {
+									method: "POST",
+									headers: upstreamHeaders,
+									body: JSON.stringify(payload),
+									signal: abortController.signal,
+								});
+							} finally {
+								if (connectTimer) {
+									clearTimeout(connectTimer);
+									connectTimer = null;
+								}
+							}
 							if (upstreamRes.ok || (upstreamRes.status < 500 && upstreamRes.status !== 429)) {
 								// 若返回 SSE 流，深入探测是否存在空响应异常
 								const cType = (upstreamRes.headers.get("content-type") || "").toLowerCase();
@@ -615,6 +626,12 @@ export async function startClineProxyServer(
 							const decoder = new TextDecoder();
 							let buffer = "";
 							let hasSentAnyContent = false;
+							let keepAliveTimer: NodeJS.Timeout | null = setInterval(() => {
+								if (!res.writableEnded && !res.destroyed) {
+									res.write(": keepalive\n\n");
+								}
+							}, 10000);
+							keepAliveTimer.unref?.();
 							try {
 								while (true) {
 									const { done, value } = await reader.read();
@@ -703,9 +720,21 @@ export async function startClineProxyServer(
 									res.writeHead(502, { "Content-Type": "application/json" });
 									res.end(JSON.stringify({ error: { message: "Stream reading failed" } }));
 								} else {
-									res.destroy();
+									// 防突发网络中断：若已输出有效内容，优雅以 [DONE] 结束流，保留已生成的全部代码
+									if (hasSentAnyContent && !res.writableEnded) {
+										try {
+											res.write("data: [DONE]\n\n");
+										} catch {}
+										res.end();
+									} else {
+										res.destroy();
+									}
 								}
 							} finally {
+								if (keepAliveTimer) {
+									clearInterval(keepAliveTimer);
+									keepAliveTimer = null;
+								}
 								if (!res.writableEnded) {
 									res.end();
 								}

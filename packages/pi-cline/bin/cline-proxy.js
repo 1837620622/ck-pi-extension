@@ -269,6 +269,16 @@ var KNOWN_CLINE_FREE_MODELS = {
     input: ["text"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     isFree: true
+  },
+  "apodex/apodex-1.1-mini:free": {
+    id: "apodex/apodex-1.1-mini:free",
+    name: "Apodex 1.1 Mini (Free) (Cline Free)",
+    contextWindow: 131072,
+    maxTokens: 32768,
+    reasoning: false,
+    input: ["text"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    isFree: true
   }
 };
 function resolveFreeModelId(rawId) {
@@ -314,23 +324,35 @@ function resolveFreeModelId(rawId) {
   if (lower === "lightning") {
     return "nvidia/nemotron-3.5-lightning:free";
   }
-  if (lower === "laguna") {
+  if (lower === "laguna" || lower === "laguna-s" || lower === "laguna-s-2.1") {
     return "poolside/laguna-s-2.1:free";
   }
-  if (lower === "north") {
+  if (lower === "xs" || lower === "laguna-xs" || lower === "laguna-xs-2.1") {
+    return "poolside/laguna-xs-2.1:free";
+  }
+  if (lower === "north" || lower === "north-mini-code") {
     return "cohere/north-mini-code:free";
   }
-  if (lower === "gemma" || lower === "gemma-free") {
+  if (lower === "gemma" || lower === "gemma-free" || lower === "gemma-26b") {
     return "google/gemma-4-26b-a4b-it:free";
+  }
+  if (lower === "gemma-31b") {
+    return "google/gemma-4-31b-it:free";
   }
   if (lower === "inkling") {
     return "thinkingmachines/inkling:free";
   }
-  if (lower === "note") {
+  if (lower === "inkling-small") {
+    return "thinkingmachines/inkling-small:free";
+  }
+  if (lower === "note" || lower === "dots-note") {
     return "dots-studio/dots-3-note-preview:free";
   }
-  if (lower === "lfm") {
+  if (lower === "lfm" || lower === "lfm-2.5") {
     return "liquid/lfm-2.5-2.6b:free";
+  }
+  if (lower === "apodex" || lower === "apodex-mini" || lower === "apodex-1.1-mini") {
+    return "apodex/apodex-1.1-mini:free";
   }
   if (KNOWN_CLINE_FREE_MODELS[id]) {
     return id;
@@ -707,13 +729,24 @@ async function startClineProxyServer(options = {}) {
           const maxProxyRetries = 3;
           for (let attempt = 0; attempt <= maxProxyRetries; attempt++) {
             if (abortController.signal.aborted) break;
+            let connectTimer = setTimeout(() => {
+              abortController.abort(new Error("Upstream connection handshake timed out (45s)"));
+            }, 45e3);
+            connectTimer.unref?.();
             try {
-              upstreamRes = await fetch(`${CLINE_BASE_URL}/chat/completions`, {
-                method: "POST",
-                headers: upstreamHeaders,
-                body: JSON.stringify(payload),
-                signal: abortController.signal
-              });
+              try {
+                upstreamRes = await fetch(`${CLINE_BASE_URL}/chat/completions`, {
+                  method: "POST",
+                  headers: upstreamHeaders,
+                  body: JSON.stringify(payload),
+                  signal: abortController.signal
+                });
+              } finally {
+                if (connectTimer) {
+                  clearTimeout(connectTimer);
+                  connectTimer = null;
+                }
+              }
               if (upstreamRes.ok || upstreamRes.status < 500 && upstreamRes.status !== 429) {
                 const cType = (upstreamRes.headers.get("content-type") || "").toLowerCase();
                 if (cType.includes("text/event-stream") && upstreamRes.body) {
@@ -884,6 +917,12 @@ async function startClineProxyServer(options = {}) {
               const decoder = new TextDecoder();
               let buffer = "";
               let hasSentAnyContent = false;
+              let keepAliveTimer = setInterval(() => {
+                if (!res.writableEnded && !res.destroyed) {
+                  res.write(": keepalive\n\n");
+                }
+              }, 1e4);
+              keepAliveTimer.unref?.();
               try {
                 while (true) {
                   const { done, value } = await reader.read();
@@ -975,9 +1014,21 @@ async function startClineProxyServer(options = {}) {
                   res.writeHead(502, { "Content-Type": "application/json" });
                   res.end(JSON.stringify({ error: { message: "Stream reading failed" } }));
                 } else {
-                  res.destroy();
+                  if (hasSentAnyContent && !res.writableEnded) {
+                    try {
+                      res.write("data: [DONE]\n\n");
+                    } catch {
+                    }
+                    res.end();
+                  } else {
+                    res.destroy();
+                  }
                 }
               } finally {
+                if (keepAliveTimer) {
+                  clearInterval(keepAliveTimer);
+                  keepAliveTimer = null;
+                }
                 if (!res.writableEnded) {
                   res.end();
                 }

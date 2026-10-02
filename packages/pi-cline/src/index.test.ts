@@ -402,9 +402,16 @@ describe("Extension 钩子、命令与拦截测试", () => {
 		assert.equal(isClineModelTarget({ provider: "cline", id: "ling-3.0-flash-fin:free" }), true);
 		assert.equal(isClineModelTarget({ provider: "cline-free", id: "openrouter/free" }), true);
 		assert.equal(isClineModelTarget(undefined, "inclusionai/ling-3.0-flash-fin:free"), true);
+		assert.equal(isClineModelTarget(undefined, "deepseek/deepseek-v4.1-flash"), true);
+		assert.equal(isClineModelTarget(undefined, "stealth/space-bunny-alpha"), true);
+		assert.equal(isClineModelTarget(undefined, "google/gemma-4-26b-a4b-it:free"), true);
+		assert.equal(isClineModelTarget(undefined, "apodex/apodex-1.1-mini:free"), true);
+		assert.equal(isClineModelTarget(undefined, "poolside/laguna-s-2.1:free"), true);
 
 		// 绝不能干涉其他供应商
 		assert.equal(isClineModelTarget({ provider: "relayhub", id: "deepseek-v4.1-flash" }), false);
+		assert.equal(isClineModelTarget({ provider: "relayhub", id: "deepseek/deepseek-v4.1-flash" }), false);
+		assert.equal(isClineModelTarget({ provider: "relayhub", id: "inclusionai/ling-3.0-flash-fin:free" }), false);
 		assert.equal(isClineModelTarget({ provider: "opencode-zen-free", id: "mimo-v2.5-free" }), false);
 		assert.equal(isClineModelTarget({ provider: "anthropic", id: "claude-3-7-sonnet" }), false);
 	});
@@ -935,5 +942,66 @@ describe("Extension 钩子、命令与拦截测试", () => {
 		assert.equal(sanitizePiModelDefinition(null), null);
 		assert.equal(sanitizePiModelDefinition({}), null);
 		assert.equal(sanitizePiModelDefinition({ id: "   " }), null);
+	});
+
+	it("installClineFetchInterceptor 在遇到流中途突发网络中断但已产生内容时，优雅注入 [DONE] 结束流，保留已生成的内容", async () => {
+		let pullCount = 0;
+		const mockGlobal: any = {
+			fetch: async () => {
+				const stream = new ReadableStream({
+					async pull(controller) {
+						pullCount++;
+						const encoder = new TextEncoder();
+						if (pullCount === 1) {
+							// Peek 阶段读到第一包
+							controller.enqueue(
+								encoder.encode(
+									`data: {"id":"chatcmpl-stream-err","choices":[{"index":0,"delta":{"content":"function solveProblem() {"},"finish_reason":null}]}\n\n`,
+								),
+							);
+						} else if (pullCount === 2) {
+							// 客户端开始消费流，后续包继续产生内容
+							controller.enqueue(
+								encoder.encode(
+									`data: {"id":"chatcmpl-stream-err","choices":[{"index":0,"delta":{"content":"\\n  return 42;\\n}"},"finish_reason":null}]}\n\n`,
+								),
+							);
+						} else {
+							// 中途突发网络中断
+							controller.error(new Error("TCP connection reset by peer"));
+						}
+					},
+				});
+				return new Response(stream, {
+					status: 200,
+					headers: { "Content-Type": "text/event-stream" },
+				});
+			},
+		};
+
+		installClineFetchInterceptor(mockGlobal);
+
+		const res = await mockGlobal.fetch("https://api.cline.bot/api/v1/chat/completions", {
+			method: "POST",
+			body: JSON.stringify({
+				model: "deepseek/deepseek-v4.1-flash",
+				messages: [{ role: "user", content: "code" }],
+				stream: true,
+			}),
+		});
+
+		assert.equal(res.status, 200);
+		const reader = res.body.getReader();
+		const decoder = new TextDecoder();
+		let totalText = "";
+		while (true) {
+			const { value, done } = await reader.read();
+			if (done) break;
+			totalText += decoder.decode(value);
+		}
+
+		assert.ok(totalText.includes("function solveProblem() {"), "保留已生成的代码片段");
+		assert.ok(totalText.includes("return 42;"), "保留后续生成的代码片段");
+		assert.ok(totalText.includes("data: [DONE]"), "优雅追加 [DONE] 结束标志，避免客户端崩溃");
 	});
 });
