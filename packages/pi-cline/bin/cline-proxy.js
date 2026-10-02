@@ -117,6 +117,17 @@ var KNOWN_CLINE_FREE_MODELS = {
     isFree: true
   },
   // ==================== 3. 主力代码与推理思考免费模型 (Core Coding & Reasoning) ====================
+  "deepseek/deepseek-v4.1-flash": {
+    id: "deepseek/deepseek-v4.1-flash",
+    name: "DeepSeek V4.1 Flash (Cline Free)",
+    contextWindow: 131072,
+    maxTokens: 32768,
+    reasoning: true,
+    input: ["text"],
+    thinkingLevelMap: STANDARD_THINKING_LEVELS,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    isFree: true
+  },
   "inclusionai/ling-3.0-flash-fin:free": {
     id: "inclusionai/ling-3.0-flash-fin:free",
     name: "InclusionAI Ling 3.0 Flash Fin (262k Free) (Cline Free)",
@@ -275,6 +286,9 @@ function resolveFreeModelId(rawId) {
   }
   if (lower === "code" || lower === "pareto" || lower === "pareto-code") {
     return "openrouter/pareto-code";
+  }
+  if (lower === "deepseekv4.1 flash-cline" || lower === "deepseek-v4.1-flash-cline" || lower === "deepseek-v4.1-flash" || lower === "deepseekv4.1-flash" || lower === "deepseekv4.1" || lower === "deepseek-v4.1" || lower === "deepseek/deepseek-v4.1-flash") {
+    return "deepseek/deepseek-v4.1-flash";
   }
   if (lower === "bunny" || lower === "stealth" || lower === "space-bunny" || lower === "space-bunny-alpha") {
     return "stealth/space-bunny-alpha";
