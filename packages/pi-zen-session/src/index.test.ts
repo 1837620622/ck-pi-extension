@@ -400,7 +400,8 @@ describe("配置同步与落盘逻辑测试", () => {
 				);
 				INSERT INTO providers (id, app_type, settings_config) VALUES
 				('opencode-zen-free', 'pi', '{"baseUrl":"https://opencode.ai/zen/v1","headers":{}}'),
-				('opencode-zen-free', 'opencode', '{"options":{"headers":{}}}');
+				('opencode-zen-free', 'opencode', '{"options":{"headers":{}}}'),
+				('opencode-zen-free-responses', 'pi', '{"baseUrl":"https://opencode.ai/zen/v1","headers":{}}');
 			`);
 			db.close();
 
@@ -412,19 +413,27 @@ describe("配置同步与落盘逻辑测试", () => {
 			const rows = verifyDb
 				.prepare("SELECT app_type, settings_config FROM providers WHERE id = ?")
 				.all("opencode-zen-free");
+			const respRows = verifyDb
+				.prepare("SELECT app_type, settings_config FROM providers WHERE id = ?")
+				.all("opencode-zen-free-responses");
 			verifyDb.close();
 
 			assert.equal(rows.length, 2);
+			assert.equal(respRows.length, 1);
 			const piRow = rows.find((r) => r.app_type === "pi");
 			const opencodeRow = rows.find((r) => r.app_type === "opencode");
+			const responsesPiRow = respRows[0];
 
 			const piCfg = JSON.parse(piRow!.settings_config);
 			const opencodeCfg = JSON.parse(opencodeRow!.settings_config);
+			const responsesPiCfg = JSON.parse(responsesPiRow.settings_config);
 
 			assert.equal(piCfg.headers["x-opencode-session"], testSession);
 			assert.equal(opencodeCfg.options.headers["x-opencode-session"], testSession);
+			assert.equal(responsesPiCfg.headers["x-opencode-session"], testSession);
 			assert.equal(piCfg.apiKey, "oc_sk_test_db_key");
 			assert.equal(opencodeCfg.options.apiKey, "oc_sk_test_db_key");
+			assert.equal(responsesPiCfg.apiKey, "oc_sk_test_db_key");
 		} finally {
 			rmSync(tempDir, { recursive: true, force: true });
 		}

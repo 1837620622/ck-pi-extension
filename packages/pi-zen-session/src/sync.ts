@@ -709,46 +709,52 @@ export function updateCcSwitchDb(
 		try {
 			db = new DatabaseSync(dbPath);
 			db.exec("PRAGMA busy_timeout = 5000;");
+			let anyUpdated = false;
 			const selectStmt = db.prepare("SELECT app_type, settings_config FROM providers WHERE id = ?");
-			const rows = selectStmt.all(ZEN_PROVIDER_ID) as Array<{ app_type: string; settings_config: string }>;
+			const updateStmt = db.prepare(
+				"UPDATE providers SET settings_config = ? WHERE id = ? AND app_type = ?",
+			);
 
-			if (rows.length > 0) {
-				const updateStmt = db.prepare(
-					"UPDATE providers SET settings_config = ? WHERE id = ? AND app_type = ?",
-				);
-
-				for (const row of rows) {
-					try {
-						const cfg = JSON.parse(row.settings_config) as Record<string, unknown>;
-						if (row.app_type === "pi") {
-							cfg.apiKey = apiKey;
-							const headers = (cfg.headers ?? {}) as Record<string, string>;
-							headers["User-Agent"] = ZEN_USER_AGENT;
-							headers["x-opencode-client"] = "cli";
-							headers["x-opencode-session"] = sessionId;
-							headers["x-opencode-project"] = generateZenProjectId();
-							headers["x-session-affinity"] = sessionId;
-							headers["X-Session-Id"] = sessionId;
-							cfg.headers = headers;
-							cfg.models = models;
-						} else if (row.app_type === "opencode") {
-							const opts = (cfg.options ?? {}) as Record<string, unknown>;
-							opts.apiKey = apiKey;
-							const headers = (opts.headers ?? {}) as Record<string, string>;
-							headers["User-Agent"] = ZEN_USER_AGENT;
-							headers["x-opencode-client"] = "cli";
-							headers["x-opencode-session"] = sessionId;
-							headers["x-opencode-project"] = generateZenProjectId();
-							headers["x-session-affinity"] = sessionId;
-							headers["X-Session-Id"] = sessionId;
-							opts.headers = headers;
-							cfg.options = opts;
+			for (const pId of [ZEN_PROVIDER_ID, ZEN_RESPONSES_PROVIDER_ID]) {
+				const rows = selectStmt.all(pId) as Array<{ app_type: string; settings_config: string }>;
+				if (rows.length > 0) {
+					for (const row of rows) {
+						try {
+							const cfg = JSON.parse(row.settings_config) as Record<string, unknown>;
+							if (row.app_type === "pi") {
+								cfg.apiKey = apiKey;
+								const headers = (cfg.headers ?? {}) as Record<string, string>;
+								headers["User-Agent"] = ZEN_USER_AGENT;
+								headers["x-opencode-client"] = "cli";
+								headers["x-opencode-session"] = sessionId;
+								headers["x-opencode-project"] = generateZenProjectId();
+								headers["x-session-affinity"] = sessionId;
+								headers["X-Session-Id"] = sessionId;
+								cfg.headers = headers;
+								cfg.models = models;
+							} else if (row.app_type === "opencode") {
+								const opts = (cfg.options ?? {}) as Record<string, unknown>;
+								opts.apiKey = apiKey;
+								const headers = (opts.headers ?? {}) as Record<string, string>;
+								headers["User-Agent"] = ZEN_USER_AGENT;
+								headers["x-opencode-client"] = "cli";
+								headers["x-opencode-session"] = sessionId;
+								headers["x-opencode-project"] = generateZenProjectId();
+								headers["x-session-affinity"] = sessionId;
+								headers["X-Session-Id"] = sessionId;
+								opts.headers = headers;
+								cfg.options = opts;
+							}
+							updateStmt.run(JSON.stringify(cfg), pId, row.app_type);
+							anyUpdated = true;
+						} catch {
+							// 忽略单行解析失败
 						}
-						updateStmt.run(JSON.stringify(cfg), ZEN_PROVIDER_ID, row.app_type);
-					} catch {
-						// 忽略单行解析失败
 					}
 				}
+			}
+
+			if (anyUpdated) {
 				try {
 					chmodSync(dbPath, 0o600);
 				} catch {}
@@ -781,34 +787,35 @@ try:
     api_key = data['apiKey']
     session_id = data['sessionId']
     user_agent = data['userAgent']
-    provider_id = data['providerId']
+    provider_ids = data.get('providerIds', [data.get('providerId')])
     conn = sqlite3.connect(db_path)
     try:
         c = conn.cursor()
-        c.execute("SELECT app_type, settings_config FROM providers WHERE id = ?", (provider_id,))
-        rows = c.fetchall()
-        if rows:
-            for app, cfg_str in rows:
-                try:
-                    cfg = json.loads(cfg_str)
-                    if app == 'pi':
-                        cfg['apiKey'] = api_key
-                        headers = cfg.get('headers', {})
-                        headers['User-Agent'] = user_agent
-                        headers['x-opencode-session'] = session_id
-                        cfg['headers'] = headers
-                    elif app == 'opencode':
-                        opts = cfg.get('options', {})
-                        opts['apiKey'] = api_key
-                        headers = opts.get('headers', {})
-                        headers['User-Agent'] = user_agent
-                        headers['x-opencode-session'] = session_id
-                        opts['headers'] = headers
-                        cfg['options'] = opts
-                    c.execute("UPDATE providers SET settings_config = ? WHERE id = ? AND app_type = ?", (json.dumps(cfg), provider_id, app))
-                except Exception:
-                    pass
-            conn.commit()
+        for p_id in provider_ids:
+            c.execute("SELECT app_type, settings_config FROM providers WHERE id = ?", (p_id,))
+            rows = c.fetchall()
+            if rows:
+                for app, cfg_str in rows:
+                    try:
+                        cfg = json.loads(cfg_str)
+                        if app == 'pi':
+                            cfg['apiKey'] = api_key
+                            headers = cfg.get('headers', {})
+                            headers['User-Agent'] = user_agent
+                            headers['x-opencode-session'] = session_id
+                            cfg['headers'] = headers
+                        elif app == 'opencode':
+                            opts = cfg.get('options', {})
+                            opts['apiKey'] = api_key
+                            headers = opts.get('headers', {})
+                            headers['User-Agent'] = user_agent
+                            headers['x-opencode-session'] = session_id
+                            opts['headers'] = headers
+                            cfg['options'] = opts
+                        c.execute("UPDATE providers SET settings_config = ? WHERE id = ? AND app_type = ?", (json.dumps(cfg), p_id, app))
+                    except Exception:
+                        pass
+        conn.commit()
     finally:
         conn.close()
 except Exception:
@@ -821,6 +828,7 @@ except Exception:
 				sessionId,
 				userAgent: ZEN_USER_AGENT,
 				providerId: ZEN_PROVIDER_ID,
+				providerIds: [ZEN_PROVIDER_ID, ZEN_RESPONSES_PROVIDER_ID],
 			}),
 			timeout: 3000,
 		});

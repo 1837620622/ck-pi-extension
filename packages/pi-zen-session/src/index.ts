@@ -1478,7 +1478,7 @@ export async function handleZenCommand(
 			}
 			if ((ctx as { modelRegistry?: { refresh?: (arg: unknown) => Promise<unknown> } }).modelRegistry?.refresh) {
 				await (ctx as { modelRegistry: { refresh: (arg: unknown) => Promise<unknown> } }).modelRegistry
-					.refresh({ providers: [ZEN_PROVIDER_ID] })
+					.refresh({ providers: [ZEN_PROVIDER_ID, ZEN_RESPONSES_PROVIDER_ID] })
 					.catch(() => {});
 			}
 
@@ -1518,7 +1518,7 @@ export async function handleZenCommand(
 			}
 			if ((ctx as { modelRegistry?: { refresh?: (arg: unknown) => Promise<unknown> } }).modelRegistry?.refresh) {
 				await (ctx as { modelRegistry: { refresh: (arg: unknown) => Promise<unknown> } }).modelRegistry
-					.refresh({ providers: [ZEN_PROVIDER_ID] })
+					.refresh({ providers: [ZEN_PROVIDER_ID, ZEN_RESPONSES_PROVIDER_ID] })
 					.catch(() => {});
 			}
 			const reasoningCount = result.resolvedModels.filter((m) => m.reasoning).length;

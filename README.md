@@ -1,101 +1,93 @@
 # ck-pi-extension
 
-Pi 插件 monorepo：一个 GitHub 仓库，多个彼此独立的 npm 包，用户按需单装。
-Monorepo for Pi extensions: one GitHub repository containing independent npm packages. Install only what you need.
+<p align="center">
+  <a href="#ck-pi-extension">中文</a> | <a href="#ck-pi-extension-en">English</a>
+</p>
 
-| 插件 / Extension | npm 包 / Package | 描述 / Description | 文档 / Docs |
+Pi 插件 monorepo：一个 GitHub 仓库，多个彼此独立的 npm 包，用户按需单装。
+
+| 插件 | npm 包 | 描述 | 文档 |
 | --- | --- | --- | --- |
-| Pi Rail | `ck-pi-rail` | 无表情、自适应满宽状态栏 / Pure-tech adaptive full-width status line | [README](packages/pi-rail/README.md) |
-| Pi Redkit | `ck-pi-redkit` | 授权交战条令注入（渗透/逆向） / Authorized rules of engagement injection | [README](packages/pi-redkit/README.md) |
-| Pi Zen Session | `ck-pi-zen-session` | OpenCode Zen 免费模型、Responses/Completions 双协议路由与会话自愈 / Zen free-tier models with dual-protocol routing | [README](packages/pi-zen-session/README.md) |
-| Pi Cline | `ck-pi-cline` | Cline 官方指纹伪装、21 款零额度模型与本地反向代理 / Cline official fingerprint disguise, 21 zero-cost models & local proxy | [README](packages/pi-cline/README.md) |
-| Pi Guard | `ck-pi-guard` | 深度思考后脱机守卫与边缘网关超时拦截重试 (502, 503, 504, 520-525, 533) / Thinking offline sentinel & edge gateway retry | [README](packages/pi-guard/README.md) |
+| Pi Rail | `ck-pi-rail` | 无表情、自适应满宽状态栏 | [README](packages/pi-rail/README.md) |
+| Pi Redkit | `ck-pi-redkit` | 授权交战条令注入（渗透/逆向） | [README](packages/pi-redkit/README.md) |
+| Pi Zen Session | `ck-pi-zen-session` | OpenCode Zen 免费模型、Responses/Completions 双协议路由与会话自愈 | [README](packages/pi-zen-session/README.md) |
+| Pi Cline | `ck-pi-cline` | Cline 官方指纹伪装、21 款零额度模型与本地反向代理 | [README](packages/pi-cline/README.md) |
+| Pi Guard | `ck-pi-guard` | 深度思考后脱机守卫与边缘网关超时拦截重试 (502, 503, 504, 520-525, 533) | [README](packages/pi-guard/README.md) |
 
 ---
 
-## 赞助与支持 / Sponsorship & Support
+## 赞助与支持
 
 如果您觉得这些插件提升了您的开发效率，欢迎赞助支持本项目！您的赞助将直接用于持续维护、网络节点验证、逆向协议对齐与新特性的快速迭代。
 
-If you find these extensions helpful and time-saving, consider sponsoring this project. Your support directly funds continuous maintenance, endpoint testing, reverse-engineering protocol alignment, and rapid feature development.
-
-### 赞助渠道 / Sponsorship Channels
+### 赞助渠道
 
 - **GitHub Sponsors**: [https://github.com/sponsors/1837620622](https://github.com/sponsors/1837620622)
-- **企业赞助与商务合作 / Enterprise & Commercial Sponsorship**:
+- **企业赞助与商务合作**:
   - 欢迎 AI 基础设施提供商、代理网关服务商或团队提供赞助。
   - 赞助权益包含：在项目 README 显著位置展示企业 Logo 与链接、优先处理定制化需求与专属问题支持。
-  - Sponsors can display their brand logo and link prominently in the project README, receive priority issue response, and request custom protocol optimizations.
 
 ---
 
-## 安装方法 / Installation
+## 安装方法
 
-按需单装，互不顺带 / Install on demand:
+按需单装，互不顺带：
 
 ```bash
-pi install npm:ck-pi-rail        # 状态栏 / Statusline
-pi install npm:ck-pi-redkit      # 条令注入 / Security rules of engagement
-pi install npm:ck-pi-zen-session # OpenCode Zen 免费模型与会话自动维护 / Zen free models & session refresh
-pi install npm:ck-pi-cline       # Cline 官方指纹、21 款零额度模型与本地反代 / Cline free models & proxy
-pi install npm:ck-pi-guard       # 深度思考脱机守卫与网关重试 / Thinking sentinel & gateway retry
+pi install npm:ck-pi-rail        # 状态栏
+pi install npm:ck-pi-redkit      # 条令注入
+pi install npm:ck-pi-zen-session # OpenCode Zen 免费模型与会话自动维护
+pi install npm:ck-pi-cline       # Cline 官方指纹、21 款零额度模型与本地反代
+pi install npm:ck-pi-guard       # 深度思考脱机守卫与网关重试
 ```
 
 旧合集包 `ck-pi-extension` 已废弃（不再更新），新用户请装上面单包。
-Legacy bundle `ck-pi-extension` is deprecated; please install individual packages above.
 
-GitHub 源安装 / Install from GitHub:
+GitHub 源安装：
 ```bash
 pi install git:github.com/1837620622/ck-pi-extension
 ```
 
-冲突说明 / Conflict Notice:
+冲突说明：
 `pi-rail` 不要和 `@narumitw/pi-statusline`、`pi-starline`、`pi-zentui` 同时开，它们都会抢同一条页脚。
-Do not enable `pi-rail` concurrently with other statusline extensions (`@narumitw/pi-statusline`, `pi-starline`, `pi-zentui`) as they compete for the footer.
 
 ---
 
-## 快速开始 / Quick Start
+## 快速开始
 
 ```text
 /statusline          状态栏设置菜单（外观 / 信息 / 高级 / 状态 / 帮助）
-                     Status line settings (appearance, info, advanced, status, help)
 
-/redkit status       查看条令注入状态 / View rules of engagement status
-/redkit full         切换条令模式 (full/pentest/reverse/off) / Switch rules mode
+/redkit status       查看条令注入状态
+/redkit full         切换条令模式 (full/pentest/reverse/off)
 
 /zen                 无参运行：自动续期降序会话、刷新请求头并全量同步本地配置与运行时
-                     Auto-refresh descending session ID and sync configurations
 /zen <key>           配置/更新 OpenCode Zen Key，自动探测免费模型、上下文与思考等级
-                     Configure Zen key and auto-discover models & thinking levels
-/zen status          查看 Zen 会话年龄、请求头保护与模型库状态 / View Zen status
-/zen refresh         强制生成全新降序 Session ID 并刷新请求头 / Force new session ID
-/zen list            查看所有已激活的 Zen 免费模型规格清单 / View model catalog
-/zen add <id> [name] 自定义登记新增的免费模型至本地模型库 / Register custom model
-/zen ping [model]    实时探测 Zen 免费模型网络连通性与往返时延 / Test network latency
-/zen model <id>      快速切换当前激活的 Zen 模型 / Switch active Zen model
+/zen status          查看 Zen 会话年龄、请求头保护与模型库状态
+/zen refresh         强制生成全新降序 Session ID 并刷新请求头
+/zen list            查看所有已激活的 Zen 免费模型规格清单
+/zen add <id> [name] 自定义登记新增的免费模型至本地模型库
+/zen ping [model]    实时探测 Zen 免费模型网络连通性与往返时延
+/zen model <id>      快速切换当前激活的 Zen 模型
 
 /cline               无参运行：自动拉取远端模型、刷新配置并热重载 Pi 模型库
-                     Auto-refresh Cline models and hot-reload registry
 /cline <key>         配置/更新 Cline API Key，自动在线探测 21 款零额度模型
-                     Configure Cline key and discover 21 zero-cost models
-/cline status        查看当前详细运行状态、指纹签名与本地反代状态 / View Cline status
-/cline refresh       强制在线拉取远端模型并刷新本地配置 / Force pull remote models
-/cline list          查看所有可用免费模型详细规格清单 / View free model catalog
-/cline free          查看 21 款零额度模型注册表 / View zero-cost model registry
-/cline add <id> [name] 自定义登记新增的零额度免费模型 / Register custom model
-/cline ping [model]  实时探测免费模型连通性与网络时延 / Test latency
+/cline status        查看当前详细运行状态、指纹签名与本地反代状态
+/cline refresh       强制在线拉取远端模型并刷新本地配置
+/cline list          查看所有可用免费模型详细规格清单
+/cline free          查看 21 款零额度模型注册表
+/cline add <id> [name] 自定义登记新增的零额度免费模型
+/cline ping [model]  实时探测免费模型连通性与网络时延
 /cline proxy start   在后台启动本地 OpenAI 兼容反向代理服务 (默认端口 4116)
-                     Start local OpenAI-compatible reverse proxy (port 4116)
 
-/guard status        查看思考脱机守卫与网关重试实时指标与熔断状态 / View guard status
-/guard reset         重置守卫统计计数与熔断状态 / Reset sentinel statistics
-/guard on / off      开启或关闭守卫与网关拦截 / Enable or disable guard
+/guard status        查看思考脱机守卫与网关重试实时指标与熔断状态
+/guard reset         重置守卫统计计数与熔断状态
+/guard on / off      开启或关闭守卫与网关拦截
 ```
 
 ---
 
-## 更新日志 / Changelog
+## 更新日志
 
 - `ck-pi-zen-session 0.1.22`：
   - **支持 OpenAI Responses API 协议与双供应商路由架构 (修复 Issue #1)**：
@@ -132,6 +124,130 @@ Do not enable `pi-rail` concurrently with other statusline extensions (`@narumit
 
 ---
 
-## 许可证 / License
+## 许可证
 
 MIT License，见 [LICENSE](LICENSE)。
+
+---
+
+<a id="ck-pi-extension-en"></a>
+# ck-pi-extension (English)
+
+<p align="center">
+  <a href="#ck-pi-extension">中文</a> | <a href="#ck-pi-extension-en">English</a>
+</p>
+
+Monorepo for Pi extensions: one GitHub repository containing independent npm packages. Install only what you need.
+
+| Extension | npm Package | Description | Documentation |
+| --- | --- | --- | --- |
+| Pi Rail | `ck-pi-rail` | Pure-tech adaptive full-width status line | [README](packages/pi-rail/README.md) |
+| Pi Redkit | `ck-pi-redkit` | Authorized rules of engagement injection (pentest / reverse) | [README](packages/pi-redkit/README.md) |
+| Pi Zen Session | `ck-pi-zen-session` | OpenCode Zen free models, dual-protocol routing (Completions & Responses), and session self-healing | [README](packages/pi-zen-session/README.md) |
+| Pi Cline | `ck-pi-cline` | Cline official fingerprint disguise, 21 zero-cost models & local reverse proxy | [README](packages/pi-cline/README.md) |
+| Pi Guard | `ck-pi-guard` | Thinking offline sentinel & edge gateway retry (502, 503, 504, 520-525, 533) | [README](packages/pi-guard/README.md) |
+
+---
+
+## Sponsorship & Support
+
+If you find these extensions helpful and time-saving, consider sponsoring this project. Your support directly funds continuous maintenance, endpoint testing, reverse-engineering protocol alignment, and rapid feature development.
+
+### Sponsorship Channels
+
+- **GitHub Sponsors**: [https://github.com/sponsors/1837620622](https://github.com/sponsors/1837620622)
+- **Enterprise & Commercial Sponsorship**:
+  - AI infrastructure providers, proxy gateway services, and engineering teams are welcome to sponsor.
+  - Benefits: Prominent brand logo and link display in the project README, priority issue response, and custom protocol optimizations.
+
+---
+
+## Installation
+
+Install packages individually on demand:
+
+```bash
+pi install npm:ck-pi-rail        # Statusline
+pi install npm:ck-pi-redkit      # Rules of engagement injection
+pi install npm:ck-pi-zen-session # OpenCode Zen free models & session auto-maintenance
+pi install npm:ck-pi-cline       # Cline official fingerprint, 21 zero-cost models & local proxy
+pi install npm:ck-pi-guard       # Thinking offline sentinel & gateway retry
+```
+
+The legacy bundle package `ck-pi-extension` is deprecated (no longer updated); new users should install individual packages above.
+
+Install from GitHub:
+```bash
+pi install git:github.com/1837620622/ck-pi-extension
+```
+
+Conflict Notice:
+Do not enable `pi-rail` concurrently with other statusline extensions (`@narumitw/pi-statusline`, `pi-starline`, `pi-zentui`) as they compete for the same footer line.
+
+---
+
+## Quick Start
+
+```text
+/statusline          Status line settings (appearance, info, advanced, status, help)
+
+/redkit status       View rules of engagement injection status
+/redkit full         Switch rules mode (full / pentest / reverse / off)
+
+/zen                 No args: auto-refresh descending session ID, disguise headers, and sync configuration
+/zen <key>           Configure/update OpenCode Zen key, discover free models, context windows, and thinking levels
+/zen status          View Zen session age, header protection, and model catalog status
+/zen refresh         Force generate new descending session ID and refresh headers
+/zen list            View catalog of all activated Zen free models
+/zen add <id> [name] Register custom free model into local catalog
+/zen ping [model]    Probe Zen model network latency and RTT in real time
+/zen model <id>      Quickly switch active Zen model
+
+/cline               No args: pull remote models, refresh configuration, and reload registry
+/cline <key>         Configure/update Cline API key, discover 21 zero-cost models
+/cline status        View Cline status, fingerprint signature, and local proxy state
+/cline refresh       Force pull remote models and update local configuration
+/cline list          View full catalog of available free models
+/cline free          View 21 zero-cost model registry
+/cline add <id> [name] Register custom zero-cost model
+/cline ping [model]  Probe free model network connectivity and latency
+/cline proxy start   Start local OpenAI-compatible reverse proxy in background (port 4116)
+
+/guard status        View thinking offline sentinel and gateway retry real-time metrics
+/guard reset         Reset sentinel counters and circuit breaker state
+/guard on / off      Enable or disable guard and gateway interceptor
+```
+
+---
+
+## Changelog
+
+- `ck-pi-zen-session 0.1.22`:
+  - **Support OpenAI Responses API protocol & dual-provider architecture (Resolves Issue #1)**:
+    - **Dual-provider routing**: Partitioned OpenCode Zen into `opencode-zen-free` (`openai-completions` for Big Pickle, Xiaomi MiMo, NVIDIA Nemotron, Ling, Space Bunny) and `opencode-zen-free-responses` (`openai-responses` for Meta Muse Spark 1.3/1.2 Contributor Free);
+    - **Fix 400 ModelProtocolUnsupported error**: OpenCode Zen gateway serves Muse Spark models exclusively on `/responses`; registering independent providers allows Pi to natively communicate via Responses API;
+    - **Responses protocol alignment**: Injects flat tool definitions (`OPENCODE_OFFICIAL_RESPONSES_TOOLS`), injects `tool_choice: "none"` on compaction/empty-tool calls, and strictly prevents injecting Chat-only fields (`stream_options`, `reasoning_effort`, `max_tokens`);
+    - **Dual-endpoint fetch interceptor**: Intercepts both `/zen/v1/chat/completions` and `/zen/v1/responses`, distinguishes SSE event types, and restricts SSE-to-ChatCompletion reconstruction strictly to ChatCompletions;
+    - **Configuration persistence & CLI**: Dual-writes both providers into `~/.pi/agent/models.json` and `auth.json`; `/zen model` and `/zen ping` route automatically based on model protocol.
+- `ck-pi-cline 0.1.6` / `ck-pi-zen-session 0.1.21`:
+  - **Deep fix for upstream empty response retry (`Provider returned an empty response`)**:
+    - Peek buffer increased to 30 packets and 64KB, penetrating initial gateway keepalive/processing comments;
+    - Strict error boundary matching avoiding normal model output false positives;
+    - Production exponential backoff retry with jitter (1.5s - 5.0s floor), guaranteeing 3 same-model attempts;
+    - Sandboxed test environment preventing unit tests from modifying local agent configuration;
+    - Model definition sanitization (`sanitizePiModelDefinition`) preventing malformed JSON injection into `models.json`.
+- `ck-pi-cline 0.1.5` / `ck-pi-zen-session 0.1.20`:
+  - 3-attempt same-model retry on empty response or zero-byte stream;
+  - Model sanitization ensuring valid integer context windows and zero costs;
+  - Auto-discovery of stealth zero-cost models (`space-bunny-alpha`, etc.) and background non-consuming sync.
+- `ck-pi-guard 0.1.2`: Initial release! Deep thinking offline sentinel and 10 edge gateway status code retry (502, 503, 504, 520-525, 533).
+- `ck-pi-cline 0.1.4` / `ck-pi-zen-session 0.1.19` / `ck-pi-rail 0.1.1` / `ck-pi-redkit 0.1.8`: Security audits, DNS rebinding protection, full-jitter exponential backoff, atomic writes.
+- `ck-pi-cline 0.1.0`: Initial release with official fingerprint disguise and 21 zero-cost models.
+- `ck-pi-zen-session 0.1.15`: Context compaction pruning and transparent 3-attempt retry.
+- `ck-pi-rail 0.1.0` / `ck-pi-redkit 0.1.0`: Monorepo split release.
+
+---
+
+## License
+
+MIT License, see [LICENSE](LICENSE).
