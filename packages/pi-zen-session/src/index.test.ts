@@ -21,6 +21,10 @@ import {
 	resolveZenModelId,
 	sanitizePiModelDefinition,
 	ZEN_PROVIDER_ID,
+	ZEN_RESPONSES_PROVIDER_ID,
+	isResponsesProtocolModelId,
+	partitionZenModels,
+	OPENCODE_OFFICIAL_RESPONSES_TOOLS,
 } from "./models-registry.js";
 import { DatabaseSync } from "node:sqlite";
 import {
@@ -34,6 +38,7 @@ import {
 import {
 	getActiveZenSessionId,
 	getStoredZenApiKey,
+	getStoredZenModels,
 	getStoredZenSessionId,
 	setActiveZenSessionId,
 	syncZenConfiguration,
@@ -240,6 +245,35 @@ describe("OpenCode Zen 模型库与参数注册表测试", () => {
 		assert.equal(loaded[0].id, "custom-free-coder");
 		assert.equal(loaded[0].name, "Custom Free Coder");
 	});
+
+	it("isResponsesProtocolModelId 与 partitionZenModels: 精准识别并分流 Responses API 协议模型", () => {
+		assert.equal(isResponsesProtocolModelId("muse-spark-1.3-contributor-free"), true);
+		assert.equal(isResponsesProtocolModelId("muse-spark-1.2-contributor-free"), true);
+		assert.equal(isResponsesProtocolModelId("opencode-zen-free/muse-spark-1.3-contributor-free"), true);
+		assert.equal(isResponsesProtocolModelId("opencode/muse-spark-1.2-contributor-free"), true);
+		assert.equal(isResponsesProtocolModelId("big-pickle"), false);
+		assert.equal(isResponsesProtocolModelId("mimo-v2.5-free"), false);
+		assert.equal(isResponsesProtocolModelId("space-bunny-free"), false);
+		assert.equal(isResponsesProtocolModelId(""), false);
+		assert.equal(isResponsesProtocolModelId(undefined), false);
+
+		const allModels = Object.values(KNOWN_ZEN_FREE_MODELS);
+		const { completions, responses } = partitionZenModels(allModels);
+		assert.equal(responses.length, 2);
+		assert.ok(responses.every((m) => m.id.startsWith("muse-spark")));
+		assert.equal(completions.length, allModels.length - 2);
+		assert.ok(completions.every((m) => !m.id.startsWith("muse-spark")));
+
+		// 验证 OPENCODE_OFFICIAL_RESPONSES_TOOLS 展平结构
+		assert.equal(OPENCODE_OFFICIAL_RESPONSES_TOOLS.length, 6);
+		for (const tool of OPENCODE_OFFICIAL_RESPONSES_TOOLS) {
+			assert.equal(tool.type, "function");
+			assert.ok(typeof (tool as any).name === "string" && (tool as any).name.length > 0);
+			assert.ok(typeof (tool as any).description === "string");
+			assert.ok(typeof (tool as any).parameters === "object");
+			assert.equal((tool as any).function, undefined, "Responses 格式严禁包含嵌套 .function 包装");
+		}
+	});
 });
 
 describe("配置同步与落盘逻辑测试", () => {
@@ -299,6 +333,55 @@ describe("配置同步与落盘逻辑测试", () => {
 			// 验证读取函数
 			assert.equal(getStoredZenApiKey(tempAuthPath, tempModelsPath), testKey);
 			assert.equal(getStoredZenSessionId(tempModelsPath), result.sessionId);
+		} finally {
+			rmSync(tempDir, { recursive: true, force: true });
+		}
+	});
+
+	it("双供应商落盘：自动将 Muse Spark 写入 opencode-zen-free-responses (api: openai-responses)", async () => {
+		const tempDir = mkdtempSync(join(tmpdir(), "pi-zen-dual-test-"));
+		const tempModelsPath = join(tempDir, "models.json");
+		const tempAuthPath = join(tempDir, "auth.json");
+
+		try {
+			const testKey = "oc_sk_dual_test_key";
+			const result = await syncZenConfiguration({
+				apiKey: testKey,
+				modelsPath: tempModelsPath,
+				authPath: tempAuthPath,
+				forceSession: true,
+				fetchModels: async () => [
+					"big-pickle",
+					"mimo-v2.5-free",
+					"muse-spark-1.3-contributor-free",
+					"muse-spark-1.2-contributor-free",
+				],
+			});
+
+			const writtenModels = JSON.parse(readFileSync(tempModelsPath, "utf8"));
+			const completionsProvider = writtenModels.providers[ZEN_PROVIDER_ID];
+			const responsesProvider = writtenModels.providers[ZEN_RESPONSES_PROVIDER_ID];
+
+			assert.ok(completionsProvider, "必须包含 completions 供应商");
+			assert.equal(completionsProvider.api, "openai-completions");
+			assert.equal(completionsProvider.models.length, 2);
+			assert.ok(completionsProvider.models.some((m: any) => m.id === "big-pickle"));
+			assert.ok(completionsProvider.models.some((m: any) => m.id === "mimo-v2.5-free"));
+
+			assert.ok(responsesProvider, "必须包含 responses 供应商");
+			assert.equal(responsesProvider.api, "openai-responses");
+			assert.equal(responsesProvider.models.length, 2);
+			assert.ok(responsesProvider.models.some((m: any) => m.id === "muse-spark-1.3-contributor-free"));
+			assert.ok(responsesProvider.models.some((m: any) => m.id === "muse-spark-1.2-contributor-free"));
+
+			// 验证读取函数合并双供应商模型
+			const combined = getStoredZenModels(tempModelsPath);
+			assert.equal(combined.length, 4);
+
+			// 验证 auth.json 双供应商凭据
+			const writtenAuth = JSON.parse(readFileSync(tempAuthPath, "utf8"));
+			assert.equal(writtenAuth[ZEN_PROVIDER_ID].key, testKey);
+			assert.equal(writtenAuth[ZEN_RESPONSES_PROVIDER_ID].key, testKey);
 		} finally {
 			rmSync(tempDir, { recursive: true, force: true });
 		}
@@ -496,6 +579,64 @@ describe("Extension API 钩子拦截测试", () => {
 		assert.equal(clampedPayload.frequency_penalty, 0.05, "必须注入 0.05 微弱重复惩罚防止死循环");
 	});
 
+	it("before_provider_request: 精确处理 Responses 协议 payload，注入扁平 tools 且不注入 Chat 专有字段", () => {
+		const handlers: Record<string, Function[]> = {};
+		const mockPi: any = {
+			registerProvider: () => {},
+			registerCommand: () => {},
+			on: (event: string, fn: Function) => {
+				handlers[event] = handlers[event] || [];
+				handlers[event].push(fn);
+			},
+		};
+
+		piZenSession(mockPi);
+		const museCtx = {
+			model: {
+				provider: ZEN_RESPONSES_PROVIDER_ID,
+				id: "muse-spark-1.3-contributor-free",
+				api: "openai-responses",
+			},
+		};
+
+		// 1. 无 tools 时注入 OPENCODE_OFFICIAL_RESPONSES_TOOLS (扁平结构)
+		const responsesEvent = {
+			payload: {
+				model: "muse-spark-1.3-contributor-free",
+				input: [{ role: "user", content: "hello" }],
+				stream: true,
+			},
+		};
+		const result = handlers["before_provider_request"][0](responsesEvent, museCtx);
+		assert.ok(result);
+		assert.ok(Array.isArray(result.tools));
+		assert.equal(result.tools.length, 6);
+		assert.equal(result.tools[0].name, "bash");
+		assert.equal(result.tools[0].function, undefined, "Responses tools 严禁包含嵌套 function");
+		// 严禁注入 ChatCompletions 专有字段
+		assert.equal(result.stream_options, undefined);
+		assert.equal(result.reasoning_effort, undefined);
+		assert.equal(result.messages, undefined);
+
+		// 2. 已有 tools 时按名称升序排列
+		const customToolsEvent = {
+			payload: {
+				model: "muse-spark-1.3-contributor-free",
+				input: [{ role: "user", content: "test" }],
+				tools: [
+					{ type: "function", name: "write", description: "write", parameters: {} },
+					{ type: "function", name: "bash", description: "bash", parameters: {} },
+				],
+			},
+		};
+		const sortedResult = handlers["before_provider_request"][0](customToolsEvent, museCtx);
+		assert.ok(sortedResult);
+		assert.deepEqual(
+			sortedResult.tools.map((t: any) => t.name),
+			["bash", "write"],
+		);
+	});
+
 	it("after_provider_response 遇 401 或 403 自动触发 Session 换新和用户通知", () => {
 		const handlers: Record<string, Function[]> = {};
 		const mockPi: any = {
@@ -549,11 +690,11 @@ describe("Extension API 钩子拦截测试", () => {
 		}
 	});
 
-	it("registerZenProviderToPi 支持动态注入发现的零额度免费模型", () => {
-		let registeredConfig: any = null;
+	it("registerZenProviderToPi 支持动态注入并注册双供应商 (Completions 与 Responses)", () => {
+		const registeredConfigs: Record<string, any> = {};
 		const mockPi: any = {
-			registerProvider: (_id: string, config: any) => {
-				registeredConfig = config;
+			registerProvider: (id: string, config: any) => {
+				registeredConfigs[id] = config;
 			},
 			registerCommand: () => {},
 			on: () => {},
@@ -569,17 +710,36 @@ describe("Extension API 钩子拦截测试", () => {
 				input: ["text", "image"] as ("text" | "image")[],
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 			},
+			{
+				id: "muse-spark-1.3-contributor-free",
+				name: "Meta Muse Spark 1.3 Free",
+				contextWindow: 1048576,
+				maxTokens: 32768,
+				reasoning: true,
+				input: ["text", "image"] as ("text" | "image")[],
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			},
 		];
 
 		const { registerZenProviderToPi } = require("./index.js");
 		registerZenProviderToPi(mockPi, "oc_sk_test", "ses_test_session_id", customFreeModels);
 
-		assert.ok(registeredConfig);
-		assert.equal(registeredConfig.apiKey, "oc_sk_test");
-		assert.equal(registeredConfig.headers["x-opencode-session"], "ses_test_session_id");
-		assert.equal(registeredConfig.models.length, 1);
-		assert.equal(registeredConfig.models[0].id, "custom-vision-free");
-		assert.equal(registeredConfig.models[0].cost.input, 0);
+		const completionsConfig = registeredConfigs[ZEN_PROVIDER_ID];
+		const responsesConfig = registeredConfigs[ZEN_RESPONSES_PROVIDER_ID];
+
+		assert.ok(completionsConfig);
+		assert.equal(completionsConfig.api, "openai-completions");
+		assert.equal(completionsConfig.apiKey, "oc_sk_test");
+		assert.equal(completionsConfig.headers["x-opencode-session"], "ses_test_session_id");
+		assert.equal(completionsConfig.models.length, 1);
+		assert.equal(completionsConfig.models[0].id, "custom-vision-free");
+
+		assert.ok(responsesConfig);
+		assert.equal(responsesConfig.api, "openai-responses");
+		assert.equal(responsesConfig.apiKey, "oc_sk_test");
+		assert.equal(responsesConfig.headers["x-opencode-session"], "ses_test_session_id");
+		assert.equal(responsesConfig.models.length, 1);
+		assert.equal(responsesConfig.models[0].id, "muse-spark-1.3-contributor-free");
 	});
 
 	it("严格隔离：isZenModelTarget 对 relayhub、onerouter、deepseek、apmix 完全返回 false，钩子绝不干涉其他供应商", () => {
@@ -588,12 +748,15 @@ describe("Extension API 钩子拦截测试", () => {
 		// 必须为 true 的场景
 		assert.equal(isZenModelTarget({ provider: "opencode-zen-free", id: "mimo-v2.5-free" }), true);
 		assert.equal(isZenModelTarget({ provider: "opencode-zen-free", id: "big-pickle" }), true);
+		assert.equal(isZenModelTarget({ provider: "opencode-zen-free-responses", id: "muse-spark-1.3-contributor-free" }), true);
 		assert.equal(isZenModelTarget({ provider: "opencode", id: "mimo-v2.5-free" }), true);
 		assert.equal(isZenModelTarget({ provider: "opencode", id: "big-pickle" }), true);
+		assert.equal(isZenModelTarget({ provider: "opencode", id: "muse-spark-1.3-contributor-free" }), true);
 
 		// 必须为 false 的场景：绝不能干涉用户在 CC 里的其他供应商
 		assert.equal(isZenModelTarget(undefined), false);
 		assert.equal(isZenModelTarget({ provider: "relayhub", id: "deepseek-v4.1-flash" }), false);
+		assert.equal(isZenModelTarget({ provider: "relayhub", id: "muse-spark-1.3-contributor-free" }), false);
 		assert.equal(isZenModelTarget({ provider: "deepseek", id: "deepseek-flash" }), false);
 		assert.equal(isZenModelTarget({ provider: "onerouter", id: "deepseek/deepseek-v4.1-flash:free" }), false);
 		assert.equal(isZenModelTarget({ provider: "apmix", id: "deepseek-v4-flash-free" }), false);
@@ -696,6 +859,60 @@ describe("Extension API 钩子拦截测试", () => {
 		assert.equal(capturedInit?.body, undefined, "/models 请求绝不注入 body");
 		const headers = new Headers(capturedInit?.headers);
 		assert.equal(headers.get("x-opencode-session"), null, "/models 请求绝不被包装 session 请求头");
+	});
+
+	it("installZenFetchInterceptor: 拦截发往 /zen/v1/responses 的请求并注入扁平 Responses tools，且不改写为 ChatCompletion", async () => {
+		const { installZenFetchInterceptor } = require("./index.js");
+
+		let capturedUrl: string | undefined;
+		let capturedInit: RequestInit | undefined;
+		const mockRes = new Response(JSON.stringify({ id: "resp_123" }), {
+			status: 200,
+			headers: { "content-type": "application/json" },
+		});
+
+		const mockGlobal: any = {
+			fetch: async (input: any, init: any) => {
+				capturedUrl = String(input);
+				capturedInit = init;
+				return mockRes;
+			},
+		};
+
+		installZenFetchInterceptor(mockGlobal);
+
+		const rawResponsesPayload = {
+			model: "muse-spark-1.3-contributor-free",
+			input: [{ role: "user", content: "summarize this" }],
+			stream: false,
+		};
+
+		const res = await mockGlobal.fetch("https://opencode.ai/zen/v1/responses", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(rawResponsesPayload),
+		});
+
+		assert.equal(capturedUrl, "https://opencode.ai/zen/v1/responses");
+		assert.ok(capturedInit?.body);
+		const parsed = JSON.parse(String(capturedInit.body));
+
+		// 必须注入 Responses 扁平 tools 且 tool_choice 为 "none"
+		assert.ok(Array.isArray(parsed.tools));
+		assert.equal(parsed.tools.length, 6);
+		assert.equal(parsed.tools[0].name, "bash");
+		assert.equal(parsed.tools[0].function, undefined);
+		assert.equal(parsed.tool_choice, "none");
+
+		// 绝不强制改写 stream: true
+		assert.equal(parsed.stream, false);
+		// 绝不注入 ChatCompletions 专有字段
+		assert.equal(parsed.stream_options, undefined);
+		assert.equal(parsed.reasoning_effort, undefined);
+
+		// 响应原样返回，不经过 assembleSseToChatCompletionResponse
+		const resJson = await res.json();
+		assert.equal(resJson.id, "resp_123");
 	});
 
 	it("installZenFetchInterceptor: 支持 Request 对象输入并完整保留 Authorization 凭证", async () => {

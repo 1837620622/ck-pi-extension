@@ -15,12 +15,16 @@ import {
 	formatThinkingSummary,
 	formatTokens,
 	inferModelCapabilities,
+	isResponsesProtocolModelId,
 	KNOWN_ZEN_FREE_MODELS,
+	OPENCODE_OFFICIAL_RESPONSES_TOOLS,
 	OPENCODE_OFFICIAL_TOOLS,
+	partitionZenModels,
 	resolveZenModelId,
 	sanitizePiModelDefinition,
 	ZEN_BASE_URL,
 	ZEN_PROVIDER_ID,
+	ZEN_RESPONSES_PROVIDER_ID,
 	ZEN_USER_AGENT,
 } from "./models-registry.js";
 export {
@@ -28,12 +32,16 @@ export {
 	formatThinkingSummary,
 	formatTokens,
 	inferModelCapabilities,
+	isResponsesProtocolModelId,
 	KNOWN_ZEN_FREE_MODELS,
+	OPENCODE_OFFICIAL_RESPONSES_TOOLS,
 	OPENCODE_OFFICIAL_TOOLS,
+	partitionZenModels,
 	resolveZenModelId,
 	sanitizePiModelDefinition,
 	ZEN_BASE_URL,
 	ZEN_PROVIDER_ID,
+	ZEN_RESPONSES_PROVIDER_ID,
 	ZEN_USER_AGENT,
 };
 import {
@@ -71,28 +79,58 @@ export function registerZenProviderToPi(
 			.map(sanitizePiModelDefinition)
 			.filter((m): m is NonNullable<typeof m> => m !== null);
 
-		pi.registerProvider(ZEN_PROVIDER_ID, {
-			name: "OpenCode Zen (Free)",
-			baseUrl: ZEN_BASE_URL,
-			apiKey: apiKey || "",
-			api: "openai-completions",
-			headers: {
-				"User-Agent": ZEN_USER_AGENT,
-				"x-opencode-client": "cli",
-				"x-opencode-session": sessionId,
-				"x-opencode-project": generateZenProjectId(),
-				"x-session-affinity": sessionId,
-				"X-Session-Id": sessionId,
-			},
-			compat: {
-				maxTokensField: "max_tokens",
-				requiresReasoningContentOnAssistantMessages: true,
-				supportsDeveloperRole: false,
-				supportsStore: false,
-				supportsUsageInStreaming: true,
-			},
-			models: sanitizedModels,
-		});
+		const { completions, responses } = partitionZenModels(sanitizedModels as any);
+
+		try {
+			pi.registerProvider(ZEN_PROVIDER_ID, {
+				name: "OpenCode Zen (Free)",
+				baseUrl: ZEN_BASE_URL,
+				apiKey: apiKey || "",
+				api: "openai-completions",
+				headers: {
+					"User-Agent": ZEN_USER_AGENT,
+					"x-opencode-client": "cli",
+					"x-opencode-session": sessionId,
+					"x-opencode-project": generateZenProjectId(),
+					"x-session-affinity": sessionId,
+					"X-Session-Id": sessionId,
+				},
+				compat: {
+					maxTokensField: "max_tokens",
+					requiresReasoningContentOnAssistantMessages: true,
+					supportsDeveloperRole: false,
+					supportsStore: false,
+					supportsUsageInStreaming: true,
+				},
+				models: completions,
+			});
+		} catch {
+			// 忽略重复注册
+		}
+
+		try {
+			pi.registerProvider(ZEN_RESPONSES_PROVIDER_ID, {
+				name: "OpenCode Zen Responses (Free)",
+				baseUrl: ZEN_BASE_URL,
+				apiKey: apiKey || "",
+				api: "openai-responses",
+				headers: {
+					"User-Agent": ZEN_USER_AGENT,
+					"x-opencode-client": "cli",
+					"x-opencode-session": sessionId,
+					"x-opencode-project": generateZenProjectId(),
+					"x-session-affinity": sessionId,
+					"X-Session-Id": sessionId,
+				},
+				compat: {
+					supportsDeveloperRole: false,
+					supportsStore: false,
+				},
+				models: responses,
+			});
+		} catch {
+			// 忽略重复注册
+		}
 	} catch {
 		// 忽略重复注册
 	}
@@ -121,17 +159,18 @@ export function isZenModelTarget(model?: { provider?: string; id?: string }, pay
 			return (
 				lower.endsWith("-free") ||
 				lower === "big-pickle" ||
-				lower.includes("zen")
+				lower.includes("zen") ||
+				isResponsesProtocolModelId(lower)
 			);
 		}
 		return false;
 	}
-	// 严格隔离：仅处理 opencode-zen-free 或明确属于 opencode 官方的免费模型
+	// 严格隔离：仅处理 opencode-zen-free, opencode-zen-free-responses 或明确属于 opencode 官方的免费模型
 	// 绝不干涉 relayhub、deepseek、anthropic、openai 等其他任何供应商或 CC 插件
-	if (model.provider === ZEN_PROVIDER_ID) return true;
+	if (model.provider === ZEN_PROVIDER_ID || model.provider === ZEN_RESPONSES_PROVIDER_ID) return true;
 	if (
 		model.provider === "opencode" &&
-		(model.id?.includes("-free") || model.id === "big-pickle")
+		(model.id?.includes("-free") || model.id === "big-pickle" || isResponsesProtocolModelId(model.id))
 	) {
 		return true;
 	}
@@ -208,9 +247,15 @@ export function isCompactionOrNoToolRequest(payload: Record<string, unknown>): b
 	// 1. 显式指定 tool_choice 为 "none"
 	if (payload.tool_choice === "none") return true;
 
-	// 2. 检查 messages 中是否包含压缩或总结标识 (如 Pi 的 <conversation> 或 <previous-summary> 标签)
-	if (Array.isArray(payload.messages)) {
-		for (const msg of payload.messages) {
+	// 2. 检查 messages 或 input 中是否包含压缩或总结标识 (如 Pi 的 <conversation> 或 <previous-summary> 标签)
+	const msgList = Array.isArray(payload.messages)
+		? payload.messages
+		: Array.isArray(payload.input)
+		? payload.input
+		: null;
+
+	if (msgList) {
+		for (const msg of msgList) {
 			if (msg && typeof msg === "object") {
 				const text = getMessageText((msg as any).content).toLowerCase();
 				if (
@@ -389,7 +434,10 @@ export function installZenFetchInterceptor(targetGlobal: typeof globalThis = glo
 			return originalFetch.call(this, input, init);
 		}
 
-		if (!targetUrl.includes("opencode.ai/zen/v1/chat/completions")) {
+		const isChatCompletions = targetUrl.includes("opencode.ai/zen/v1/chat/completions");
+		const isResponses = targetUrl.includes("opencode.ai/zen/v1/responses");
+
+		if (!isChatCompletions && !isResponses) {
 			return originalFetch.call(this, input, init);
 		}
 
@@ -433,94 +481,123 @@ export function installZenFetchInterceptor(targetGlobal: typeof globalThis = glo
 				originalStreamRequested = payload.stream === true;
 				payloadModel = typeof payload.model === "string" ? payload.model : "";
 
-				// A. 关键防 403 规约：OpenCode Zen 后端严格要求 tools 参数存在
-				const isCompaction = isCompactionOrNoToolRequest(payload);
-				if (isCompaction || !Array.isArray(payload.tools) || payload.tools.length === 0) {
-					// 针对压缩/总结/未提供工具的请求：注入官方 tools 并设置 tool_choice: "none"，
-					// 既满足网关 tools 存在性校验，又严禁模型生成工具调用，彻底杜绝 "Summarization attempted to call a tool" 报错
-					payload.tools = OPENCODE_OFFICIAL_TOOLS;
-					payload.tool_choice = "none";
-					modified = true;
-				} else {
-					// 正常 Agent 对话：已有工具时按字母严格重排
-					payload.tools = [...payload.tools].sort((a: any, b: any) => {
-						const nameA = a.function?.name || a.name || "";
-						const nameB = b.function?.name || b.name || "";
-						return nameA.localeCompare(nameB);
-					});
-					modified = true;
-				}
-
-				// B. 强制流式规约：OpenCode Zen 免费端点对非流式请求一律拒绝 (HTTP 403 FreeTierError)
-				// 若调用方原本期望非流式 JSON（如 Pi 压缩任务 completeSimple），强制开启 stream: true，
-				// 后续由拦截器在底层透明聚合上游 SSE 帧，拼装为完整的 OpenAI ChatCompletion JSON 响应
-				if (!originalStreamRequested) {
-					payload.stream = true;
-					modified = true;
-				}
-				if (!payload.stream_options) {
-					payload.stream_options = { include_usage: true };
-					modified = true;
-				}
-
-				// C. 上下文超限全自动修剪与防护
-				if (pruneZenContext(payload)) {
-					modified = true;
-				}
-
-				// D. 规范化 reasoning_effort 与思考参数
-				if (isCompaction) {
-					// 压缩/总结场景：必须压制长思考，强制设为 low 并移除 thinking 对象，
-					// 避免模型思考几十秒导致 Cloudflare 524 握手超时或撞 stopReason: length 截断错误
-					payload.reasoning_effort = "low";
-					if ("thinking" in payload) {
-						delete payload.thinking;
-					}
-					modified = true;
-				} else {
-					const isNonReasoning =
-						payloadModel.startsWith("jev-") || payloadModel.startsWith("ling-2.6-flash");
-
-					if (isNonReasoning && "reasoning_effort" in payload) {
-						delete payload.reasoning_effort;
+				if (isResponses) {
+					// Responses API 端点分支 (/zen/v1/responses)
+					const isCompaction = isCompactionOrNoToolRequest(payload);
+					if (isCompaction || !Array.isArray(payload.tools) || payload.tools.length === 0) {
+						payload.tools = OPENCODE_OFFICIAL_RESPONSES_TOOLS;
+						payload.tool_choice = "none";
 						modified = true;
-					} else if (typeof payload.reasoning_effort === "string") {
-						const eff = payload.reasoning_effort.toLowerCase();
-						if (eff === "max" || eff === "xhigh") {
-							payload.reasoning_effort = "high";
-							modified = true;
-						} else if (eff === "minimal") {
-							payload.reasoning_effort = "low";
-							modified = true;
-						} else if (eff === "off" || eff === "none" || eff === "") {
+					} else {
+						payload.tools = [...payload.tools].sort((a: any, b: any) => {
+							const nameA = a.name || a.function?.name || "";
+							const nameB = b.name || b.function?.name || "";
+							return nameA.localeCompare(nameB);
+						});
+						modified = true;
+					}
+
+					// 输出 Token 阈值安全钳位 (Responses 使用 max_output_tokens)
+					const maxAllowedOutput = isCompaction ? 8192 : 32768;
+					if (typeof payload.max_output_tokens === "number" && (payload.max_output_tokens as number) > maxAllowedOutput) {
+						payload.max_output_tokens = maxAllowedOutput;
+						modified = true;
+					}
+
+					if (modified) {
+						newBody = JSON.stringify(payload);
+					}
+				} else {
+					// ChatCompletions 端点分支 (/zen/v1/chat/completions)
+					// A. 关键防 403 规约：OpenCode Zen 后端严格要求 tools 参数存在
+					const isCompaction = isCompactionOrNoToolRequest(payload);
+					if (isCompaction || !Array.isArray(payload.tools) || payload.tools.length === 0) {
+						// 针对压缩/总结/未提供工具的请求：注入官方 tools 并设置 tool_choice: "none"，
+						// 既满足网关 tools 存在性校验，又严禁模型生成工具调用，彻底杜绝 "Summarization attempted to call a tool" 报错
+						payload.tools = OPENCODE_OFFICIAL_TOOLS;
+						payload.tool_choice = "none";
+						modified = true;
+					} else {
+						// 正常 Agent 对话：已有工具时按字母严格重排
+						payload.tools = [...payload.tools].sort((a: any, b: any) => {
+							const nameA = a.function?.name || a.name || "";
+							const nameB = b.function?.name || b.name || "";
+							return nameA.localeCompare(nameB);
+						});
+						modified = true;
+					}
+
+					// B. 强制流式规约：OpenCode Zen 免费端点对非流式请求一律拒绝 (HTTP 403 FreeTierError)
+					// 若调用方原本期望非流式 JSON（如 Pi 压缩任务 completeSimple），强制开启 stream: true，
+					// 后续由拦截器在底层透明聚合上游 SSE 帧，拼装为完整的 OpenAI ChatCompletion JSON 响应
+					if (!originalStreamRequested) {
+						payload.stream = true;
+						modified = true;
+					}
+					if (!payload.stream_options) {
+						payload.stream_options = { include_usage: true };
+						modified = true;
+					}
+
+					// C. 上下文超限全自动修剪与防护
+					if (pruneZenContext(payload)) {
+						modified = true;
+					}
+
+					// D. 规范化 reasoning_effort 与思考参数
+					if (isCompaction) {
+						// 压缩/总结场景：必须压制长思考，强制设为 low 并移除 thinking 对象，
+						// 避免模型思考几十秒导致 Cloudflare 524 握手超时或撞 stopReason: length 截断错误
+						payload.reasoning_effort = "low";
+						if ("thinking" in payload) {
+							delete payload.thinking;
+						}
+						modified = true;
+					} else {
+						const isNonReasoning =
+							payloadModel.startsWith("jev-") || payloadModel.startsWith("ling-2.6-flash");
+
+						if (isNonReasoning && "reasoning_effort" in payload) {
 							delete payload.reasoning_effort;
 							modified = true;
-						} else if (!["low", "medium", "high"].includes(eff)) {
-							payload.reasoning_effort = "high";
+						} else if (typeof payload.reasoning_effort === "string") {
+							const eff = payload.reasoning_effort.toLowerCase();
+							if (eff === "max" || eff === "xhigh") {
+								payload.reasoning_effort = "high";
+								modified = true;
+							} else if (eff === "minimal") {
+								payload.reasoning_effort = "low";
+								modified = true;
+							} else if (eff === "off" || eff === "none" || eff === "") {
+								delete payload.reasoning_effort;
+								modified = true;
+							} else if (!["low", "medium", "high"].includes(eff)) {
+								payload.reasoning_effort = "high";
+								modified = true;
+							}
+						}
+
+						// E. 剔除多余 thinking 顶层对象
+						if ("thinking" in payload && typeof payload.thinking === "object") {
+							delete payload.thinking;
 							modified = true;
 						}
 					}
 
-					// E. 剔除多余 thinking 顶层对象
-					if ("thinking" in payload && typeof payload.thinking === "object") {
-						delete payload.thinking;
+					// F. 输出 Token 阈值安全钳位 (防止 Pi reserveTokens 传出超大 max_tokens 导致 400 Bad Request)
+					const maxAllowedOutput = isCompaction ? 8192 : 32768;
+					if (typeof payload.max_tokens === "number" && (payload.max_tokens as number) > maxAllowedOutput) {
+						payload.max_tokens = maxAllowedOutput;
 						modified = true;
 					}
-				}
+					if (typeof payload.max_completion_tokens === "number" && (payload.max_completion_tokens as number) > maxAllowedOutput) {
+						payload.max_completion_tokens = maxAllowedOutput;
+						modified = true;
+					}
 
-				// F. 输出 Token 阈值安全钳位 (防止 Pi reserveTokens 传出超大 max_tokens 导致 400 Bad Request)
-				const maxAllowedOutput = isCompaction ? 8192 : 32768;
-				if (typeof payload.max_tokens === "number" && (payload.max_tokens as number) > maxAllowedOutput) {
-					payload.max_tokens = maxAllowedOutput;
-					modified = true;
-				}
-				if (typeof payload.max_completion_tokens === "number" && (payload.max_completion_tokens as number) > maxAllowedOutput) {
-					payload.max_completion_tokens = maxAllowedOutput;
-					modified = true;
-				}
-
-				if (modified) {
-					newBody = JSON.stringify(payload);
+					if (modified) {
+						newBody = JSON.stringify(payload);
+					}
 				}
 			} catch {
 				// 忽略非 JSON 请求体
@@ -597,8 +674,14 @@ export function installZenFetchInterceptor(targetGlobal: typeof globalThis = glo
 							if (init?.signal?.aborted) break;
 							const { value, done } = await reader.read();
 							if (done) {
-								if (!peekedText.includes('"choices"') || peekedText.trim().length === 0) {
-									isEmptyResponseError = true;
+								if (isResponses) {
+									if (!peekedText.includes('"response') || peekedText.trim().length === 0) {
+										isEmptyResponseError = true;
+									}
+								} else {
+									if (!peekedText.includes('"choices"') || peekedText.trim().length === 0) {
+										isEmptyResponseError = true;
+									}
 								}
 								break;
 							}
@@ -625,10 +708,16 @@ export function installZenFetchInterceptor(targetGlobal: typeof globalThis = glo
 												hasErrorFrame = true;
 												break;
 											}
-											if (Array.isArray(data.choices) && data.choices.length > 0) {
-												const c = data.choices[0];
-												if (c?.delta || c?.message || c?.text || c?.finish_reason) {
+											if (isResponses) {
+												if (data.type?.startsWith("response.") || data.response || data.item || data.delta) {
 													hasValidChoiceChunk = true;
+												}
+											} else {
+												if (Array.isArray(data.choices) && data.choices.length > 0) {
+													const c = data.choices[0];
+													if (c?.delta || c?.message || c?.text || c?.finish_reason) {
+														hasValidChoiceChunk = true;
+													}
 												}
 											}
 										} catch {}
@@ -726,8 +815,8 @@ export function installZenFetchInterceptor(targetGlobal: typeof globalThis = glo
 		}
 
 		// 核心自愈：若调用方原本发起的为非流式请求（如 Pi 总结压缩），而上游返回 200 SSE 流，
-		// 将其聚合反序列化为标准的 OpenAI ChatCompletion JSON 响应对象
-		if (response.ok && !originalStreamRequested) {
+		// 将其聚合反序列化为标准的 OpenAI ChatCompletion JSON 响应对象 (仅限 ChatCompletions 端点)
+		if (isChatCompletions && response.ok && !originalStreamRequested) {
 			return assembleSseToChatCompletionResponse(response, payloadModel);
 		}
 
@@ -915,6 +1004,49 @@ export default function piZenSession(pi: ExtensionAPI): void {
 		const payload = event.payload as Record<string, unknown> | undefined;
 		const payloadModel = typeof payload?.model === "string" ? payload.model : undefined;
 		if (isZenModelTarget(ctx.model, payloadModel) && payload && typeof payload === "object") {
+			const isResponses =
+				ctx.model?.api === "openai-responses" ||
+				ctx.model?.provider === ZEN_RESPONSES_PROVIDER_ID ||
+				isResponsesProtocolModelId(payloadModel || ctx.model?.id || "") ||
+				Array.isArray(payload.input);
+
+			if (isResponses) {
+				let modified = false;
+				const transformed = { ...payload };
+				const isCompaction = isCompactionOrNoToolRequest(transformed);
+
+				// A. 工具规范对齐 (Responses 协议扁平结构)
+				if (!Array.isArray(transformed.tools) || transformed.tools.length === 0) {
+					transformed.tools = OPENCODE_OFFICIAL_RESPONSES_TOOLS;
+					if (isCompaction) {
+						transformed.tool_choice = "none";
+					}
+					modified = true;
+				} else {
+					transformed.tools = [...transformed.tools].sort((a: any, b: any) => {
+						const nameA = a.name || a.function?.name || "";
+						const nameB = b.name || b.function?.name || "";
+						return nameA.localeCompare(nameB);
+					});
+					if (isCompaction) {
+						transformed.tool_choice = "none";
+					}
+					modified = true;
+				}
+
+				// B. 输出 Token 阈值安全钳位 (Responses 协议字段为 max_output_tokens)
+				const maxAllowedOutput = isCompaction ? 8192 : 32768;
+				if (typeof transformed.max_output_tokens === "number" && (transformed.max_output_tokens as number) > maxAllowedOutput) {
+					transformed.max_output_tokens = maxAllowedOutput;
+					modified = true;
+				}
+
+				if (modified) {
+					return transformed;
+				}
+				return;
+			}
+
 			let modified = false;
 			const transformed = { ...payload };
 
@@ -1158,7 +1290,7 @@ export async function handleZenCommand(
 			}
 			if ((ctx as { modelRegistry?: { refresh?: (arg: unknown) => Promise<unknown> } }).modelRegistry?.refresh) {
 				await (ctx as { modelRegistry: { refresh: (arg: unknown) => Promise<unknown> } }).modelRegistry
-					.refresh({ providers: [ZEN_PROVIDER_ID] })
+					.refresh({ providers: [ZEN_PROVIDER_ID, ZEN_RESPONSES_PROVIDER_ID] })
 					.catch(() => {});
 			}
 			const reasoningCount = result.resolvedModels.filter((m) => m.reasoning).length;
@@ -1215,12 +1347,32 @@ export async function handleZenCommand(
 			}
 		}
 
-		// 用户显式指定了单款模型：仅对该指定模型发送极简单次探测 (max_tokens: 1)
+		// 用户显式指定了单款模型：仅对该指定模型发送极简单次探测
 		const resolvedTarget = resolveZenModelId(target);
+		const isResponsesTarget = isResponsesProtocolModelId(resolvedTarget);
 		notify(ctx, `正在测试单款模型 ${resolvedTarget} 连通性...`, "info");
 		const start = Date.now();
 		try {
-			const res = await fetch(`${ZEN_BASE_URL}/chat/completions`, {
+			const pingUrl = isResponsesTarget
+				? `${ZEN_BASE_URL}/responses`
+				: `${ZEN_BASE_URL}/chat/completions`;
+			const pingBody = isResponsesTarget
+				? JSON.stringify({
+						model: resolvedTarget,
+						input: [{ role: "user", content: "ping" }],
+						tools: OPENCODE_OFFICIAL_RESPONSES_TOOLS,
+						tool_choice: "none",
+						max_output_tokens: 16,
+						stream: false,
+				  })
+				: JSON.stringify({
+						model: resolvedTarget,
+						messages: [{ role: "user", content: "ping" }],
+						max_tokens: 1,
+						stream: false,
+				  });
+
+			const res = await fetch(pingUrl, {
 				method: "POST",
 				headers: {
 					Authorization: `Bearer ${key}`,
@@ -1229,12 +1381,7 @@ export async function handleZenCommand(
 					"x-opencode-client": "cli",
 					"x-opencode-session": getStoredZenSessionId() || generateZenSessionId(),
 				},
-				body: JSON.stringify({
-					model: resolvedTarget,
-					messages: [{ role: "user", content: "ping" }],
-					max_tokens: 1,
-					stream: false,
-				}),
+				body: pingBody,
 				signal: AbortSignal.timeout(15_000),
 			});
 			const ms = Date.now() - start;
@@ -1267,7 +1414,7 @@ export async function handleZenCommand(
 			registerZenProviderToPi(pi, syncRes.apiKey, syncRes.sessionId, syncRes.resolvedModels);
 		}
 		if ((ctx as any).modelRegistry?.refresh) {
-			await (ctx as any).modelRegistry.refresh({ providers: [ZEN_PROVIDER_ID] }).catch(() => {});
+			await (ctx as any).modelRegistry.refresh({ providers: [ZEN_PROVIDER_ID, ZEN_RESPONSES_PROVIDER_ID] }).catch(() => {});
 		}
 		const msg = `[OK] 已成功登记新模型至本地模型库 (~/.pi/agent/zen-models.json)！\n• 模型ID: ${addedDef.id}\n• 名称: ${addedDef.name}\n• 上下文: ${formatTokens(addedDef.contextWindow)}\n• 深度思考: ${addedDef.reasoning ? "支持" : "否"}\n• 计费: 0免费 (零额度消耗)\n现已生效，可通过 /zen model ${addedDef.id} 或 /model 选用。`;
 		notify(ctx, msg, "info");
@@ -1293,13 +1440,14 @@ export async function handleZenCommand(
 				registerZenProviderToPi(pi, syncRes.apiKey, syncRes.sessionId, syncRes.resolvedModels);
 			}
 			if ((ctx as any).modelRegistry?.refresh) {
-				await (ctx as any).modelRegistry.refresh({ providers: [ZEN_PROVIDER_ID] }).catch(() => {});
+				await (ctx as any).modelRegistry.refresh({ providers: [ZEN_PROVIDER_ID, ZEN_RESPONSES_PROVIDER_ID] }).catch(() => {});
 			}
 		}
 
 		if (typeof (ctx as any).setModel === "function") {
-			await (ctx as any).setModel({ provider: ZEN_PROVIDER_ID, id: targetId });
-			const msg = `[OK] 已成功切换至 Zen 模型: ${targetId}`;
+			const targetProviderId = isResponsesProtocolModelId(targetId) ? ZEN_RESPONSES_PROVIDER_ID : ZEN_PROVIDER_ID;
+			await (ctx as any).setModel({ provider: targetProviderId, id: targetId });
+			const msg = `[OK] 已成功切换至 Zen 模型: ${targetId} (${targetProviderId})`;
 			notify(ctx, msg, "info");
 			return msg;
 		}

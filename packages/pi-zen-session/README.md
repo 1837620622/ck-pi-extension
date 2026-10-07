@@ -1,34 +1,65 @@
 # ck-pi-zen-session
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.1.21-blue.svg?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.1.22-blue.svg?style=flat-square" alt="Version" />
   <img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License" />
   <img src="https://img.shields.io/badge/runtime-Pi%20Agent%20%3E%3D0.85.0-orange.svg?style=flat-square" alt="Pi Runtime" />
-  <img src="https://img.shields.io/badge/protocol-OpenAI%20Compatible-informational.svg?style=flat-square" alt="Protocol" />
+  <img src="https://img.shields.io/badge/protocol-Completions%20%26%20Responses-informational.svg?style=flat-square" alt="Protocol" />
   <img src="https://img.shields.io/badge/session%20algorithm-Descending%20Timestamp%20Base62-purple.svg?style=flat-square" alt="Session Algorithm" />
   <img src="https://img.shields.io/badge/zero--cost%20models-Verified-success.svg?style=flat-square" alt="Zero Cost Models" />
 </p>
 
-OpenCode Zen 免费模型同步、请求头伪装与 Session 会话自动维护插件，专为 [Pi 编码智能体](https://github.com/earendil-works/pi) 打造。
+OpenCode Zen 免费模型同步、双协议路由 (Completions & Responses)、请求头伪装与会话自愈插件，专为 [Pi 编码智能体](https://github.com/earendil-works/pi) 打造。
+
+OpenCode Zen free-tier model sync, dual-protocol routing (Completions & Responses), request header disguise, and automatic session self-healing extension designed for Pi coding agent.
 
 ---
 
-## 目录
+## 赞助与支持 / Sponsorship & Support
 
-- [一、核心特性](#一核心特性)
-- [二、指令用法与操作面板](#二指令用法与操作面板)
-- [三、内置免费模型库参数](#三内置免费模型库参数)
-- [四、官方算法逆向解析](#四官方算法逆向解析)
-- [五、安装方法](#五安装方法)
-- [六、许可](#六许可)
+如果您觉得本项目提升了您的开发效率，欢迎赞助支持！您的赞助将直接用于持续维护、网络节点验证、逆向协议对齐与新特性的快速迭代。
+
+If you find this project helpful, please consider sponsoring. Your support directly funds continuous maintenance, endpoint verification, reverse-engineering protocol alignment, and rapid iteration.
+
+### 赞助渠道 / Sponsorship Channels
+
+- **GitHub Sponsors**: [https://github.com/sponsors/1837620622](https://github.com/sponsors/1837620622)
+- **企业赞助与商务合作 / Enterprise Sponsorship**:
+  - 欢迎 AI 基础设施提供商、代理网关服务商或团队提供赞助。
+  - 赞助权益包含：在项目 README 显著位置展示企业 Logo 与链接、优先处理定制化需求与专属支持。
+  - Sponsors can display their brand logo and link prominently in the README, receive priority issue response, and request custom protocol optimizations.
 
 ---
 
-## 一、核心特性
+## 目录 / Table of Contents
 
-- **/zen 指令一键激活与动态免费模型全量探测**：输入一次 API Key (`/zen oc_sk_...`)，全自动在线探测所有带有 `free` / `zero` / `pickle` 标识的模型，全量标记 0 额度消耗 (`cost: { input: 0, output: 0 }`) 并动态热挂载进 Pi 与 CC-Switch。
-- **官方算法深度逆向**：完整对齐 OpenCode 客户端 `Identifier.descending("ses")` 与 `Identifier.ascending("msg")` 算法，生成 30 位降序会话 ID 与升序请求 ID，支持毫秒级时间戳反解。
-- **全套官方级伪装请求头**：自动注入全部 7 个官方客户端对齐请求头：
+- [一、核心特性 / Key Features](#一核心特性--key-features)
+- [二、双协议架构与 Issue #1 修复 / Dual-Protocol Architecture & Issue #1 Fix](#二双协议架构与-issue-1-修复--dual-protocol-architecture--issue-1-fix)
+- [三、指令用法与操作面板 / Command Usage & Panel](#三指令用法与操作面板--command-usage--panel)
+- [四、内置免费模型库参数 / Built-in Free Models](#四内置免费模型库参数--built-in-free-models)
+- [五、官方算法逆向解析 / Reverse-Engineered Session Algorithm](#五官方算法逆向解析--reverse-engineered-session-algorithm)
+- [六、安装方法 / Installation](#六安装方法--installation)
+- [七、更新日志 / Changelog](#七更新日志--changelog)
+- [八、许可 / License](#八许可--license)
+
+---
+
+## 一、核心特性 / Key Features
+
+- **/zen 指令一键激活与动态免费模型全量探测 / One-click Activation & Dynamic Discovery**：
+  输入一次 API Key (`/zen oc_sk_...`)，全自动在线探测所有带有 `free` / `zero` / `pickle` 标识的模型，全量标记 0 额度消耗 (`cost: { input: 0, output: 0 }`) 并动态热挂载进 Pi 与 CC-Switch。
+  Discover all models marked with free, zero, or pickle with one key command, tagging zero cost and mounting into Pi runtime dynamically.
+
+- **双供应商双协议分流架构 / Dual-Provider Protocol Routing**：
+  将 OpenCode Zen 拆分为 `opencode-zen-free` (`openai-completions`) 与 `opencode-zen-free-responses` (`openai-responses`)，彻底解决 Muse Spark 系列模型报错 `400 ModelProtocolUnsupported` 的协议冲突问题。
+  Routes Chat models via ChatCompletions and Muse Spark models via Responses API without cross-protocol corruption.
+
+- **官方算法深度逆向 / Reverse-Engineered Session Algorithm**：
+  完整对齐 OpenCode 客户端 `Identifier.descending("ses")` 与 `Identifier.ascending("msg")` 算法，生成 30 位降序会话 ID 与升序请求 ID，支持毫秒级时间戳反解。
+  Generates descending 30-char session IDs and ascending request IDs aligned with official OpenCode client algorithms.
+
+- **全套官方级伪装请求头 / Official Disguise Headers**：
+  自动注入全部 7 个官方客户端对齐请求头：
   - `User-Agent`: `opencode/1.18.32 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14`
   - `x-opencode-client`: `cli`
   - `x-opencode-session`: `ses_<12位反转时间戳十六进制><14位Base62>`
@@ -36,84 +67,110 @@ OpenCode Zen 免费模型同步、请求头伪装与 Session 会话自动维护�
   - `x-opencode-project`: `prj_<16位工作区哈希>`（与官方项目哈希行为对齐）
   - `x-session-affinity`: 与 session 严格同步
   - `X-Session-Id`: 与 session 严格同步
-- **30 分钟无感前置平滑轮换**：官方后端限制免费会话时长约为 1 小时（超时直接 403 `FreeTierError`）。本插件在底层请求拦截器（`before_provider_headers`）和 Agent 循环守卫（`before_agent_start`）中设置 30 分钟主动换新阈值，兼顾会话上下文平滑与长期高频调用稳定性，确保永不触碰 1 小时硬限制。
-- **网关异常自愈守卫 (`after_provider_response`)**：新增底层响应拦截，一旦检测到远端网关返回 401 或 403 `FreeTierError`，立即当场触发 Session 换新与后台持久化，并提示用户，彻底终结会话失效死锁。
-- **多源凭据自适应感知**：支持优先读取 `OPENCODE_API_KEY`、`OPENCODE_ZEN_API_KEY` 环境变量，亦可直接使用 `/zen <key>` 配置，无缝兼容各类容器与终端环境。
-- **原生代理支持解除限速与额度**：由于 OpenCode 端点受 Cloudflare WAF 保护，在 HTTP 头部伪造假 IP 无法欺骗底层 TCP 握手并会招致 WAF 封禁；如需轮换出口解除 IP 限制，直接配置标准网络代理（如 `export HTTPS_PROXY=http://127.0.0.1:7890`）即可让物理连接从新节点发起，安全解除限速与额度。
-- **官方全套 6 大核心工具链守卫与字母序规约**：OpenCode Zen 免费端点对工具集有硬性要求（无工具直接拒绝）。插件在 `before_provider_request` 钩子中实时监控请求体：
-  - 若用户处于纯文本或无工具模式，自动补齐官方完整的 6 大核心工具（`bash`, `edit`, `glob`, `grep`, `read`, `write`）与 `tool_choice: "auto"`，彻底根除 403 拦截；
-  - 若请求已有工具，严格按照官方客户端规约（`localeCompare`）按函数名升序重排；
-  - 自动对齐流式用量元数据 `stream_options: { include_usage: true }`。
-- **独立供应商隔离与零干扰保障 (`isZenModelTarget`)**：严格将生命周期守卫、请求头与请求体拦截限制在 `opencode-zen-free` 命名空间内，对 `relayhub`、`deepseek`、`anthropic`、`openai`、`onerouter`、`apmix` 等其他任何模型及 Claude Code（`pi-cc-extensions`）插件 100% 保持完全静默放行，零副作用、零冲突。
-- **高精智能模型能力与参数解析引擎**：无论输入新 Key 还是 OpenCode Zen 官方端点动态上线任何新免费/零额度模型，自动深度识别其上下文窗口（Context Window，如 1M, 256K, 200K, 128K）、最大输出（Max Tokens，如 128K, 64K, 32K, 16K）、推理思考能力与思考等级映射（thinkingLevelMap，涵盖 6 档深度推理 [minimal..xhigh]、3 档标准推理 [low, high, max] 或快反模式）以及视觉多模态支持，并在 `/zen <key>` 和 `/zen list` 中呈现精美结构化卡片。
-- **OpenAI 标准思考档位全链路映射与双重防线**：彻底修复 OpenCode Zen 上游端点不支持 `max` / `xhigh` 思考档位导致抛出 `[400] Invalid request parameters` 的致命问题。全面将思考档位映射对齐 OpenAI 标准 `reasoning_effort`（`low` / `medium` / `high`），并在 `before_provider_request` 请求体守卫中设立兜底防线，自动将非标准或溢出档位降级规约为合法参数，确保小米 MiMo、英伟达 Nemotron、Meta Muse Spark 等全系模型在任意 Pi 默认思考模式下 100% 稳定响应。
-- **远端集群健康状态感知与自愈告警守卫**：新增针对 502/503/504 等网关状态码的健康感知拦截，当上游端点临时离线或集群不可用时（如 upstream 503 Endpoint unavailable），实时发出友善桌面与界面通知，避免无效死循环。
-- **OpenAI 兼容协议全面净化与非思考模型智能防御**：基于 OpenCode CLI 官方核心（`@ai-sdk/openai-compatible`）深度规范对齐：针对 `jev-1.13-free` 等非思考模型自动剔除 `reasoning_effort`，并彻底清除任何非法顶层 `thinking` 冗余字段；思考档位严格安全规约（`max`/`xhigh` -> `high`，`minimal` -> `low`），实现 0 错误率的完美协议传输。
-- **全局 Fetch 底层拦截与会话压缩 403 根治防御**：新增 `installZenFetchInterceptor()` 全局底层 Fetch 守卫。彻底解决 Pi 在执行上下文会话压缩（Compaction/Summarization）时直接通过底层运行时发送纯文本无工具请求、绕过 Agent 生命周期钩子进而触发 OpenCode 官方网关 `403 FreeTierError` 的死锁难题。底层自动捕获所有发往 `opencode.ai/zen/v1` 的直接请求，动态注入官方 6 大核心工具链、毫秒级降序 Session ID 与升序 Request ID，并对齐 `stream_options`，全自动防 403 / 401 故障自愈。
-- **会话压缩 403 根治与 SSE-to-JSON 汇聚反序列化、递归死循环与调用栈溢出根治**：
-  - **会话压缩（Compaction/Summarization）403 彻底根除**：针对 Pi 压缩时通过 `completeSimple` 发起的非流式无工具请求，底层 Fetch 拦截器自动注入官方 6 大工具并将 `tool_choice` 设为 `"none"`，并强制开启 `stream: true` 绕过网关封锁；
-  - **底层透明 SSE-to-JSON 汇聚引擎 (`assembleSseToChatCompletionResponse`)**：拦截器在接收到上游 SSE 流后，在内存中毫秒级流式聚合文本分块与 Token 用量，组装还原为标准的 OpenAI ChatCompletion JSON 响应对象，使 Pi 的非流式压缩引擎 100% 顺畅解析；
-  - **切断递归闭环**：严格限定 Fetch 拦截器仅处理 `chat/completions`，绝不拦截 `/models` 等管理与元数据接口，杜绝同步与拦截间的自调用递归闭环；
-  - **防并发风暴单例锁**：引入 `syncInFlightPromise` 互斥单例与 30 秒防抖控制，多处并发调用自动合并，消灭重复落盘与文件冲突；
-  - **Request 原生凭证无损继承**：完善支持 `Request` 对象输入，彻底保留原始 `Authorization` 等全部 HTTP 头。
-- **全面深度优化：极速压缩修剪、透明三重重试自愈与多场景护航**：
-  - **Compaction 标签级深度修剪与极速响应 (`pruneZenContext`)**：当历史累积超 100K 字符时，智能保留前 30,000 字符的任务目标与后 60,000 字符的最新上下文执行状态，安全剪除中间冗余过程并完整修复 XML 标签，使超大上下文压缩耗时从 142 秒直降至 8~10 秒，彻底消除 Cloudflare 网关超时；
-  - **Tool 巨型输出智能截断**：单个 Tool 命令自动截断在 25,000 字符以内，杜绝单条命令撑爆上下文窗口；
-  - **底层透明三重重试循环 (Transparent Retry Loop) 与空响应自愈**：在 Fetch 拦截器内深度集成自动重试机制：遇 401/403 立即轮换生成全新的合规降序 Session ID 并重试；遇 500/502/503/504/520/521/522/524/533 网关超时或网络临时掉线自动指数退避重试；遇上游伪 200 空响应（`Provider returned an empty response` 或 0 字节空流）时，底层无损预读并在内存中自动进行 3 次同模型重试，Pi 业务层全程无感、零报错、零中断；
-  - **Pi 运行态与 `models.json` 严格 JSON 规范化注入 (`sanitizePiModelDefinition`)**：严格校验 `contextWindow`、`maxTokens`、`input`、`cost` 等字段，清洗根级历史残留键，杜绝注入畸变或非法 JSON；
-  - **新开对话与会话轮换新鲜度保障**：将会话续期阈值优化至 25 分钟，彻底避免踩中 30 分钟硬过期边界；
-  - **反序列化支持深度思考 (`reasoning_content`)**：SSE-to-JSON 汇聚引擎完整提取并输出 `reasoning_content`，完美兼容思考模型的离线总结与非流式调用。
-- **全自动多端持久化同步**：自动双写 Pi 本地配置（`~/.pi/agent/models.json` 和 `~/.pi/agent/auth.json`），若检测到 CC-Switch 亦无缝同步其 SQLite 数据库。
+
+- **25 分钟平滑轮换与 401/403 自动换新自愈 / Smooth Renewal & Auto-Healing**：
+  官方后端免费会话限制约 1 小时（超时直接 403 `FreeTierError`）。本插件在底层拦截器和生命周期钩子中设置 25 分钟主动换新阈值，且在收到 401/403 异常时当场自动轮换并重试，彻底杜绝死锁。
+  Active 25-minute preemptive rotation with immediate auto-renewal on 401/403 errors, preventing gateway expiration locks.
+
+- **全局 Fetch 底层拦截与会话压缩 403 根治 / Global Fetch Interceptor & Compaction Defense**：
+  Pi 执行上下文压缩时常发起纯文本无工具请求，导致网关拦截。底层拦截器自动注入官方 6 大核心工具链（`bash`, `edit`, `glob`, `grep`, `read`, `write`）与 `tool_choice: "none"`，并对 ChatCompletions 执行 SSE-to-JSON 汇聚反序列化，彻底解决压缩卡死。
+  Injects required tool signatures during context compaction and handles SSE-to-JSON aggregation seamlessly.
+
+- **同模型 3 次透明重试自愈 / 3-Attempt Same-Model Retry**：
+  遇网络抖动、网关超时（500/502/503/504/520-525/533）或上游伪 200 空响应（`Provider returned an empty response`）时，底层无损流预读并在内存中自动进行 3 次指数退避重试，严禁擅自跨模型降级。
+  Catches gateway timeouts and empty responses with 3-attempt exponential backoff same-model retry.
+
+- **严格供应商隔离 / Strict Namespace Isolation**：
+  所有生命周期钩子与拦截逻辑严格限定于 `opencode-zen-free` 和 `opencode-zen-free-responses`，对 `relayhub`、`deepseek`、`anthropic`、`openai` 及其他插件完全静默放行，零副作用。
+  Operates strictly inside OpenCode Zen namespaces, preserving zero side effects for third-party providers.
 
 ---
 
-## 二、指令用法与操作面板
+## 二、双协议架构与 Issue #1 修复 / Dual-Protocol Architecture & Issue #1 Fix
 
-在 Pi 终端交互界面中，可通过 `/zen` 体系指令进行全方位控制（命令语法与 `/cline` 插件完全对称一致）：
+### 1. 问题背景 / Background (Issue #1)
 
-| 指令 | 说明 | 交互效果 |
+OpenCode Zen 上游网关对不同的模型系列启用了不同的传输协议：
+- **标准 Chat 模型**（Xiaomi MiMo, NVIDIA Nemotron, Big Pickle, Ling, Space Bunny 等）：运行在 `/zen/v1/chat/completions`（OpenAI Chat Completions 协议）；
+- **Meta Muse Spark 系列**（`muse-spark-1.3-contributor-free`, `muse-spark-1.2-contributor-free`）：**仅部署在** `/zen/v1/responses`（OpenAI Responses API 协议）。
+
+如果将 Muse Spark 模型作为 `openai-completions` 提交到 `/zen/v1/chat/completions`，OpenCode 网关会立即拒绝并返回 HTTP 400 错误：
+```json
+{"type": "ModelProtocolUnsupported", "message": "Model does not support this protocol."}
+```
+
+### 2. 双供应商架构设计 / Architecture Solution
+
+为从根本上解决该协议限制，`ck-pi-zen-session 0.1.22` 引入了双供应商路由体系：
+
+1. **`opencode-zen-free` (api: `openai-completions`)**：
+   - 托管模型：`mimo-v2.5-free`, `mimo-v2.6-flash-free`, `nemotron-3.5-lightning-free`, `nemotron-3-ultra-free`, `big-pickle`, `ling-3.0-flash-fin-free`, `space-bunny-free`, `space-bunny-alpha`, `jev-1.13-free`。
+   - 请求端点：`/zen/v1/chat/completions`。
+   - 工具格式：Nested function 结构 (`{ type: "function", function: { ... } }`)。
+   - 携带参数：`stream_options: { include_usage: true }`, `reasoning_effort`。
+
+2. **`opencode-zen-free-responses` (api: `openai-responses`)**：
+   - 托管模型：`muse-spark-1.3-contributor-free`, `muse-spark-1.2-contributor-free`。
+   - 请求端点：`/zen/v1/responses`。
+   - 工具格式：Flat 扁平结构 (`{ type: "function", name, description, parameters }`)。
+   - 请求参数规约：使用 `input`（而非 `messages`）、`max_output_tokens`，在无工具/压缩模式下注入 `tool_choice: "none"`，**严禁注入 Chat 专有字段**（`stream_options`, `reasoning_effort`, `max_tokens`），避免网关抛出 400 校验异常。
+
+3. **双端点透明持久化与路由**：
+   - 同步时自动在 `~/.pi/agent/models.json` 和 `auth.json` 中配置两个独立 Provider；
+   - `/zen refresh` 与 `/zen ping` 自适应分流探测；
+   - `/zen model muse-spark-1.3-contributor-free` 自动切换底层 Provider 为 `opencode-zen-free-responses`。
+
+---
+
+## 三、指令用法与操作面板 / Command Usage & Panel
+
+在 Pi 终端交互界面中，可通过 `/zen` 体系指令进行全方位控制：
+
+| 指令 / Command | 说明 / Description | 交互效果 / Output |
 |:---|:---|:---|
-| `/zen` | **无参直接运行**：全自动检测并续期 Session ID，刷新请求头，重新对齐免费模型，同步 `models.json` / CC-Switch 并热载入 Pi | 输出状态面板与已同步模型摘要 |
+| `/zen` | **无参直接运行**：全自动检测并续期 Session ID，刷新请求头，重新对齐免费模型，双写同步 `models.json` / CC-Switch 并热载入 Pi | 输出状态面板与已同步模型摘要 |
 | `/zen <key>` 或 `/zen key <key>` | **更新 API Key**：设置/更换 OpenCode Zen API Key，自动在线验证并全量同步模型与全套请求头 | 输出新 Key 验证结果与模型卡片 |
 | `/zen refresh` 或 `/zen sync` | **强制换新 Session**：强制生成全新的合法降序 Session ID 并更新所有请求头与落盘配置 | 输出全新 Session ID 与就绪状态 |
-| `/zen list` 或 `/zen models` 或 `/zen free` | **查看模型列表**：展示全部可用免费模型详细规格卡片（上下文、最大输出、思考等级、模态） | 输出分级卡片列表 |
-| `/zen add <模型ID> [名称]` | **登记自定义模型**：支持将新上线的免费模型登记至 `~/.pi/agent/zen-models.json` 并实时热载入 | 输出新增模型配置状态 |
+| `/zen list` 或 `/zen models` 或 `/zen free` | **查看模型列表**：展示全部可用免费模型详细规格卡片（上下文、最大输出、思考等级、协议归属） | 输出分级卡片列表 |
+| `/zen add <模型ID> [名称]` | **登记自定义模型**：支持将新上线的免费模型登记至本地扩展库并实时热载入 | 输出新增模型配置状态 |
 | `/zen status` | **查看运行状态**：查看当前 API Key 掩码、活跃会话精确存活时间、模型库与请求头保护状态 | 输出运行状态仪表盘 |
 | `/zen ping [模型ID]` | **网络时延探针**：实时探测 Zen 免费模型网络连通性与往返延迟 (RTT) | 输出各模型网络时延与评级 |
-| `/zen model <模型ID>` | **快速切换模型**：一键切换当前 Pi 会话所使用的 Zen 模型 | 即刻切换生效 |
+| `/zen model <模型ID>` | **快速切换模型**：一键切换当前 Pi 会话所使用的 Zen 模型（自动识别 Provider 归属） | 即刻切换生效 |
 
+面板输出示例：
 ```text
 [OpenCode Zen 已自动刷新并就绪]
-• API Key: oc_sk_cb...yRSa
-• 全新 Session: ses_f23f81105fferIvyODUuNI61BM (有效且已持久化)
-• 自动对接免费模型: 已同步 9 个 0 额度消耗模型 (9 款支持思考推理)
-• 请求头保护: 30分钟自动轮换 + 7维官方签名 + 6大核心工具全注入
+- API Key: oc_sk_cb...yRSa
+- 全新 Session: ses_f23f81105fferIvyODUuNI61BM (有效且已持久化)
+- 自动对接免费模型: 已同步 10 个 0 额度消耗模型 (包含 Completions 与 Responses 双协议)
+- 请求头保护: 25分钟自动轮换 + 7维官方签名 + 6大核心工具全注入
 ```
 
 ---
 
-## 三、内置免费模型库参数
+## 四、内置免费模型库参数 / Built-in Free Models
 
-插件自动同步官方 10 款免费模型并配置精准上限与思维链等级：
+插件自动同步官方免费模型并配置精准上限与思维链等级：
 
-| 模型 ID | 上下文窗口 | 最大输出 | 推理思考等级 (thinkingLevelMap) | 支持模态 |
-|:---|:---|:---|:---|:---|
-| `mimo-v2.5-free` | 200,000 | 32,000 | 全档位支持 (自动对齐 OpenAI low/medium/high) | 文本、图像 |
-| `mimo-v2.6-flash-free` | 200,000 | 32,000 | 全档位支持 (自动对齐 OpenAI low/medium/high) | 文本、图像 |
-| `nemotron-3.5-lightning-free` | 262,144 | 262,144 | 全档位支持 (自动对齐 OpenAI low/medium/high) | 文本 |
-| `nemotron-3-ultra-free` | 1,000,000 (1M) | 128,000 | 全档位支持 (自动对齐 OpenAI low/medium/high) | 文本 |
-| `ling-3.0-flash-fin-free` | 262,144 | 32,768 | 全档位支持 (自动对齐 OpenAI low/medium/high) | 文本 |
-| `big-pickle` | 200,000 | 32,000 | 全档位支持 (自动对齐 OpenAI low/medium/high) | 文本 |
-| `muse-spark-1.3-contributor-free` | 1,048,576 (1M) | 131,072 | 全档位支持 (自动对齐 OpenAI low/medium/high) | 文本、图像 |
-| `muse-spark-1.2-contributor-free` | 1,048,576 (1M) | 131,072 | 全档位支持 (自动对齐 OpenAI low/medium/high) | 文本、图像 |
-| `space-bunny-free` | 200,000 | 32,000 | 全档位支持 (自动对齐 OpenAI low/medium/high) | 文本、图像 |
-| `jev-1.13-free` | 128,000 | 16,384 | 基础模型（无 reasoning） | 文本 |
+| 模型 ID / Model ID | 协议 / Protocol | 供应商 / Provider | 上下文窗口 / Context | 最大输出 / Max Output | 推理思考等级 / Thinking | 支持模态 / Modality |
+|:---|:---|:---|:---|:---|:---|:---|
+| `mimo-v2.5-free` | Completions | `opencode-zen-free` | 200,000 | 32,000 | 全档位支持 (OpenAI low/med/high) | 文本、图像 |
+| `mimo-v2.6-flash-free` | Completions | `opencode-zen-free` | 200,000 | 32,000 | 全档位支持 (OpenAI low/med/high) | 文本、图像 |
+| `nemotron-3.5-lightning-free` | Completions | `opencode-zen-free` | 262,144 | 262,144 | 全档位支持 (OpenAI low/med/high) | 文本 |
+| `nemotron-3-ultra-free` | Completions | `opencode-zen-free` | 1,000,000 (1M) | 128,000 | 全档位支持 (OpenAI low/med/high) | 文本 |
+| `ling-3.0-flash-fin-free` | Completions | `opencode-zen-free` | 262,144 | 32,768 | 全档位支持 (OpenAI low/med/high) | 文本 |
+| `big-pickle` | Completions | `opencode-zen-free` | 200,000 | 32,000 | 全档位支持 (OpenAI low/med/high) | 文本 |
+| `space-bunny-free` | Completions | `opencode-zen-free` | 200,000 | 32,000 | 全档位支持 (OpenAI low/med/high) | 文本、图像 |
+| `space-bunny-alpha` | Completions | `opencode-zen-free` | 200,000 | 32,000 | 全档位支持 (OpenAI low/med/high) | 文本、图像 |
+| `jev-1.13-free` | Completions | `opencode-zen-free` | 128,000 | 16,384 | 基础模型（无 reasoning） | 文本 |
+| `muse-spark-1.3-contributor-free` | Responses | `opencode-zen-free-responses` | 1,048,576 (1M) | 131,072 | 全档位支持 (OpenAI low/med/high) | 文本、图像 |
+| `muse-spark-1.2-contributor-free` | Responses | `opencode-zen-free-responses` | 1,048,576 (1M) | 131,072 | 全档位支持 (OpenAI low/med/high) | 文本、图像 |
 
-> 若 OpenCode 后端未来发布新免费模型，插件将自动探测发现并使用安全的自适应参数接入。
+> 若 OpenCode 后端未来发布新免费模型，插件将自动在线探测发现并使用安全的自适应参数接入。
 
 ---
 
-## 四、官方算法逆向解析
+## 五、官方算法逆向解析 / Reverse-Engineered Session Algorithm
 
 OpenCode Zen 客户端针对防刷和网关鉴权设计了基于时间戳编码的降序（descending）与升序（ascending）标识符体系：
 
@@ -144,15 +201,15 @@ export function generateZenRequestId(timestampMs = Date.now()): string {
 
 ---
 
-## 五、安装方法
+## 六、安装方法 / Installation
 
-### 方式 1：npm 安装（推荐）
+### 方式 1：npm 安装（推荐 / Recommended）
 
 ```bash
 pi install npm:ck-pi-zen-session
 ```
 
-### 方式 2：GitHub 源码安装
+### 方式 2：GitHub 源码安装 / From GitHub
 
 ```bash
 pi install git:github.com/1837620622/ck-pi-extension
@@ -160,7 +217,27 @@ pi install git:github.com/1837620622/ck-pi-extension
 
 ---
 
-## 六、许可
+## 七、更新日志 / Changelog
 
-- 仓库：[https://github.com/1837620622/ck-pi-extension](https://github.com/1837620622/ck-pi-extension)
-- 协议：MIT License
+- `0.1.22`：
+  - **支持 OpenAI Responses API 协议与双供应商路由架构 (彻底修复 Issue #1)**：
+    - **双供应商精准分流**：将 OpenCode Zen 拆分为 `opencode-zen-free`（走 `openai-completions`，负责 Big Pickle, Xiaomi MiMo, NVIDIA Nemotron, Ling, Space Bunny）与 `opencode-zen-free-responses`（走 `openai-responses`，负责 Meta Muse Spark 1.3/1.2 Contributor Free）；
+    - **彻底解决 400 ModelProtocolUnsupported 报错**：由于 OpenCode Zen 网关仅在 `/responses` 端点提供 Muse Spark 系列模型，通过独立 provider 注册让 Pi 原生通过 Responses API 发送请求；
+    - **Responses 协议结构对齐**：为 Responses API 注入扁平化工具定义（`OPENCODE_OFFICIAL_RESPONSES_TOOLS`），在 Compaction 场景下注入 `tool_choice: "none"`，严禁注入 ChatCompletions 专有字段（如 `stream_options`, `reasoning_effort`, `max_tokens`），防止网关参数校验失败；
+    - **Fetch 拦截器双端点适配**：拦截器同时支持 `/zen/v1/chat/completions` 与 `/zen/v1/responses`，区分 SSE 解析逻辑，且仅对 ChatCompletions 端点执行 SSE-to-ChatCompletion 反序列化；
+    - **持久化与运行态双写**：`syncZenConfiguration` 自动双写双供应商配置至 `~/.pi/agent/models.json` 与 `auth.json`，`/zen model` 与 `/zen ping` 指令自适应路由。
+- `0.1.21`：
+  - **深度修复上游空响应重试机制 (`Provider returned an empty response`)**：
+    - SSE 流式预读探测上限提升至 30 个数据包与 64KB，精准穿透网关 keepalive 帧；
+    - 严格限定错误结构匹配，杜绝模型正常回复误判；
+    - 真实指数退避带随机抖动，坚守 3 次同模型重试；
+    - 运行态模型规范化校验 (`sanitizePiModelDefinition`)，杜绝畸变数据写入。
+- `0.1.20`：
+  - **供应商节点空响应自动同模型重试与隐身零额度模型识别**：首创无损首包 Stream Peek 预读探测，当上游节点返回伪 200 空流时自动 3 次重试；自动识别 `stealth/space-bunny-alpha` 等隐身零消耗模型。
+
+---
+
+## 八、许可 / License
+
+- 仓库 / Repository: [https://github.com/1837620622/ck-pi-extension](https://github.com/1837620622/ck-pi-extension)
+- 协议 / License: MIT License

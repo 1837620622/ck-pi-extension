@@ -8,8 +8,37 @@
 import type { ZenModelDefinition } from "./types.js";
 
 export const ZEN_PROVIDER_ID = "opencode-zen-free";
+export const ZEN_RESPONSES_PROVIDER_ID = "opencode-zen-free-responses";
 export const ZEN_BASE_URL = "https://opencode.ai/zen/v1";
 export const ZEN_USER_AGENT = "opencode/1.18.32 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14";
+
+/**
+ * 判定模型 ID 是否属于必须走 OpenAI Responses API 协议的端点模型 (如 Meta Muse Spark 家族)
+ */
+export function isResponsesProtocolModelId(id?: string): boolean {
+	if (!id || typeof id !== "string") return false;
+	const cleanId = id.replace(/^(opencode-zen-free(-responses)?|zen|opencode)\//i, "").trim();
+	return /^muse-spark/i.test(cleanId);
+}
+
+/**
+ * 将 OpenCode Zen 模型划分为标准 ChatCompletions 协议模型与 Responses 协议模型
+ */
+export function partitionZenModels(models: ZenModelDefinition[]): {
+	completions: ZenModelDefinition[];
+	responses: ZenModelDefinition[];
+} {
+	const completions: ZenModelDefinition[] = [];
+	const responses: ZenModelDefinition[] = [];
+	for (const m of models) {
+		if (isResponsesProtocolModelId(m.id)) {
+			responses.push(m);
+		} else {
+			completions.push(m);
+		}
+	}
+	return { completions, responses };
+}
 
 export const STANDARD_THINKING_LEVELS: Record<string, string | null> = {
 	minimal: "low",
@@ -596,6 +625,17 @@ export const OPENCODE_OFFICIAL_TOOLS = [
 		},
 	},
 ];
+
+/**
+ * OpenCode 官方 6 大核心内置工具规范与 Schema 定义 (OpenAI Responses 协议展平格式)
+ * Responses API 工具直接以顶级 name/description/parameters 组织，不嵌套在 .function 内部
+ */
+export const OPENCODE_OFFICIAL_RESPONSES_TOOLS = OPENCODE_OFFICIAL_TOOLS.map((t) => ({
+	type: "function",
+	name: t.function.name,
+	description: t.function.description,
+	parameters: t.function.parameters,
+}));
 
 /**
  * 免费模型路由映射与别名解析算法 (Zen Model Alias Router)

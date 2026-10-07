@@ -38,10 +38,12 @@ import {
 	formatTokens,
 	inferModelCapabilities,
 	KNOWN_ZEN_FREE_MODELS,
+	partitionZenModels,
 	resolveModelDefinitions,
 	sanitizePiModelDefinition,
 	ZEN_BASE_URL,
 	ZEN_PROVIDER_ID,
+	ZEN_RESPONSES_PROVIDER_ID,
 	ZEN_USER_AGENT,
 } from "./models-registry.js";
 export { formatModelCard, formatThinkingSummary, formatTokens };
@@ -248,7 +250,7 @@ export async function fetchZenModelCatalog(
 }
 
 /**
- * 读取当前系统已持久化配置的 OpenCode Zen 模型清单
+ * 读取当前系统已持久化配置的 OpenCode Zen 模型清单 (合并 Chat 与 Responses 双供应商清单)
  */
 export function getStoredZenModels(modelsPath = defaultModelsPath()): ZenModelDefinition[] {
 	try {
@@ -256,9 +258,29 @@ export function getStoredZenModels(modelsPath = defaultModelsPath()): ZenModelDe
 			const modelsDoc = JSON.parse(readFileSync(modelsPath, "utf8")) as {
 				providers?: Record<string, { models?: ZenModelDefinition[] }>;
 			};
-			const list = modelsDoc.providers?.[ZEN_PROVIDER_ID]?.models;
-			if (Array.isArray(list) && list.length > 0) {
-				return list;
+			const completionsList = modelsDoc.providers?.[ZEN_PROVIDER_ID]?.models;
+			const responsesList = modelsDoc.providers?.[ZEN_RESPONSES_PROVIDER_ID]?.models;
+			const combined: ZenModelDefinition[] = [];
+			const seen = new Set<string>();
+
+			if (Array.isArray(completionsList)) {
+				for (const m of completionsList) {
+					if (m && m.id && !seen.has(m.id)) {
+						seen.add(m.id);
+						combined.push(m);
+					}
+				}
+			}
+			if (Array.isArray(responsesList)) {
+				for (const m of responsesList) {
+					if (m && m.id && !seen.has(m.id)) {
+						seen.add(m.id);
+						combined.push(m);
+					}
+				}
+			}
+			if (combined.length > 0) {
+				return combined;
 			}
 		}
 	} catch {
@@ -286,6 +308,9 @@ export function getStoredZenApiKey(authPath = defaultAuthPath(), modelsPath = de
 			if (auth[ZEN_PROVIDER_ID]?.key) {
 				return auth[ZEN_PROVIDER_ID].key;
 			}
+			if (auth[ZEN_RESPONSES_PROVIDER_ID]?.key) {
+				return auth[ZEN_RESPONSES_PROVIDER_ID].key;
+			}
 		}
 	} catch {
 		// 忽略读取错误
@@ -298,6 +323,9 @@ export function getStoredZenApiKey(authPath = defaultAuthPath(), modelsPath = de
 			};
 			if (models.providers?.[ZEN_PROVIDER_ID]?.apiKey) {
 				return models.providers[ZEN_PROVIDER_ID].apiKey;
+			}
+			if (models.providers?.[ZEN_RESPONSES_PROVIDER_ID]?.apiKey) {
+				return models.providers[ZEN_RESPONSES_PROVIDER_ID].apiKey;
 			}
 		}
 	} catch {
@@ -347,7 +375,9 @@ export function getStoredZenSessionId(modelsPath = defaultModelsPath()): string 
 			const models = JSON.parse(readFileSync(modelsPath, "utf8")) as {
 				providers?: Record<string, { headers?: { "x-opencode-session"?: string } }>;
 			};
-			const ses = models.providers?.[ZEN_PROVIDER_ID]?.headers?.["x-opencode-session"];
+			const ses =
+				models.providers?.[ZEN_PROVIDER_ID]?.headers?.["x-opencode-session"] ||
+				models.providers?.[ZEN_RESPONSES_PROVIDER_ID]?.headers?.["x-opencode-session"];
 			if (isValidZenSessionId(ses)) {
 				if (modelsPath === defaultModelsPath() && !isZenSessionExpired(ses, DEFAULT_SESSION_MAX_AGE_MS)) {
 					activeInMemorySessionId = ses;
@@ -381,9 +411,24 @@ export function getZenStatusInfo(
 			const models = JSON.parse(readFileSync(modelsPath, "utf8")) as {
 				providers?: Record<string, { models?: Array<{ id: string }> }>;
 			};
-			const list = models.providers?.[ZEN_PROVIDER_ID]?.models;
-			if (Array.isArray(list)) {
-				modelIds = list.map((m) => m.id);
+			const cList = models.providers?.[ZEN_PROVIDER_ID]?.models;
+			const rList = models.providers?.[ZEN_RESPONSES_PROVIDER_ID]?.models;
+			const seen = new Set<string>();
+			if (Array.isArray(cList)) {
+				for (const m of cList) {
+					if (m?.id && !seen.has(m.id)) {
+						seen.add(m.id);
+						modelIds.push(m.id);
+					}
+				}
+			}
+			if (Array.isArray(rList)) {
+				for (const m of rList) {
+					if (m?.id && !seen.has(m.id)) {
+						seen.add(m.id);
+						modelIds.push(m.id);
+					}
+				}
 			}
 		}
 	} catch {
@@ -540,6 +585,7 @@ async function doSyncZenConfiguration(options: ZenSyncOptions = {}): Promise<Zen
 	// 清理根节点历史遗留键，避免注入错误 JSON 结构
 	delete (modelsDoc as any).zen;
 	delete (modelsDoc as any)[ZEN_PROVIDER_ID];
+	delete (modelsDoc as any)[ZEN_RESPONSES_PROVIDER_ID];
 	if (modelsDoc.providers) {
 		delete (modelsDoc.providers as any).zen;
 	}
@@ -547,6 +593,8 @@ async function doSyncZenConfiguration(options: ZenSyncOptions = {}): Promise<Zen
 	const sanitizedZenModels = uniqueZenModels
 		.map(sanitizePiModelDefinition)
 		.filter((m): m is NonNullable<typeof m> => m !== null);
+
+	const { completions, responses } = partitionZenModels(sanitizedZenModels as any);
 
 	modelsDoc.providers[ZEN_PROVIDER_ID] = {
 		baseUrl: ZEN_BASE_URL,
@@ -567,7 +615,26 @@ async function doSyncZenConfiguration(options: ZenSyncOptions = {}): Promise<Zen
 			supportsStore: false,
 			supportsUsageInStreaming: true,
 		},
-		models: sanitizedZenModels,
+		models: completions,
+	};
+
+	modelsDoc.providers[ZEN_RESPONSES_PROVIDER_ID] = {
+		baseUrl: ZEN_BASE_URL,
+		api: "openai-responses",
+		apiKey: resolvedApiKey || "",
+		headers: {
+			"User-Agent": ZEN_USER_AGENT,
+			"x-opencode-client": "cli",
+			"x-opencode-session": targetSession,
+			"x-opencode-project": generateZenProjectId(),
+			"x-session-affinity": targetSession,
+			"X-Session-Id": targetSession,
+		},
+		compat: {
+			supportsDeveloperRole: false,
+			supportsStore: false,
+		},
+		models: responses,
 	};
 
 	mkdirSync(dirname(modelsPath), { recursive: true, mode: 0o700 });
@@ -589,6 +656,10 @@ async function doSyncZenConfiguration(options: ZenSyncOptions = {}): Promise<Zen
 		authDoc = {};
 	}
 	authDoc[ZEN_PROVIDER_ID] = {
+		type: "api_key",
+		key: resolvedApiKey,
+	};
+	authDoc[ZEN_RESPONSES_PROVIDER_ID] = {
 		type: "api_key",
 		key: resolvedApiKey,
 	};
