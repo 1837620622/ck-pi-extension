@@ -769,7 +769,7 @@ export function installClineFetchInterceptor(targetGlobal: typeof globalThis = g
 								choices: [
 									{
 										index: 0,
-										delta: { content: "\n\n⚠️ [网络传输中途异常中断，已自动保全当前已生成的全部内容。您可以输入“继续”以接续输出]" },
+										delta: { content: "\n\n[!] [网络传输中途异常中断，已自动保全当前已生成的全部内容。您可以输入“继续”以接续输出]" },
 										finish_reason: "stop",
 									},
 								],
