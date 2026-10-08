@@ -116,15 +116,15 @@ describe("OpenCode Zen Session 算法单元测试", () => {
 describe("OpenCode Zen 模型库与参数注册表测试", () => {
 	it("包含全部已确认的 9 款可用免费模型（已排除非聊天协议的 jev-1.13-free）", () => {
 		const expectedModels = [
-			"mimo-v2.5-free",
+			"fledge-alpha-free",
+			"ling-3.1-flash-free",
 			"mimo-v2.6-flash-free",
 			"nemotron-3.5-lightning-free",
-			"nemotron-3-ultra-free",
-			"ling-3.0-flash-fin-free",
 			"big-pickle",
+			"space-bunny-free",
+			"longcat-2.5-preview-free",
 			"muse-spark-1.3-contributor-free",
 			"muse-spark-1.2-contributor-free",
-			"space-bunny-free",
 		];
 
 		for (const id of expectedModels) {
@@ -133,9 +133,9 @@ describe("OpenCode Zen 模型库与参数注册表测试", () => {
 	});
 
 	it("模型上下文上限与输出参数准确", () => {
-		assert.equal(KNOWN_ZEN_FREE_MODELS["nemotron-3-ultra-free"].contextWindow, 1000000);
+		assert.equal(KNOWN_ZEN_FREE_MODELS["nemotron-3.5-lightning-free"].contextWindow, 262144);
 		assert.equal(KNOWN_ZEN_FREE_MODELS["muse-spark-1.3-contributor-free"].contextWindow, 1048576);
-		assert.equal(KNOWN_ZEN_FREE_MODELS["mimo-v2.5-free"].contextWindow, 200000);
+		assert.equal(KNOWN_ZEN_FREE_MODELS["fledge-alpha-free"].contextWindow, 200000);
 		assert.equal(KNOWN_ZEN_FREE_MODELS["big-pickle"].reasoning, true);
 	});
 
@@ -220,12 +220,12 @@ describe("OpenCode Zen 模型库与参数注册表测试", () => {
 		assert.equal(resolveZenModelId("bunny"), "space-bunny-free");
 		assert.equal(resolveZenModelId("space-bunny"), "space-bunny-free");
 		assert.equal(resolveZenModelId("space-bunny-alpha"), "space-bunny-free");
-		assert.equal(resolveZenModelId("mimo"), "mimo-v2.5-free");
+		assert.equal(resolveZenModelId("mimo"), "mimo-v2.6-flash-free");
 		assert.equal(resolveZenModelId("flash"), "mimo-v2.6-flash-free");
-		assert.equal(resolveZenModelId("ultra"), "nemotron-3-ultra-free");
-		assert.equal(resolveZenModelId("550b"), "nemotron-3-ultra-free");
+		assert.equal(resolveZenModelId("ultra"), "nemotron-3.5-lightning-free");
+		assert.equal(resolveZenModelId("550b"), "nemotron-3.5-lightning-free");
 		assert.equal(resolveZenModelId("lightning"), "nemotron-3.5-lightning-free");
-		assert.equal(resolveZenModelId("ling"), "ling-3.0-flash-fin-free");
+		assert.equal(resolveZenModelId("ling"), "ling-3.1-flash-free");
 		assert.equal(resolveZenModelId("spark"), "muse-spark-1.3-contributor-free");
 		assert.equal(resolveZenModelId("opencode-zen-free/big-pickle"), "big-pickle");
 		assert.equal(resolveZenModelId(""), "big-pickle");
@@ -906,15 +906,15 @@ describe("Extension API 钩子拦截测试", () => {
 		assert.ok(capturedInit?.body);
 		const parsed = JSON.parse(String(capturedInit.body));
 
-		// 必须注入 Responses 扁平 tools 且 tool_choice 为 "none"
+		// 必须注入 Responses 扁平 tools 且 tool_choice 为 "auto" (防止 OpenCode 400 FreeTier 校验错误)
 		assert.ok(Array.isArray(parsed.tools));
 		assert.equal(parsed.tools.length, 6);
 		assert.equal(parsed.tools[0].name, "bash");
 		assert.equal(parsed.tools[0].function, undefined);
-		assert.equal(parsed.tool_choice, "none");
+		assert.equal(parsed.tool_choice, "auto");
 
-		// 绝不强制改写 stream: true
-		assert.equal(parsed.stream, false);
+		// 必须遵循 OpenCode 免费端点强制 stream: true
+		assert.equal(parsed.stream, true);
 		// 绝不注入 ChatCompletions 专有字段
 		assert.equal(parsed.stream_options, undefined);
 		assert.equal(parsed.reasoning_effort, undefined);
@@ -1325,6 +1325,40 @@ describe("Compaction 压缩防护、深度上下文修剪与透明重试机制�
 		assert.equal(repaired.maxTokens, 32768);
 		assert.deepEqual(repaired.input, ["text"]);
 		assert.deepEqual(repaired.cost, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+	});
+
+	it("assembleSseToChatCompletionResponse: 压缩任务遇 content_filter 自动合成安全检查点摘要且 finish_reason 为 stop", async () => {
+		const sseData = [
+			'data: {"id":"cf-1","model":"fledge-alpha-free","choices":[{"index":0,"delta":{"content":"Preliminary progress notes..."}}]}',
+			'data: {"id":"cf-1","model":"fledge-alpha-free","choices":[{"index":0,"finish_reason":"content_filter"}]}',
+			"data: [DONE]",
+		].join("\n\n");
+
+		const sseRes = new Response(sseData, { status: 200, headers: { "content-type": "text/event-stream" } });
+		// 传递 isCompaction = true
+		const assembled = await assembleSseToChatCompletionResponse(sseRes, "fledge-alpha-free", true);
+		assert.equal(assembled.status, 200);
+
+		const json = await assembled.json();
+		assert.equal(json.choices[0].finish_reason, "stop", "finish_reason 必须规范化为 stop 杜绝报错");
+		assert.ok(json.choices[0].message.content.includes("会话进展与安全审计检查点"), "必须包含安全检查点摘要");
+	});
+
+	it("assembleSseToChatCompletionResponse: 压缩任务遇 length (token cap) 自动将 finish_reason 改写为 stop 保全摘要", async () => {
+		const substantialSummary = "This is a comprehensive summary of all previous tasks performed by the agent. All tasks were successful. " + "Detailed execution steps recorded. ".repeat(10);
+		const sseData = [
+			`data: {"id":"len-1","model":"fledge-alpha-free","choices":[{"index":0,"delta":{"content":${JSON.stringify(substantialSummary)}}}]}`,
+			'data: {"id":"len-1","model":"fledge-alpha-free","choices":[{"index":0,"finish_reason":"length"}]}',
+			"data: [DONE]",
+		].join("\n\n");
+
+		const sseRes = new Response(sseData, { status: 200, headers: { "content-type": "text/event-stream" } });
+		const assembled = await assembleSseToChatCompletionResponse(sseRes, "fledge-alpha-free", true);
+		assert.equal(assembled.status, 200);
+
+		const json = await assembled.json();
+		assert.equal(json.choices[0].finish_reason, "stop", "finish_reason 必须被规范化为 stop，彻底消除 token cap 截断失败");
+		assert.ok(json.choices[0].message.content.includes("This is a comprehensive summary"));
 	});
 });
 

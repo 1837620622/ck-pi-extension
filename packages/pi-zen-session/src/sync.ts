@@ -206,8 +206,15 @@ export async function fetchZenModelCatalog(
 					const id = String(item.id || "");
 					const lower = id.toLowerCase();
 
-					// 排除非对话类模型 (如 TypeSafe Jev 等 decision-only 模型，不支持 Chat/Completions 协议)
-					if (lower.startsWith("jev-") || lower.includes("jev") || lower.includes("system-1")) {
+					// 排除非对话类模型与已知已下架/废弃模型
+					if (
+						lower.startsWith("jev-") ||
+						lower.includes("jev") ||
+						lower.includes("system-1") ||
+						lower === "mimo-v2.5-free" ||
+						lower === "ling-3.0-flash-fin-free" ||
+						lower === "nemotron-3-ultra-free"
+					) {
 						return false;
 					}
 

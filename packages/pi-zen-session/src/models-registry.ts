@@ -74,13 +74,23 @@ export const GRANULAR_THINKING_LEVELS: Record<string, string | null> = {
  * 官方已知免费模型精确规格字典
  */
 export const KNOWN_ZEN_FREE_MODELS: Record<string, ZenModelDefinition> = {
-	"mimo-v2.5-free": {
-		id: "mimo-v2.5-free",
-		name: "Xiaomi Mimo v2.5 Free (OpenCode Zen)",
+	"fledge-alpha-free": {
+		id: "fledge-alpha-free",
+		name: "Fledge Alpha Free (OpenCode Zen)",
 		contextWindow: 200000,
 		maxTokens: 32000,
 		reasoning: true,
 		input: ["text", "image"],
+		thinkingLevelMap: STANDARD_THINKING_LEVELS,
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+	},
+	"ling-3.1-flash-free": {
+		id: "ling-3.1-flash-free",
+		name: "Ling 3.1 Flash Free (OpenCode Zen)",
+		contextWindow: 262144,
+		maxTokens: 32768,
+		reasoning: true,
+		input: ["text"],
 		thinkingLevelMap: STANDARD_THINKING_LEVELS,
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 	},
@@ -104,29 +114,29 @@ export const KNOWN_ZEN_FREE_MODELS: Record<string, ZenModelDefinition> = {
 		thinkingLevelMap: STANDARD_THINKING_LEVELS,
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 	},
-	"nemotron-3-ultra-free": {
-		id: "nemotron-3-ultra-free",
-		name: "Nemotron 3 Ultra Free (OpenCode Zen)",
-		contextWindow: 1000000,
-		maxTokens: 32768,
-		reasoning: true,
-		input: ["text"],
-		thinkingLevelMap: STANDARD_THINKING_LEVELS,
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-	},
-	"ling-3.0-flash-fin-free": {
-		id: "ling-3.0-flash-fin-free",
-		name: "Ling 3.0 Flash Fin Free (OpenCode Zen)",
-		contextWindow: 262144,
-		maxTokens: 32768,
-		reasoning: true,
-		input: ["text"],
-		thinkingLevelMap: STANDARD_THINKING_LEVELS,
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-	},
 	"big-pickle": {
 		id: "big-pickle",
 		name: "Big Pickle Free (OpenCode Zen)",
+		contextWindow: 200000,
+		maxTokens: 32000,
+		reasoning: true,
+		input: ["text"],
+		thinkingLevelMap: STANDARD_THINKING_LEVELS,
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+	},
+	"space-bunny-free": {
+		id: "space-bunny-free",
+		name: "Space Bunny Free (OpenCode Zen)",
+		contextWindow: 200000,
+		maxTokens: 32000,
+		reasoning: true,
+		input: ["text", "image"],
+		thinkingLevelMap: STANDARD_THINKING_LEVELS,
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+	},
+	"longcat-2.5-preview-free": {
+		id: "longcat-2.5-preview-free",
+		name: "LongCat 2.5 Preview Free (OpenCode Zen)",
 		contextWindow: 200000,
 		maxTokens: 32000,
 		reasoning: true,
@@ -152,16 +162,6 @@ export const KNOWN_ZEN_FREE_MODELS: Record<string, ZenModelDefinition> = {
 		reasoning: true,
 		input: ["text", "image"],
 		thinkingLevelMap: MUSE_SPARK_THINKING_LEVELS,
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-	},
-	"space-bunny-free": {
-		id: "space-bunny-free",
-		name: "Space Bunny Free (OpenCode Zen)",
-		contextWindow: 200000,
-		maxTokens: 32000,
-		reasoning: true,
-		input: ["text", "image"],
-		thinkingLevelMap: STANDARD_THINKING_LEVELS,
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 	},
 };
@@ -650,8 +650,11 @@ export function resolveZenModelId(rawId?: string): string {
 	// 1. 剔除客户端或供应商前缀
 	id = id.replace(/^(opencode-zen-free|zen|opencode)\//i, "");
 
-	// 2. 快捷别名转换
+	// 2. 快捷别名转换 (自动对齐已下架模型的继承替代方案)
 	const lower = id.toLowerCase();
+	if (lower === "fledge" || lower === "fledge-alpha" || lower === "fledge-alpha-free") {
+		return "fledge-alpha-free";
+	}
 	if (lower === "pickle" || lower === "big-pickle") {
 		return "big-pickle";
 	}
@@ -663,28 +666,62 @@ export function resolveZenModelId(rawId?: string): string {
 	) {
 		return "space-bunny-free";
 	}
-	if (lower === "mimo" || lower === "mimo-v2.5" || lower === "mimo-v2.5-free") {
-		return "mimo-v2.5-free";
-	}
-	if (lower === "flash" || lower === "mimo-flash" || lower === "mimo-v2.6-flash-free") {
+	if (
+		lower === "mimo" ||
+		lower === "mimo-v2.5" ||
+		lower === "mimo-v2.5-free" ||
+		lower === "flash" ||
+		lower === "mimo-flash" ||
+		lower === "mimo-v2.6" ||
+		lower === "mimo-v2.6-flash-free"
+	) {
 		return "mimo-v2.6-flash-free";
 	}
-	if (lower === "ultra" || lower === "nemotron-ultra" || lower === "550b" || lower === "nemotron-3-ultra-free") {
-		return "nemotron-3-ultra-free";
-	}
-	if (lower === "lightning" || lower === "nemotron-lightning" || lower === "nemotron-3.5-lightning-free") {
+	if (
+		lower === "ultra" ||
+		lower === "nemotron-ultra" ||
+		lower === "550b" ||
+		lower === "nemotron-3-ultra-free"
+	) {
 		return "nemotron-3.5-lightning-free";
 	}
-	if (lower === "ling" || lower === "flash-fin" || lower === "ling-3.0-flash-fin-free") {
-		return "ling-3.0-flash-fin-free";
+	if (
+		lower === "lightning" ||
+		lower === "nemotron-lightning" ||
+		lower === "nemotron-3.5-lightning-free"
+	) {
+		return "nemotron-3.5-lightning-free";
 	}
-	if (lower === "spark" || lower === "muse" || lower === "muse-spark" || lower === "muse-spark-1.3-contributor-free") {
+	if (
+		lower === "ling" ||
+		lower === "flash-fin" ||
+		lower === "ling-3.0-flash-fin-free" ||
+		lower === "ling-3.1" ||
+		lower === "ling-3.1-flash" ||
+		lower === "ling-3.1-flash-free"
+	) {
+		return "ling-3.1-flash-free";
+	}
+	if (
+		lower === "spark" ||
+		lower === "muse" ||
+		lower === "muse-spark" ||
+		lower === "muse-spark-1.3-contributor-free"
+	) {
 		return "muse-spark-1.3-contributor-free";
 	}
-	if (lower === "spark12" || lower === "muse-1.2" || lower === "muse-spark-1.2-contributor-free") {
+	if (
+		lower === "spark12" ||
+		lower === "muse-1.2" ||
+		lower === "muse-spark-1.2-contributor-free"
+	) {
 		return "muse-spark-1.2-contributor-free";
 	}
-	if (lower === "longcat" || lower === "longcat-free" || lower === "longcat-2.5-preview-free") {
+	if (
+		lower === "longcat" ||
+		lower === "longcat-free" ||
+		lower === "longcat-2.5-preview-free"
+	) {
 		return "longcat-2.5-preview-free";
 	}
 

@@ -1,13 +1,30 @@
 # ck-pi-cline
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.1.7-blue.svg?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.1.8-blue.svg?style=flat-square" alt="Version" />
   <img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License" />
   <img src="https://img.shields.io/badge/runtime-Pi%20Agent%20%3E%3D0.85.0-orange.svg?style=flat-square" alt="Pi Runtime" />
   <img src="https://img.shields.io/badge/protocol-OpenAI%20Compatible-informational.svg?style=flat-square" alt="Protocol" />
   <img src="https://img.shields.io/badge/client%20fingerprint-Cline%20v4.1.16-purple.svg?style=flat-square" alt="Fingerprint" />
-  <img src="https://img.shields.io/badge/zero--cost%20models-21%20Verified-success.svg?style=flat-square" alt="Zero Cost Models" />
+  <img src="https://img.shields.io/badge/zero--cost%20models-17%20Verified-success.svg?style=flat-square" alt="Zero Cost Models" />
 </p>
+
+<p align="center">
+  <a href="#ck-pi-cline">中文说明</a> | <a href="#ck-pi-cline-en">English Documentation</a>
+</p>
+
+---
+
+## 赞助与支持
+
+如果您觉得本项目提升了您的开发效率，欢迎赞助支持！您的赞助将直接用于持续维护、网络节点验证、逆向协议对齐与新特性的快速迭代。
+
+### 赞助渠道
+
+- **GitHub Sponsors**: [https://github.com/sponsors/1837620622](https://github.com/sponsors/1837620622)
+- **企业赞助与商务合作**:
+  - 欢迎 AI 基础设施提供商、代理网关服务商或团队提供赞助。
+  - 赞助权益包含：在项目 README 显著位置展示企业 Logo 与链接、优先处理定制化需求与专属技术支持。
 
 ---
 
@@ -22,12 +39,13 @@
   - [5. 深度思考推理链映射 (Reasoning Tokens Alignment)](#5-深度思考推理链映射-reasoning-tokens-alignment)
   - [6. 同模型指数退避重试机制 (Same-Model Exponential Backoff Retry)](#6-同模型指数退避重试机制-same-model-exponential-backoff-retry)
   - [7. 全链路上下文超限修剪 (Context Pruning Engine)](#7-全链路上下文超限修剪-context-pruning-engine)
-- [三、实测 21 款零额度模型全量矩阵](#三实测-21-款零额度模型全量矩阵)
+  - [8. 安全审核过滤阻断防御与 Token Cap 修复 (content_filter & Token Cap Defense)](#8-安全审核过滤阻断防御与-token-cap-修复-content_filter--token-cap-defense)
+- [三、实测 17 款零额度模型全量矩阵](#三实测-17-款零额度模型全量矩阵)
   - [1. 隐身与智能路由零消耗模型 (Stealth & Smart Routers)](#1-隐身与智能路由零消耗模型-stealth--smart-routers)
   - [2. 百万级超长上下文免费模型 (1M+ Giant Context)](#2-百万级超长上下文免费模型-1m-giant-context)
   - [3. 主力代码与深度思考免费模型 (Core Coding & Reasoning)](#3-主力代码与深度思考免费模型-core-coding--reasoning)
   - [4. 轻量极速与专用工具模型 (Lightweight & Specialized Tools)](#4-轻量极速与专用工具模型-lightweight--specialized-tools)
-  - [5. 计费陷阱警示模型 (Paid Traps - 严禁误用)](#5-计费陷阱警示模型-paid-traps---严禁误用)
+  - [5. 计费陷阱与已下架模型警示 (Paid Traps & Delisted Models)](#5-计费陷阱与已下架模型警示-paid-traps--delisted-models)
 - [四、命令使用与交互面板](#四命令使用与交互面板)
 - [五、本地反向代理配置与第三方集成](#五本地反向代理配置与第三方集成)
   - [1. 独立 CLI 启动代理](#1-独立-cli-启动代理)
@@ -35,6 +53,7 @@
   - [3. Cursor / VS Code 接入](#3-cursor--vs-code-接入)
   - [4. OpenAI SDK (Python / Node.js) 接入](#4-openai-sdk-python--nodejs-接入)
 - [六、版本变更记录 (Changelog)](#六版本变更记录-changelog)
+- [七、许可](#七许可)
 
 ---
 
@@ -43,7 +62,7 @@
 `ck-pi-cline` 是专为 **Pi Coding Agent** 打造的高可用 Cline 官方 API 逆向代理、客户端指纹伪装、全量零额度模型智能路由与本地 OpenAI 兼容反向代理插件。
 
 > **架构与运行原则**：
-> * **默认原生极简直连与模型注入**：启动运行时默认**不开启本地反代端口**，直接在 Pi 运行时中以 `Cline (Free)` 供应商注入 21 款零额度免费模型，通过全局 Fetch 拦截器直连官方网关（零本地代理开销，架构与 `ck-pi-zen-session` 完全对齐）；
+> * **默认原生极简直连与模型注入**：启动运行时默认**不开启本地反代端口**，直接在 Pi 运行时中以 `Cline (Free)` 供应商注入 17 款零额度免费模型，通过全局 Fetch 拦截器直连官方网关（零本地代理开销，架构与 `ck-pi-zen-session` 完全对齐）；
 > * **按需启动本地反向代理**：仅在显式执行 `/cline proxy start` 命令或需要供第三方工具（如 CC-Switch、Cursor）使用时才启动本地 4116 端口，可通过 `/cline proxy stop` 随时停止并恢复直连；
 > * **同模型指数退避重试**：遭遇 500/502/503/504/429 报错时，坚守模型质量底线，自动进行同模型指数退避重试，绝不擅自降级或切换低配备用模型。
 
@@ -51,8 +70,8 @@
 1. **防盗刷指纹拦截**：非官方客户端直接请求 `https://api.cline.bot/api/v1` 会遭遇 403 阻断或限制；
 2. **响应格式不兼容**：Cline 官方接口在非流式模式下将结果包裹于 `{ success: true, data: { choices: [...] } }`，直接破坏了原生 OpenAI SDK 与各类 IDE 适配器的预期；
 3. **节点异常引发客户端崩溃**：上游推理集群满载或故障时，在 `text/event-stream` 中返回 `choices: []` 且下发内部错误帧，触发 Pi 等智能体运行时致命错误 `model output must contain either output text or tool calls, these cannot both be empty`；
-4. **同名模型扣费陷阱**：例如 `inclusionai/ling-3.0-flash-fin` 是按 Token 计费的付费模型，而只有附带 `:free` 标识的 `inclusionai/ling-3.0-flash-fin:free` 才是 100% 零额度消耗；
-5. **隐身免扣费模型未被发掘**：官方存在部分实测 `cost: 0` 的隐身与路由模型（如 `stealth/space-bunny-alpha` 100 万超长窗口、`openrouter/fusion` 等），未带 `:free` 后缀但完全不消耗余额。
+4. **同名模型扣费陷阱**：例如历史模型若遗漏 `:free` 标识，上游将走商业计费通道扣除账户余额；
+5. **模型下架与变动频繁**：部分旧模型（如 `deepseek-v4.1-flash`, `space-bunny-alpha`, `ling-3.0-flash-fin` 等）已被官方下架或转为付费。
 
 `ck-pi-cline` 从协议层、拦截层与代理层彻底解决了上述所有问题，实现即插即用、完全零额度消耗与高可靠容灾保障。
 
@@ -60,7 +79,7 @@
 
 ## 二、系统架构与技术原理解析
 
-```
+```text
 +-----------------------------------------------------------------------------------+
 |                            Client Integration Layer                               |
 |   Pi Terminal Agent  |  CC-Switch  |  Cursor IDE  |  Cherry Studio  |  OpenAI SDK |
@@ -74,18 +93,18 @@
 |      - x-client-version: 4.1.16 | User-Agent: Cline/4.1.16 | vscode headers       |
 |                                                                                   |
 |  [2. Model Alias & Zero-Cost Guard]                                               |
-|      - Short Aliases (bunny, ling, 550b, code, fusion)                            |
+|      - Short Aliases (free, ling, 550b, lightning, laguna, etc.)                  |
 |      - Auto append :free protection to shield credits                             |
-|      - Whitelist 21 verified zero-cost stealth & free models                      |
+|      - Whitelist 17 verified zero-cost active models                              |
 |                                                                                   |
-|  [3. Context Pruning Engine]                                                      |
+|  [3. Context Pruning & Audit Sanitization]                                        |
 |      - Truncate giant tool logs (> 25,000 chars)                                  |
-|      - Safe compaction on <conversation> & <previous-summary> tags                |
+|      - Sanitize SQLi/XSS/exploit payloads in <conversation> against content_filter|
 |                                                                                   |
 |  [4. SSE Stream Transformer & Empty Output Guard]                                 |
 |      - Intercept choices: [] & error frames                                       |
 |      - Normalize delta.reasoning -> delta.reasoning_content                       |
-|      - Invariant Guard: Force synthetic chunk on stream close if empty            |
+|      - Force synthetic chunk on stream close if empty                             |
 |                                                                                   |
 |  [5. Same-Model Exponential Backoff Retry]                                        |
 |      - Transparent retry on 500/502/503/504/429 preserving target model & context|
@@ -113,194 +132,109 @@ http-referer: https://cline.bot
 x-platform: vscode
 x-title: Cline
 ```
-无论是 Pi 内置全局 Fetch 拦截器，还是独立运行的本地反代服务，均确保出站请求与官方客户端完全一致。
 
 ### 2. 响应体解包与协议归一化 (Protocol Normalization)
-Cline 官方非流式端点会将 OpenAI 规范的 Completion 对象嵌套在 `data` 属性内：
-```json
-{
-  "success": true,
-  "data": {
-    "id": "gen-1790396311-mKqJdWPRCifjwqmzFQBu",
-    "choices": [{ "message": { "role": "assistant", "content": "..." } }],
-    "usage": { "cost": 0, "total_tokens": 183 }
-  }
-}
-```
-标准客户端（如 CC-Switch、Cursor、Pi 内部适配器）在解析根节点时找不到 `choices` 会直接抛出解析异常。插件在反向代理与 Fetch 拦截层自动执行透明解包：
+Cline 官方非流式端点会将 OpenAI 规范的 Completion 对象嵌套在 `data` 属性内。标准客户端找不到根节点的 `choices` 会抛出异常。插件在反向代理与 Fetch 拦截层自动执行透明解包：
 * 提取 `rawJson.data` 提升至根节点；
 * 完整保留 `id`, `model`, `choices`, `usage` 等标准字段；
 * 对外暴露符合标准 RFC 的 OpenAI ChatCompletion 数据格式。
 
 ### 3. 空输出死锁防御机制 (Empty Output Guard Invariant)
-* **故障复现**：在上游 GPU 节点饱和时，网关返回 HTTP 200 流，但首帧即包含 `choices: []` 与错误信息。流在未下发任何文本的情况下正常关闭（`data: [DONE]`）。Pi 运行时断言失败并崩溃：
-  ```text
-  Error: model output error: model output must contain either output text or tool calls, these cannot both be empty, please try again
-  ```
-* **解决机制**：
-  1. 通过流式管道 (`TransformStream`) 逐行分析 SSE 帧；
-  2. 若遇到异常错误帧或 `choices: []`，将其透明转化为标准 Assistant 文本块并下发；
-  3. 维护流状态变量 `hasSentAnyContent`；
-  4. 当流触发 `flush()` 关闭时，若检测到既未发出 `content` 也未发出 `tool_calls`，强制注入一条保底响应帧，确保调用链不崩溃并友好提示用户重试。
+在上游节点高载荷时，网关偶发返回空流，触发 Pi 的致命断言失败。插件通过管道分析 SSE 帧：若遭遇异常错误帧或流结束时无文本也无工具调用，自动注入保底响应帧，确保调用链不崩溃并友好提示用户重试。
 
 ### 4. 隐身模型识别与零额度白嫖判定机理 (Stealth Models & Zero-Cost Guard)
-通过对 Cline 网关 458 款模型进行实测探测，我们发现了两类零额度模型：
-1. **隐身零消耗模型 (Stealth Models)**：模型 ID 中不带 `:free` 标识，但网关返回的 `usage.cost` 严格为 `0`。例如 `stealth/space-bunny-alpha`（100 万超长窗口）、`openrouter/fusion`、`openrouter/pareto-code`（200 万上下文代码专用）；
-2. **官方 `:free` 免费模型**：带有 `:free` 后缀。如果调用者遗漏 `:free`（如调用 `inclusionai/ling-3.0-flash-fin`），上游将走商业计费通道扣除账户余额。
-
-**防御算法**：
-```typescript
-// 路由自动防护：若存在免费版本，自动追加 :free 后缀防误扣
-const withFree = `${id}:free`;
-if (KNOWN_CLINE_FREE_MODELS[withFree]) {
-    return withFree;
-}
-```
+自动识别官方零扣费模型（如 `openrouter/free`），对同名模型自动追加 `:free` 防护后缀，拦截历史下架付费陷阱。
 
 ### 5. 深度思考推理链映射 (Reasoning Tokens Alignment)
-Novita 及部分上游集群将深度思考推理链输出到 `delta.reasoning` 或 `message.reasoning`，导致标准 DeepSeek 渲染器（期待 `reasoning_content`）无法显示思考折叠块。
-插件流式与非流式中间件自动完成双向字段归一化：
-```typescript
-if (choice?.delta?.reasoning && !choice.delta.reasoning_content) {
-    choice.delta.reasoning_content = choice.delta.reasoning;
-}
-```
+自动双向归一化 `delta.reasoning` 与 `delta.reasoning_content`，保障思考折叠块在各类前端与终端正常渲染。
 
 ### 6. 同模型指数退避重试机制 (Same-Model Exponential Backoff Retry)
-当免费模型遭遇上游节点 500、502、503、504、524 或 429 限流时，插件绝不随意切换备用模型（避免降级模型质量或截断上下文窗口），而是采用严谨的同模型指数退避重试 (Exponential Backoff Retry)：
-* **同模型不降级**：严格保持原请求的模型 ID 与 Payload 负载完全一致，坚守超大上下文（如 1M/2M）与高精推理品质，拒绝以牺牲模型质量为代价；
-* **指数退避重试**：自动进行最多 3 轮指数退避重试（Backoff Jitter，1s、2s、4s 递增），从容抵御上游临时网络抖动与并发高峰；
-* **透明护航**：对上层业务调用完全透明，保障长程复杂智能体任务连续平稳执行。
+遭遇 500、502、503、504、524 或 429 限流时，坚守模型质量底线，自动进行最多 3 轮指数退避重试，绝不擅自降级或切换低配备用模型。
 
 ### 7. 全链路上下文超限修剪 (Context Pruning Engine)
-在会话压缩 (Compaction) 或包含海量 Tool 执行日志的场景下：
-* 拦截并截断单个超过 25,000 字符的巨型终端输出；
-* 深度修剪 `<conversation>` 与 `<previous-summary>` 标签中超过 80,000 字符的冗余中间内容；
-* 彻底解决切换模型时触发的 `400 Context Length Exceeded` 异常。
+拦截单个超过 25,000 字符的巨型终端输出，修剪 `<conversation>` 与 `<previous-summary>` 中的冗余中间历史，避免触发 `400 Context Length Exceeded`。
+
+### 8. 安全审核过滤阻断防御与 Token Cap 修复 (content_filter & Token Cap Defense)
+* **审计日志脱敏**：引入 `sanitizeSensitiveAuditContent`，对压缩历史中的 SQL 注入、XSS 脚本块、漏洞载荷进行占位脱敏，从源头消除上游内容审查拦截；
+* **finish_reason content_filter 平滑恢复**：捕获内容审核过滤帧，在压缩模式下合成安全检查点摘要，在对话模式下保全已生成文本并附带合规指引；
+* **Token Cap 自动续接**：将压缩请求上限提升至 16,384 tokens 并压制 CoT 思考耗时；当命中 `finish_reason: "length"` 时自动改写为 `"stop"`，彻底解决 `Summarization failed: generation hit the token cap` 异常。
 
 ---
 
-## 三、实测 21 款零额度模型全量矩阵
+## 三、实测 17 款零额度模型全量矩阵
 
-所有收录模型均经过真实请求验证，确认 `usage.cost === 0.000000`：
+所有收录模型均经过真实在线请求验证，确认额度消耗为 0：
 
 ### 1. 隐身与智能路由零消耗模型 (Stealth & Smart Routers)
 
 | 模型 ID | 简写别名 | 上下文窗口 | 最大输出 | 思考推理 | 特性与适用场景 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `stealth/space-bunny-alpha` | `bunny`, `stealth` | 1,000,000 (1M) | 32,768 | 支持 | 隐身测试旗舰，1M 极限窗口，完全零额度消耗 |
-| `openrouter/fusion` | `fusion` | 1,000,000 (1M) | 32,768 | 支持 | 智能元路由模型，根据任务动态分流最优节点 |
-| `openrouter/pareto-code` | `code`, `pareto` | 2,000,000 (2M) | 32,768 | 支持 | 代码专精超长模型，针对工程重构与智能体优化 |
-| `openrouter/free` | `free`, `auto` | 200,000 | 32,768 | 支持 | OpenRouter 官方高可用免费聚合节点，兜底首选 |
+| `openrouter/free` | `free`, `auto` | 200,000 | 32,768 | 支持 | OpenRouter 官方高可用免费聚合节点，首选兜底 |
 
 ### 2. 百万级超长上下文免费模型 (1M+ Giant Context)
 
 | 模型 ID | 简写别名 | 上下文窗口 | 最大输出 | 思考推理 | 特性与适用场景 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `nvidia/nemotron-3-ultra-550b-a55b:free` | `550b`, `ultra` | 1,000,000 (1M) | 32,768 | 支持 | 550B 参数巨无霸模型，超强通用推理与知识检索 |
+| `nvidia/nemotron-3-ultra-550b-a55b:free` | `550b`, `ultra` | 1,000,000 (1M) | 32,768 | 支持 | 550B 参数超大规模模型，通用推理与知识检索 |
 | `nvidia/nemotron-3.5-lightning:free` | `lightning` | 1,000,000 (1M) | 32,768 | 支持 | 1M 上下文轻量化极速变体 |
 | `thinkingmachines/inkling:free` | `inkling` | 1,048,576 (1M) | 32,768 | 支持 | 1M 上下文长文本分析模型 |
-| `thinkingmachines/inkling-small:free` | - | 1,048,576 (1M) | 32,768 | 支持 | 1M 轻量长文本模型 |
+| `thinkingmachines/inkling-small:free` | `inkling-small` | 1,048,576 (1M) | 32,768 | 支持 | 1M 轻量长文本模型 |
 
 ### 3. 主力代码与深度思考免费模型 (Core Coding & Reasoning)
 
 | 模型 ID | 简写别名 | 上下文窗口 | 最大输出 | 思考推理 | 特性与适用场景 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `inclusionai/ling-3.0-flash-fin:free` | `ling`, `flash` | 262,144 | 32,768 | 支持 | 极速响应，稳定性最高的主力高可用模型 |
-| `inclusionai/ling-3.0-flash-sante:free` | `sante` | 262,144 | 32,768 | 支持 | 综合能力平衡变体 |
-| `qwen/qwen3.8-27b:free` | `qwen` | 262,144 | 32,768 | 支持 | 通义千问 27B 免费开源版本，逻辑严谨 |
+| `inclusionai/ling-3.0-flash-sante:free` | `ling`, `sante` | 262,144 | 32,768 | 支持 | 极速响应，稳定性高的高可用主力模型 |
 | `nvidia/nemotron-3-super-120b-a12b:free` | `120b` | 262,144 | 32,768 | 支持 | 120B 参数级深度思考模型 |
 | `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` | `nano`, `reasoning` | 131,072 | 32,768 | 支持 (带视觉) | 多模态图像识别 + 深度思考链路 |
 | `cohere/north-mini-code:free` | `north` | 131,072 | 32,768 | 支持 | 代码补全、单元测试与代码审查专用 |
 | `poolside/laguna-s-2.1:free` | `laguna` | 131,072 | 32,768 | 支持 | 算法与逻辑推导优化模型 |
-| `poolside/laguna-xs-2.1:free` | - | 131,072 | 32,768 | 支持 | 轻量级逻辑变体 |
+| `poolside/laguna-xs-2.1:free` | `xs` | 131,072 | 32,768 | 支持 | 轻量级逻辑变体 |
 
 ### 4. 轻量极速与专用工具模型 (Lightweight & Specialized Tools)
 
 | 模型 ID | 简写别名 | 上下文窗口 | 最大输出 | 思考推理 | 特性与适用场景 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `google/gemma-4-26b-a4b-it:free` | `gemma` | 262,144 | 32,768 | 支持 | 谷歌 Gemma 开源免费微调版 |
-| `google/gemma-4-31b-it:free` | - | 262,144 | 32,768 | 支持 | 谷歌 Gemma 31B 结构化推理版 |
+| `google/gemma-4-31b-it:free` | `gemma-31b` | 262,144 | 32,768 | 支持 | 谷歌 Gemma 31B 结构化推理版 |
 | `dots-studio/dots-3-note-preview:free` | `note` | 131,072 | 32,768 | 支持 | 笔记、提纲与纪要总结优化 |
 | `liquid/lfm-2.5-2.6b:free` | `lfm` | 32,768 | 8,192 | 快速 | Liquid 神经架构轻量模型 |
-| `nvidia/nemotron-3.5-content-safety:free` | - | 131,072 | 16,384 | 快速 | 内容安全审计过滤专用 |
+| `nvidia/nemotron-3.5-content-safety:free` | `safety` | 131,072 | 16,384 | 快速 | 内容安全审计过滤专用 |
+| `apodex/apodex-1.1-mini:free` | `apodex` | 131,072 | 32,768 | 快速 | 极速辅助对话模型 |
 
-### 5. 计费陷阱警示模型 (Paid Traps - 严禁误用)
+### 5. 计费陷阱与已下架模型警示 (Paid Traps & Delisted Models)
 
-以下模型在部分非官方列表中常被误标为免费，经真实请求探测，均会**扣除真实账户余额**，插件已将其列入黑名单过滤：
-* `typesafe/jev-router`: 实测单次请求产生 `cost: $0.0000152`
-* `openrouter/auto`: 实测单次请求产生 `cost: $0.0000594`
-* `openrouter/auto-beta`: 实测单次请求产生 `cost: $0.0000099`
-* `openrouter/bodybuilder`: 实测单次请求产生 `cost: $0.0004500`
-* `unbiased/pareto`: 实测单次请求产生 `cost: $0.0002482`
-* `fireworks/ember-1`: 实测单次请求产生 `cost: $0.0024870`
-* `google/lyria-3-pro-preview`: 实测单次请求产生 `cost: $0.0800000`
+以下模型已被上游下架或转为商业计费，插件已将其列入防御过滤，自动重定向至可用模型：
+* `deepseek/deepseek-v4.1-flash`: 官方已停止免费分发，已自动映射至 `openrouter/free`；
+* `stealth/space-bunny-alpha`: 上游节点已下架，已自动平滑重定向；
+* `openrouter/fusion` / `openrouter/pareto-code`: 节点已停用，已自动平滑重定向；
+* `inclusionai/ling-3.0-flash-fin:free`: 历史版本已下架，已自动升级至 `inclusionai/ling-3.0-flash-sante:free`；
+* `qwen/qwen3.8-27b:free`: 上游免费端点不可用，已自动重定向至 `openrouter/free`。
 
 ---
 
 ## 四、命令使用与交互面板
 
-在 Pi 终端交互界面中，可通过 `/cline` 体系指令进行全方位控制（命令语法与 `/zen` 插件完全对称一致）：
+在 Pi 终端交互界面中，可通过 `/cline` 体系指令进行全方位控制：
 
 | 命令 | 说明 | 交互效果 |
 |:---|:---|:---|
-| `/cline` | **无参直接运行**：全自动在线探测拉取后端最新模型，刷新上下文与思考等级，同步 `models.json` / `auth.json` / CC-Switch 并热载入 Pi | 输出控制面板与已同步模型摘要 |
-| `/cline <key>` 或 `/cline key <key>` | **更新 API Key**：保存新 Key，自动在线探测拉取最新免费模型并热重载 | 输出新 Key 验证结果与模型卡片 |
-| `/cline refresh` 或 `/cline sync` | **强制在线刷新**：重新在线拉取远端模型目录并全量同步本地配置与运行时 | 输出同步状态报告 |
-| `/cline list` 或 `/cline models` | **查看模型列表**：展示全部 21 款零额度模型详细树形卡片（上下文、最大输出、思考等级、模态） | 输出分级卡片列表 |
-| `/cline free` | **查看零额度注册表**：分类呈现隐身零消耗模型与官方标准免费模型 | 输出分类结构表格 |
-| `/cline status` | **查看运行状态**：脱敏 Key、端点、可用模型总数、思考模型数、多模态数及本地反代状态 | 输出运行状态仪表盘 |
-| `/cline ping [模型ID]` | **网络时延探针**：实时探测免费模型连通性与往返延迟 (RTT) | 输出各模型网络时延与评级 |
-| `/cline model <模型ID>` | **快速切换模型**：一键切换当前 Pi 会话所使用的模型 | 即刻切换生效 |
-| `/cline proxy start [端口]` | **启动本地反向代理**：在指定端口（默认 4116）启动 OpenAI 兼容本地代理 | 输出端点信息 |
-| `/cline proxy stop` | **停止本地反向代理**：停止正在运行的代理进程 | 释放端口 |
-
-```text
-[Cline 免费模型与本地反代控制面板]
-• API Key: sk_test_...9999 (已验证并持久化)
-• 基础端点: https://api.cline.bot/api/v1
-• 自动对接免费模型: 已同步 21 款 0 额度消耗模型 (19 款支持深度思考，1 款支持多模态视觉)
-• 官方客户端伪装: 8 维官方指纹签名已注入 (VSCode 4.1.16 / cline-vscode)
-• 本地配置同步: models.json [OK] | auth.json [OK] | CC-Switch DB [OK]
-• 本地反向代理: 未运行
-```
-
-### 1. 快速命令行调用
-在终端中使用短别名直接运行任务：
-```bash
-# 启动 100 万超长隐身模型
-pi --model cline-free/bunny -p "深度分析大型工程架构"
-
-# 启动 200 万上下文代码专用模型
-pi --model cline-free/code -p "审查当前 Git 仓库所有改动"
-
-# 启动 550B 参数级巨型模型
-pi --model cline-free/550b -p "解答高难度数理逻辑问题"
-
-# 启动极速主力免费模型
-pi --model cline-free/ling -p "编写一个 Rust 异步并发队列"
-```
-
-### 2. 实时网络连通性与时延探针 (`/cline ping`)
-```bash
-/cline ping
-```
-输出样例：
-```text
-=== Cline 免费模型连通性与时延实时探测 ===
-  • stealth/space-bunny-alpha: [200 OK] (531ms, 极速)
-  • inclusionai/ling-3.0-flash-fin:free: [200 OK] (489ms, 极速)
-  • openrouter/fusion: [200 OK] (612ms, 极速)
-  • openrouter/pareto-code: [200 OK] (720ms, 极速)
-  • openrouter/free: [200 OK] (544ms, 极速)
-  • nvidia/nemotron-3-ultra-550b-a55b:free: [200 OK] (1120ms, 良好)
-```
+| `/cline` | 无参直接运行：自动在线探测拉取后端最新模型，刷新上下文与思考等级，同步配置并热载入 Pi | 输出控制面板与已同步模型摘要 |
+| `/cline <key>` 或 `/cline key <key>` | 更新 API Key：保存新 Key，自动在线探测拉取最新免费模型并热重载 | 输出新 Key 验证结果与模型卡片 |
+| `/cline refresh` 或 `/cline sync` | 强制在线刷新：重新在线拉取远端模型目录并全量同步本地配置与运行时 | 输出同步状态报告 |
+| `/cline list` 或 `/cline models` | 查看模型列表：展示全部 17 款零额度模型详细树形卡片 | 输出分级卡片列表 |
+| `/cline free` | 查看零额度注册表：分类呈现隐身零消耗模型与官方标准免费模型 | 输出分类结构表格 |
+| `/cline status` | 查看运行状态：脱敏 Key、端点、可用模型总数、思考模型数及本地反代状态 | 输出运行状态仪表盘 |
+| `/cline ping [模型ID]` | 网络时延探针：实时探测免费模型连通性与往返延迟 (RTT) | 输出各模型网络时延与评级 |
+| `/cline model <模型ID>` | 快速切换模型：一键切换当前 Pi 会话所使用的模型 | 即刻切换生效 |
+| `/cline proxy start [端口]` | 启动本地反向代理：在指定端口（默认 4116）启动 OpenAI 兼容本地代理 | 输出端点信息 |
+| `/cline proxy stop` | 停止本地反向代理：停止正在运行的代理进程 | 释放端口 |
 
 ---
 
 ## 五、本地反向代理配置与第三方集成
 
-插件内置工业级 Node.js 反向代理服务，将 Cline 官方私有接口转换为完全符合标准 OpenAI 规范的本地服务。
+插件内置 Node.js 反向代理服务，将 Cline 官方私有接口转换为完全符合标准 OpenAI 规范的本地服务。
 
 ### 1. 独立 CLI 启动代理
 可在终端直接执行打包后的可执行文件：
@@ -310,19 +244,6 @@ node ./bin/cline-proxy.js 4116
 
 # 或通过自定义参数启动
 node ./bin/cline-proxy.js --port 4116 --key sk_test_placeholder_key
-```
-控制台将输出服务就绪信息：
-```text
-=== Cline OpenAI-Compatible 本地反向代理服务 ===
-• 指纹伪装: 8大官方客户端特征标头已启用
-• 免费模型: 已收录 21 款零额度模型
-
-[OK] 代理服务已就绪！
-• OpenAI Base URL: http://127.0.0.1:4116/v1
-• 对话补全端点:   http://127.0.0.1:4116/v1/chat/completions
-• 模型列表端点:   http://127.0.0.1:4116/v1/models
-• 免费模型端点:   http://127.0.0.1:4116/v1/models/free
-• 健康检查端点:   http://127.0.0.1:4116/health
 ```
 
 ### 2. CC-Switch 客户端接入
@@ -336,7 +257,7 @@ node ./bin/cline-proxy.js --port 4116 --key sk_test_placeholder_key
 在 Cursor 设置的 `OpenAI API Key` 中：
 * **Override OpenAI Base URL**: `http://127.0.0.1:4116/v1`
 * **API Key**: 任意填写
-* **Model Name**: 手动输入 `stealth/space-bunny-alpha` 或 `openrouter/pareto-code`。
+* **Model Name**: 手动输入 `openrouter/free` 或 `nvidia/nemotron-3.5-lightning:free`。
 
 ### 4. OpenAI SDK (Python / Node.js) 接入
 
@@ -350,7 +271,7 @@ client = OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="stealth/space-bunny-alpha",
+    model="openrouter/free",
     messages=[{"role": "user", "content": "写一段关于分布式锁的最佳实践"}],
     stream=True
 )
@@ -371,7 +292,7 @@ const openai = new OpenAI({
 });
 
 const completion = await openai.chat.completions.create({
-  model: "openrouter/pareto-code",
+  model: "openrouter/free",
   messages: [{ role: "user", content: "Implement a Red-Black Tree in TypeScript" }],
 });
 
@@ -382,50 +303,242 @@ console.log(completion.choices[0].message.content);
 
 ## 六、版本变更记录 (Changelog)
 
-### v0.1.6 (2026-09-30)
+### v0.1.8
+* **全链路会话压缩与安全策略防御 (content_filter & Token Cap Fix)**：
+  * **修复 Token Cap 截断异常**：调优压缩任务输出上限至 16,384 tokens，并在压缩模式下强制设置 `reasoning_effort: "low"` 并剥离思考过程，彻底消除推理模型触发 token cap 导致压缩失败；
+  * **平滑重写 finish_reason length -> stop**：在压缩摘要非空时将 length 结果重写为 stop，避免 Pi 触发 `stopReason === "length"` 运行时报错；
+  * **安全审核过滤防御**：集成 `sanitizeSensitiveAuditContent` 审计脱敏引擎，自动合规替换 `<conversation>` 中的 SQL 注入、XSS 脚本标签与利用工具特征；
+  * **拦截器与本地代理双向 content_filter 兜底**：在压缩时合成结构化会话检查点，在对话时保全已有输出并提示调整提问方式。
+* **免费模型注册表更新与别名路由升级**：
+  * 清除上游已失效或下架的 6 款模型，精准锁定 17 款在线零扣费模型；
+  * 自动将旧模型别名（如 `bunny`, `fusion`, `code`, `deepseek-v4.1-flash`, `ling`）平滑重定向至当前活跃免费模型。
+
+### v0.1.7
+* **安全审计与网络加固**：
+  * 增强本地代理 Host 标头安全校验与 DNS 重绑定防护；
+  * 统一请求体重试与多字节 UTF-8 流分包保障。
+
+### v0.1.6
 * **深度修复上游空响应重试机制 (Provider Returned an Empty Response)**：
-  * **流式预读循环穿透多轮注释包**：重构 SSE 流式深度探测器，上限提升至 30 个数据包与 64KB，彻底穿透网关初始下发的多轮 `: OPENROUTER PROCESSING\n\n` 或 keepalive 注释，精准捕捉延后出现的 `Provider returned an empty response` 错误帧；
-  * **严格限制错误匹配边界**：错误识别限定于 `data.error` 结构与标准错误提示，避免模型自身生成的正常文本（如含 "empty response" 解释）被误判；
-  * **真实指数退避重试**：设定生产环境最小退避底线（1.5s ~ 5.0s 带 Jitter 抖动），为上游算力集群提供充足故障转移窗口，严守 3 次自动同模型重试；
-  * **测试环境完全沙盒隔离**：测试环境强制注入临时配置路径，杜绝单元测试写入真实配置；
-  * **配置注入安全性规范**：集成 `sanitizePiModelDefinition` 机制，写入 `~/.pi/agent/models.json` 时严格类型校验与字段修剪，杜绝无效或畸变 JSON 注入。
+  * 流式预读上限提升至 30 包与 64KB，精准穿透网关 processing 注释；
+  * 严格限定错误边界匹配，生产环境全抖动指数退避重试。
 
-### v0.1.5 (2026-09-30)
-* **供应商节点空响应自动同模型重试 3 次 (`Provider returned an empty response`)**：首创首包无损流式 Stream Peek 预读探测技术，当上游节点返回伪 200 但实际为 `Provider returned an empty response` 错误帧或 0 字节空流时，底层连接立即中断并自动进行指数退避 3 次同模型重试，彻底消除偶发性空响应弹窗；
-* **Pi 运行态与 `models.json` 严格 JSON 校验与防畸变过滤 (`sanitizePiModelDefinition`)**：严格规范化 `id`、`name`、`contextWindow`、`maxTokens`、`input`、`cost` 等字段，非法或缺省字段自动回退至安全默认值，清洗根级历史残留键，杜绝注入畸变或非法 JSON；
-* **零额度隐身模型与免扣费后台实时目录拉取**：深度识别 `stealth/space-bunny-alpha` 等隐身零消耗模型与定价为 0 的元数据，每次启动与每 30 分钟后台静默拉取远端目录（0 Token 0 扣费），并支持 `~/.pi/agent/cline-models.json` 本地扩展与 `/cline add <id> [name]`；
-* **模型去重保障**：彻底移除冗余人工别名注入，统一以规范 canonical ID 唯一键去重，杜绝 `/model` 菜单出现重复项。
+### v0.1.5
+* **供应商节点空响应自动同模型重试 3 次**：首创首包无损流式 Stream Peek 预读探测，当上游节点返回伪 200 空流时自动 3 次重试；
+* **Pi 运行态规范化校验 (`sanitizePiModelDefinition`)**：严格清洗畸变字段，保证配置安全落盘。
 
-### v0.1.4 (2026-09-27)
-* **系统安全审计全面加固**：
-  * **网络与本地代理安全**：强化 DNS Rebinding 防护、严格解析中括号 IPv6 主机头、受信任 CORS 来源白名单校验、SSE 帧缓存 2MB 熔断机制、客户端断开自动取消上游流式传输；
-  * **同模型全抖动退避重试**：Fetch 拦截器遭遇 500/502/503/504 及 429 时，执行带 Full Jitter 全抖动的指数退避重试，绝不自动切换备用模型（严格保障模型质量不降级）；
-  * **凭据安全**：`auth.json` 与 `models.json` 目录与文件权限严格限制为 0700 / 0600。
+### v0.1.4
+* 系统安全审计全面加固：DNS Rebinding 防护、受信任 CORS 来源校验、0700/0600 权限保障。
 
-### v0.1.2 (2026-09-26)
-* **严守模型品质（坚决杜绝模型降级）**：彻底移除遭遇 500 报错时切换备用模型的妥协策略，改为严谨的同模型指数退避重试（Same-Model Exponential Backoff Retry），确保百万上下文与高精推理质量绝不被削弱；
-* **极简默认运行模式**：启动时默认不启动本地代理端口（4116），直接将 Cline 提供商模型注入 Pi 运行时（直连官方网关，零额外开销，与 `ck-pi-zen-session` 架构完全一致），仅在显式执行 `/cline proxy start` 时启动反代服务；
-* **本地代理与拦截器双轨重试**：Fetch 拦截器与独立反向代理服务器统一配备最大 3 轮指数退避重试机制，从容抵御上游短暂网络与并发波动。
+### v0.1.2
+* 坚守模型品质底线，严格执行同模型指数退避重试，绝不自动跨模型降级；极简默认免代理直连模式。
 
-### v0.1.1 (2026-09-26)
-* **指令体系全面对称**：`/cline` 与 `/zen` 深度对齐，支持无参直接拉取远端模型、直接传入 Key 自动验证并热载入模型库、`refresh`/`sync`、`list`/`models`/`free`、`ping` 实时探针与 `model` 快捷切换；
-* **思考链 (CoT) 双向保全**：SSE 流式传输中同时双向写入 `delta.reasoning` 与 `delta.reasoning_content`，杜绝思考内容在部分客户端被遗漏；
-* **零表情纯净终端**：彻底清除终端输出与文档中的所有 Emoji，全面采用结构化标签与统一格式。
+### v0.1.1
+* 指令体系与 `/zen` 全面深度对齐；思考链 (CoT) 双向字段规范化；清除所有 Emoji 表情符号。
 
-### v0.1.0 (2026-09-26)
-* **协议逆向与指纹注入**：完整实现官方 VS Code 扩展 4.1.16 的 8 大请求标头伪装；
-* **双模式架构**：
-  * 进程内无缝全局 Fetch 拦截器（Pi 终端内直接免代理启动）；
-  * 独立本地反向代理服务器（端口 4116），提供对外标准 OpenAI 兼容端点；
-* **零额度隐身模型支持**：
-  * 首发支持 `stealth/space-bunny-alpha`（1M 上下文）隐身零消耗模型；
-  * 首发支持 `openrouter/fusion` 与 `openrouter/pareto-code`（2M 上下文）路由免费模型；
-  * 全量收录并验证 21 款零额度模型（实测 `cost: 0`）；
-  * 严格隔离并过滤扣费陷阱模型（`typesafe/jev-router`, `openrouter/auto`, `unbiased/pareto` 等）；
-* **死锁防护与空输出阻断 (Empty Output Guard)**：
-  * SSE 流式转换管道自动拦截 `choices: []` 与网关异常帧；
-  * 流关闭时断言保护，杜绝两字段皆空的运行时崩溃；
-* **思考链归一化**：自动将 `delta.reasoning` / `message.reasoning` 映射为标准 `reasoning_content`；
-* **同模型指数退避重试**：遭遇 500/502/503/504/524/429 报错时，自动进行多轮同模型退避重试，绝不降级或替换模型；
-* **会话修剪与上下文保护**：拦截海量 Tool 日志与会话压缩标签，防止上下文溢出；
-* **视觉美化**：去除所有 Emoji，全面采用纯净结构化 ANSI 与专业标签设计。
+### v0.1.0
+* 全新发布！Cline 官方指纹伪装、全量零额度免费模型智能路由与本地 OpenAI 兼容反向代理。
+
+---
+
+## 七、许可
+
+- 仓库: [https://github.com/1837620622/ck-pi-extension](https://github.com/1837620622/ck-pi-extension)
+- 协议: MIT License
+
+---
+
+<a id="ck-pi-cline-en"></a>
+# ck-pi-cline (English)
+
+<p align="center">
+  <img src="https://img.shields.io/badge/version-0.1.8-blue.svg?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License" />
+  <img src="https://img.shields.io/badge/runtime-Pi%20Agent%20%3E%3D0.85.0-orange.svg?style=flat-square" alt="Pi Runtime" />
+  <img src="https://img.shields.io/badge/protocol-OpenAI%20Compatible-informational.svg?style=flat-square" alt="Protocol" />
+  <img src="https://img.shields.io/badge/client%20fingerprint-Cline%20v4.1.16-purple.svg?style=flat-square" alt="Fingerprint" />
+  <img src="https://img.shields.io/badge/zero--cost%20models-17%20Verified-success.svg?style=flat-square" alt="Zero Cost Models" />
+</p>
+
+<p align="center">
+  <a href="#ck-pi-cline">中文说明</a> | <a href="#ck-pi-cline-en">English Documentation</a>
+</p>
+
+---
+
+## Sponsorship & Support
+
+If you find this project helpful, please consider sponsoring. Your support directly funds continuous maintenance, endpoint testing, reverse-engineering protocol alignment, and rapid iteration.
+
+### Sponsorship Channels
+
+- **GitHub Sponsors**: [https://github.com/sponsors/1837620622](https://github.com/sponsors/1837620622)
+- **Enterprise Sponsorship**:
+  - AI infrastructure providers, proxy gateway services, and engineering teams are welcome to sponsor.
+  - Benefits: Prominent brand logo and link display in the README, priority issue response, and custom protocol optimizations.
+
+---
+
+## Table of Contents
+
+- [1. Overview](#1-overview)
+- [2. System Architecture & Technical Principles](#2-system-architecture--technical-principles)
+- [3. Verified 17 Zero-Cost Models Matrix](#3-verified-17-zero-cost-models-matrix)
+- [4. Commands & Dashboard](#4-commands--dashboard)
+- [5. Local Reverse Proxy & Third-Party Integration](#5-local-reverse-proxy--third-party-integration)
+- [6. Changelog](#6-changelog)
+- [7. License](#7-license)
+
+---
+
+## 1. Overview
+
+`ck-pi-cline` is a high-availability Cline official API reverse proxy, client fingerprint disguise, zero-cost model intelligent router, and local OpenAI-compatible reverse proxy extension built for the **Pi Coding Agent**.
+
+> **Architecture & Operational Principles**:
+> * **Default Direct Connection & Injection**: By default, the local proxy port is **not started** upon launch. The extension directly mounts 17 zero-cost models into Pi runtime via a global Fetch interceptor pointing to the official gateway with zero local proxy overhead (fully aligned with `ck-pi-zen-session`);
+> * **On-Demand Local Reverse Proxy**: Starts the local port 4116 only when explicitly executed via `/cline proxy start` or when needed by external tools (e.g., CC-Switch, Cursor);
+> * **Same-Model Exponential Backoff Retry**: Transparently retries errors (500/502/503/504/429) on the exact same model, refusing to downgrade model capability.
+
+Key problems resolved:
+1. **Fingerprint Validation Blocking**: Bypasses 403 errors by spoofing official VS Code headers;
+2. **Payload Discrepancies**: Unpacks non-streaming responses nested in `{ data: { choices: [...] } }`;
+3. **Empty Output Freezes**: Intercepts `choices: []` frames to prevent agent crashes;
+4. **Credit Depletion Traps**: Excludes paid models and enforces `:free` parameters;
+5. **Model Deprecations**: Cleans delisted models and dynamically redirects aliases to working free alternatives.
+
+---
+
+## 2. System Architecture & Technical Principles
+
+1. **Official Client Fingerprint Spoofing**: Injects 8 official headers (`User-Agent: Cline/4.1.16`, `x-client-version: 4.1.16`, `x-client-type: cline-vscode`, etc.) across all outgoing requests.
+2. **Protocol Normalization**: Transparently unpacks `{ success: true, data: { ... } }` into standard OpenAI ChatCompletion objects.
+3. **Empty Output Invariant Guard**: Inspects SSE frames and synthesizes fallback assistant chunks when the upstream returns empty choices.
+4. **Zero-Cost Model Safeguard**: Detects verified free models and appends `:free` to prevent billable routing.
+5. **Reasoning Chain Mapping**: Normalizes `delta.reasoning` into `delta.reasoning_content` for proper CoT rendering.
+6. **Same-Model Exponential Backoff Retry**: Retries up to 3 times on 5xx and 429 gateway responses without model substitution.
+7. **Context Pruning**: Truncates oversized tool outputs (> 25,000 chars) and trims intermediate conversation turns.
+8. **content_filter Defense & Token Cap Fix**:
+   - Sanitizes SQLi, XSS, and security payloads in `<conversation>` to prevent triggering safety moderation;
+   - Intercepts `finish_reason: "content_filter"` and normalizes to structured checkpoint summaries;
+   - Relaxes compaction token limit to 16,384 tokens with `reasoning_effort: "low"`, rewriting `finish_reason: "length"` to `"stop"` to eliminate summarization crashes.
+
+---
+
+## 3. Verified 17 Zero-Cost Models Matrix
+
+All listed models have been tested online with verified zero credit deduction (`cost === 0`):
+
+| Model ID | Short Alias | Context Window | Max Output | Reasoning | Modality |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `openrouter/free` | `free`, `auto` | 200,000 | 32,768 | Yes | Text |
+| `nvidia/nemotron-3-ultra-550b-a55b:free` | `550b`, `ultra` | 1,000,000 (1M) | 32,768 | Yes | Text |
+| `nvidia/nemotron-3.5-lightning:free` | `lightning` | 1,000,000 (1M) | 32,768 | Yes | Text |
+| `thinkingmachines/inkling:free` | `inkling` | 1,048,576 (1M) | 32,768 | Yes | Text |
+| `thinkingmachines/inkling-small:free` | `inkling-small` | 1,048,576 (1M) | 32,768 | Yes | Text |
+| `inclusionai/ling-3.0-flash-sante:free` | `ling`, `sante` | 262,144 | 32,768 | Yes | Text |
+| `nvidia/nemotron-3-super-120b-a12b:free` | `120b` | 262,144 | 32,768 | Yes | Text |
+| `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` | `nano`, `reasoning` | 131,072 | 32,768 | Yes | Text, Vision |
+| `cohere/north-mini-code:free` | `north` | 131,072 | 32,768 | Yes | Text |
+| `poolside/laguna-s-2.1:free` | `laguna` | 131,072 | 32,768 | Yes | Text |
+| `poolside/laguna-xs-2.1:free` | `xs` | 131,072 | 32,768 | Yes | Text |
+| `google/gemma-4-26b-a4b-it:free` | `gemma` | 262,144 | 32,768 | Yes | Text |
+| `google/gemma-4-31b-it:free` | `gemma-31b` | 262,144 | 32,768 | Yes | Text |
+| `dots-studio/dots-3-note-preview:free` | `note` | 131,072 | 32,768 | Yes | Text |
+| `liquid/lfm-2.5-2.6b:free` | `lfm` | 32,768 | 8,192 | Fast | Text |
+| `nvidia/nemotron-3.5-content-safety:free` | `safety` | 131,072 | 16,384 | Fast | Text |
+| `apodex/apodex-1.1-mini:free` | `apodex` | 131,072 | 32,768 | Fast | Text |
+
+---
+
+## 4. Commands & Dashboard
+
+Control extension features inside the Pi interactive terminal:
+
+| Command | Description | Output |
+| :--- | :--- | :--- |
+| `/cline` | No args: discover remote models, sync configuration, and hot reload Pi | Status panel and synced summary |
+| `/cline <key>` or `/cline key <key>` | Configure API key and reload models | Key verification report |
+| `/cline refresh` or `/cline sync` | Force remote sync and update local configuration | Refresh status report |
+| `/cline list` or `/cline models` | View catalog of 17 zero-cost models | Tree card list |
+| `/cline free` | View categorized zero-cost models table | Structured catalog table |
+| `/cline status` | View API key mask, endpoint, model count, and proxy state | Operational dashboard |
+| `/cline ping [model-id]` | Probe free model network connectivity and round-trip time | Latency and rating report |
+| `/cline model <model-id>` | Switch active Cline model | Immediate activation |
+| `/cline proxy start [port]` | Start local OpenAI-compatible proxy (default port 4116) | Endpoint details |
+| `/cline proxy stop` | Stop local proxy service | Port release |
+
+---
+
+## 5. Local Reverse Proxy & Third-Party Integration
+
+### Standalone CLI Proxy
+```bash
+node ./bin/cline-proxy.js 4116
+```
+
+### CC-Switch
+* Provider: `Cline-Free`
+* Base URL: `http://127.0.0.1:4116/v1`
+* API Key: `cline-proxy`
+
+### OpenAI SDK Integration
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://127.0.0.1:4116/v1",
+    api_key="cline-local-token"
+)
+
+response = client.chat.completions.create(
+    model="openrouter/free",
+    messages=[{"role": "user", "content": "Hello!"}],
+    stream=True
+)
+for chunk in response:
+    if chunk.choices[0].delta.content:
+        print(chunk.choices[0].delta.content, end="", flush=True)
+```
+
+---
+
+## 6. Changelog
+
+### v0.1.8
+- **Auto-compaction & content_filter defense**:
+  - Relaxed compaction token output limit to 16,384 tokens with `reasoning_effort: "low"` and CoT suppression, preventing token cap exhaustion crashes;
+  - Normalized `finish_reason: "length"` on compaction tasks to `"stop"`;
+  - Added `sanitizeSensitiveAuditContent` to sanitize SQL injection, XSS script tags, and exploit patterns in `<conversation>` tags;
+  - Intercepted `finish_reason: "content_filter"`, synthesizing structured session checkpoints on compaction.
+- **Model catalog & alias routing update**:
+  - Purged 6 delisted/paid trap models, locking catalog to 17 verified active models;
+  - Smooth alias auto-routing for deprecated models.
+
+### v0.1.7
+- Strengthened Host header validation, DNS rebinding defenses, and cross-chunk UTF-8 stream decoding.
+
+### v0.1.6
+- Deep fix for upstream empty response retry (`Provider returned an empty response`) with 30-packet peek buffer.
+
+### v0.1.5
+- 3-attempt same-model retry on empty response or zero-byte stream; `sanitizePiModelDefinition` data protection.
+
+### v0.1.4
+- Comprehensive security audit fixes: DNS rebinding protection, trusted CORS origin validation, 0700/0600 file permissions.
+
+### v0.1.2
+- Strict same-model exponential backoff retry; default direct connection mode.
+
+### v0.1.1
+- Command parity with `/zen`; bidirectional CoT reasoning mapping; stripped all emojis.
+
+### v0.1.0
+- Initial release with official fingerprint spoofing and verified zero-cost models.
+
+---
+
+## 7. License
+
+- Repository: [https://github.com/1837620622/ck-pi-extension](https://github.com/1837620622/ck-pi-extension)
+- License: MIT License

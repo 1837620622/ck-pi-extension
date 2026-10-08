@@ -11,7 +11,7 @@ Pi 插件 monorepo：一个 GitHub 仓库，多个彼此独立的 npm 包，用�
 | Pi Rail | `ck-pi-rail` | 无表情、自适应满宽状态栏 | [README](packages/pi-rail/README.md) |
 | Pi Redkit | `ck-pi-redkit` | 授权交战条令注入（渗透/逆向） | [README](packages/pi-redkit/README.md) |
 | Pi Zen Session | `ck-pi-zen-session` | OpenCode Zen 免费模型、Responses/Completions 双协议路由与会话自愈 | [README](packages/pi-zen-session/README.md) |
-| Pi Cline | `ck-pi-cline` | Cline 官方指纹伪装、21 款零额度模型与本地反向代理 | [README](packages/pi-cline/README.md) |
+| Pi Cline | `ck-pi-cline` | Cline 官方指纹伪装、17 款零额度模型与本地反向代理 | [README](packages/pi-cline/README.md) |
 | Pi Guard | `ck-pi-guard` | 深度思考后脱机守卫与边缘网关超时拦截重试 (502, 503, 504, 520-525, 533) | [README](packages/pi-guard/README.md) |
 
 ---
@@ -37,7 +37,7 @@ Pi 插件 monorepo：一个 GitHub 仓库，多个彼此独立的 npm 包，用�
 pi install npm:ck-pi-rail        # 状态栏
 pi install npm:ck-pi-redkit      # 条令注入
 pi install npm:ck-pi-zen-session # OpenCode Zen 免费模型与会话自动维护
-pi install npm:ck-pi-cline       # Cline 官方指纹、21 款零额度模型与本地反代
+pi install npm:ck-pi-cline       # Cline 官方指纹、17 款零额度模型与本地反代
 pi install npm:ck-pi-guard       # 深度思考脱机守卫与网关重试
 ```
 
@@ -71,11 +71,11 @@ pi install git:github.com/1837620622/ck-pi-extension
 /zen model <id>      快速切换当前激活的 Zen 模型
 
 /cline               无参运行：自动拉取远端模型、刷新配置并热重载 Pi 模型库
-/cline <key>         配置/更新 Cline API Key，自动在线探测 21 款零额度模型
+/cline <key>         配置/更新 Cline API Key，自动在线探测 17 款零额度模型
 /cline status        查看当前详细运行状态、指纹签名与本地反代状态
 /cline refresh       强制在线拉取远端模型并刷新本地配置
 /cline list          查看所有可用免费模型详细规格清单
-/cline free          查看 21 款零额度模型注册表
+/cline free          查看 17 款零额度模型注册表
 /cline add <id> [name] 自定义登记新增的零额度免费模型
 /cline ping [model]  实时探测免费模型连通性与网络时延
 /cline proxy start   在后台启动本地 OpenAI 兼容反向代理服务 (默认端口 4116)
@@ -89,6 +89,16 @@ pi install git:github.com/1837620622/ck-pi-extension
 
 ## 更新日志
 
+- `ck-pi-zen-session 0.1.23` / `ck-pi-cline 0.1.8`：
+  - **核心修复会话自动压缩失败与 Token Cap 截断崩溃 (`generation hit the token cap and the summary is incomplete`)**：
+    - 调优压缩输出上限至 16,384 tokens 并强制 `reasoning_effort: "low"`，避免深度推理模型（如 `fledge-alpha-free`）耗尽 token 额度；
+    - 在会话压缩摘要非空时，将上游返回的 `finish_reason: "length"` 自动重写为 `"stop"`，彻底根除 Pi 官方压缩模块在命中 token cap 时的崩溃中断。
+  - **全链路防御安全审核过滤阻断 (`finish_reason: content_filter`)**：
+    - 引入 `sanitizeSensitiveAuditContent` 审计特征脱敏引擎：针对 `<conversation>` 中的 SQL 注入特征、XSS 脚本块、漏洞利用载荷、密码散列和卡号等敏感特征进行合规占位脱敏，从源头杜绝触发上游内容审查拦截；
+    - 全局拦截器与本地反向代理双向捕获 `content_filter`：在压缩模式下自动合成规范的结构化会话检查点摘要并置 `finish_reason: "stop"`，在对话模式下保全已生成内容并附带友好安全调整提示。
+  - **更新最新在线免费模型目录与剔除失效模型**：
+    - 剔除已下架的历史不可用模型（`mimo-v2.5-free`, `ling-3.0-flash-fin-free`, `nemotron-3-ultra-free`, `deepseek-v4.1-flash`, `space-bunny-alpha`, `openrouter/fusion` 等）；
+    - 正式同步上线在线活跃模型（Zen: 9 款，Cline: 17 款），优化短别名映射引擎平滑重定向至最新存活模型。
 - `ck-pi-zen-session 0.1.22`：
   - **支持 OpenAI Responses API 协议与双供应商路由架构 (修复 Issue #1)**：
     - **双供应商精准分流**：将 OpenCode Zen 拆分为 `opencode-zen-free`（走 `openai-completions`，负责 Big Pickle, Xiaomi MiMo, NVIDIA Nemotron, Ling, Space Bunny）与 `opencode-zen-free-responses`（走 `openai-responses`，负责 Meta Muse Spark 1.3/1.2 Contributor Free）；
@@ -144,7 +154,7 @@ Monorepo for Pi extensions: one GitHub repository containing independent npm pac
 | Pi Rail | `ck-pi-rail` | Pure-tech adaptive full-width status line | [README](packages/pi-rail/README.md) |
 | Pi Redkit | `ck-pi-redkit` | Authorized rules of engagement injection (pentest / reverse) | [README](packages/pi-redkit/README.md) |
 | Pi Zen Session | `ck-pi-zen-session` | OpenCode Zen free models, dual-protocol routing (Completions & Responses), and session self-healing | [README](packages/pi-zen-session/README.md) |
-| Pi Cline | `ck-pi-cline` | Cline official fingerprint disguise, 21 zero-cost models & local reverse proxy | [README](packages/pi-cline/README.md) |
+| Pi Cline | `ck-pi-cline` | Cline official fingerprint disguise, 17 zero-cost models & local reverse proxy | [README](packages/pi-cline/README.md) |
 | Pi Guard | `ck-pi-guard` | Thinking offline sentinel & edge gateway retry (502, 503, 504, 520-525, 533) | [README](packages/pi-guard/README.md) |
 
 ---
@@ -170,7 +180,7 @@ Install packages individually on demand:
 pi install npm:ck-pi-rail        # Statusline
 pi install npm:ck-pi-redkit      # Rules of engagement injection
 pi install npm:ck-pi-zen-session # OpenCode Zen free models & session auto-maintenance
-pi install npm:ck-pi-cline       # Cline official fingerprint, 21 zero-cost models & local proxy
+pi install npm:ck-pi-cline       # Cline official fingerprint, 17 zero-cost models & local proxy
 pi install npm:ck-pi-guard       # Thinking offline sentinel & gateway retry
 ```
 
@@ -204,11 +214,11 @@ Do not enable `pi-rail` concurrently with other statusline extensions (`@narumit
 /zen model <id>      Quickly switch active Zen model
 
 /cline               No args: pull remote models, refresh configuration, and reload registry
-/cline <key>         Configure/update Cline API key, discover 21 zero-cost models
+/cline <key>         Configure/update Cline API key, discover 17 zero-cost models
 /cline status        View Cline status, fingerprint signature, and local proxy state
 /cline refresh       Force pull remote models and update local configuration
 /cline list          View full catalog of available free models
-/cline free          View 21 zero-cost model registry
+/cline free          View 17 zero-cost model registry
 /cline add <id> [name] Register custom zero-cost model
 /cline ping [model]  Probe free model network connectivity and latency
 /cline proxy start   Start local OpenAI-compatible reverse proxy in background (port 4116)
@@ -222,6 +232,17 @@ Do not enable `pi-rail` concurrently with other statusline extensions (`@narumit
 
 ## Changelog
 
+- `ck-pi-zen-session 0.1.23` / `ck-pi-cline 0.1.8`:
+  - **Auto-compaction token cap crash fix & length normalization (`generation hit the token cap and the summary is incomplete`)**:
+    - Relaxed compaction output token ceiling to 16,384 tokens with forced `reasoning_effort: "low"` and CoT suppression, preventing reasoning models (such as `fledge-alpha-free`) from exhausting the compaction token budget;
+    - Intercepted upstream `finish_reason: "length"` during summarization tasks and smoothly normalized to `finish_reason: "stop"` whenever non-empty text is generated, eliminating Pi's compaction crash.
+  - **End-to-end safety moderation defense (`finish_reason: content_filter`)**:
+    - Integrated `sanitizeSensitiveAuditContent` desensitization engine: automatically sanitized SQL injection patterns, XSS script tags, exploit tools, password hashes, and card numbers inside `<conversation>` tags during compaction to prevent triggering upstream content moderation filters;
+    - Global fetch interceptor and reverse proxy intercept `finish_reason: "content_filter"`: synthesized structured session progress checkpoints with `finish_reason: "stop"` during compaction, and preserved partial generations with friendly notices during regular chat.
+  - **Catalog synchronization & dead model pruning**:
+    - Delisted unavailable models (`mimo-v2.5-free`, `ling-3.0-flash-fin-free`, `nemotron-3-ultra-free`, `deepseek-v4.1-flash`, `space-bunny-alpha`, `openrouter/fusion`, etc.);
+    - Synchronized verified active models (Zen: 9 models, Cline: 17 models);
+    - Upgraded short alias resolver to seamlessly route old model names to active working successors.
 - `ck-pi-zen-session 0.1.22`:
   - **Support OpenAI Responses API protocol & dual-provider architecture (Resolves Issue #1)**:
     - **Dual-provider routing**: Partitioned OpenCode Zen into `opencode-zen-free` (`openai-completions` for Big Pickle, Xiaomi MiMo, NVIDIA Nemotron, Ling, Space Bunny) and `opencode-zen-free-responses` (`openai-responses` for Meta Muse Spark 1.3/1.2 Contributor Free);

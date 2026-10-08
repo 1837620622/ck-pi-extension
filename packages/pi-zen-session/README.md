@@ -1,12 +1,12 @@
 # ck-pi-zen-session
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.1.22-blue.svg?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.1.23-blue.svg?style=flat-square" alt="Version" />
   <img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License" />
   <img src="https://img.shields.io/badge/runtime-Pi%20Agent%20%3E%3D0.85.0-orange.svg?style=flat-square" alt="Pi Runtime" />
   <img src="https://img.shields.io/badge/protocol-Completions%20%26%20Responses-informational.svg?style=flat-square" alt="Protocol" />
   <img src="https://img.shields.io/badge/session%20algorithm-Descending%20Timestamp%20Base62-purple.svg?style=flat-square" alt="Session Algorithm" />
-  <img src="https://img.shields.io/badge/zero--cost%20models-Verified-success.svg?style=flat-square" alt="Zero Cost Models" />
+  <img src="https://img.shields.io/badge/zero--cost%20models-9%20Verified-success.svg?style=flat-square" alt="Zero Cost Models" />
 </p>
 
 <p align="center">
@@ -96,7 +96,7 @@ OpenCode Zen 上游网关对不同的模型系列启用了不同的传输协议�
 为从根本上解决该协议限制，`ck-pi-zen-session 0.1.22` 引入了双供应商路由体系：
 
 1. **`opencode-zen-free` (api: `openai-completions`)**：
-   - 托管模型：`mimo-v2.5-free`, `mimo-v2.6-flash-free`, `nemotron-3.5-lightning-free`, `nemotron-3-ultra-free`, `big-pickle`, `ling-3.0-flash-fin-free`, `space-bunny-free`, `space-bunny-alpha`, `jev-1.13-free`。
+   - 托管模型：`fledge-alpha-free`, `ling-3.1-flash-free`, `mimo-v2.6-flash-free`, `nemotron-3.5-lightning-free`, `big-pickle`, `space-bunny-free`, `longcat-2.5-preview-free`。
    - 请求端点：`/zen/v1/chat/completions`。
    - 工具格式：Nested function 结构 (`{ type: "function", function: { ... } }`)。
    - 携带参数：`stream_options: { include_usage: true }`, `reasoning_effort`。
@@ -146,15 +146,13 @@ OpenCode Zen 上游网关对不同的模型系列启用了不同的传输协议�
 
 | 模型 ID | 协议 | 供应商 | 上下文窗口 | 最大输出 | 推理思考等级 | 支持模态 |
 |:---|:---|:---|:---|:---|:---|:---|
-| `mimo-v2.5-free` | Completions | `opencode-zen-free` | 200,000 | 32,000 | 全档位支持 (OpenAI low/med/high) | 文本、图像 |
+| `fledge-alpha-free` | Completions | `opencode-zen-free` | 200,000 | 32,768 | 全档位支持 (OpenAI low/med/high) | 文本 |
+| `ling-3.1-flash-free` | Completions | `opencode-zen-free` | 262,144 | 32,768 | 全档位支持 (OpenAI low/med/high) | 文本 |
 | `mimo-v2.6-flash-free` | Completions | `opencode-zen-free` | 200,000 | 32,000 | 全档位支持 (OpenAI low/med/high) | 文本、图像 |
 | `nemotron-3.5-lightning-free` | Completions | `opencode-zen-free` | 262,144 | 262,144 | 全档位支持 (OpenAI low/med/high) | 文本 |
-| `nemotron-3-ultra-free` | Completions | `opencode-zen-free` | 1,000,000 (1M) | 128,000 | 全档位支持 (OpenAI low/med/high) | 文本 |
-| `ling-3.0-flash-fin-free` | Completions | `opencode-zen-free` | 262,144 | 32,768 | 全档位支持 (OpenAI low/med/high) | 文本 |
 | `big-pickle` | Completions | `opencode-zen-free` | 200,000 | 32,000 | 全档位支持 (OpenAI low/med/high) | 文本 |
 | `space-bunny-free` | Completions | `opencode-zen-free` | 200,000 | 32,000 | 全档位支持 (OpenAI low/med/high) | 文本、图像 |
-| `space-bunny-alpha` | Completions | `opencode-zen-free` | 200,000 | 32,000 | 全档位支持 (OpenAI low/med/high) | 文本、图像 |
-| `jev-1.13-free` | Completions | `opencode-zen-free` | 128,000 | 16,384 | 基础模型（无 reasoning） | 文本 |
+| `longcat-2.5-preview-free` | Completions | `opencode-zen-free` | 200,000 | 32,000 | 全档位支持 (OpenAI low/med/high) | 文本 |
 | `muse-spark-1.3-contributor-free` | Responses | `opencode-zen-free-responses` | 1,048,576 (1M) | 131,072 | 全档位支持 (OpenAI low/med/high) | 文本、图像 |
 | `muse-spark-1.2-contributor-free` | Responses | `opencode-zen-free-responses` | 1,048,576 (1M) | 131,072 | 全档位支持 (OpenAI low/med/high) | 文本、图像 |
 
@@ -211,6 +209,17 @@ pi install git:github.com/1837620622/ck-pi-extension
 
 ## 七、更新日志
 
+- `0.1.23`：
+  - **核心修复会话压缩失败与 Token Cap 崩溃问题 (`generation hit the token cap and the summary is incomplete`)**：
+    - 调优压缩输出上限至 16,384 tokens，并在压缩总结请求中强制设置 `reasoning_effort: "low"` 并剔除冗余思考，避免深度推理模型（如 `fledge-alpha-free`）耗尽 token 额度；
+    - 针对上游返回的 `finish_reason: "length"`，在非空摘要场景下平滑改写为 `finish_reason: "stop"`，彻底根除 Pi 官方压缩模块在命中 token cap 时的崩溃中断。
+  - **全链路防御安全审核过滤阻断 (`finish_reason: content_filter`)**：
+    - 引入 `sanitizeSensitiveAuditContent` 审计脱敏引擎：针对 `<conversation>` 中的 SQL 注入特征、XSS 脚本块、漏洞利用载荷、密码散列和卡号等敏感特征进行合规占位脱敏，从源头杜绝触发上游内容审查拦截；
+    - 在拦截器和流反序列化中捕获 `finish_reason: "content_filter"`：在压缩模式下自动合成规范的结构化会话检查点摘要并置 `finish_reason: "stop"`，在对话模式下保全已生成内容并附带友好安全调整提示。
+  - **动态优化免费模型检测算法与最新在线模型矩阵**：
+    - 剔除已下架不可用的历史模型（`mimo-v2.5-free`, `ling-3.0-flash-fin-free`, `nemotron-3-ultra-free`）；
+    - 正式同步并支持 9 款在线可用免费模型（包含全新 `fledge-alpha-free`, `ling-3.1-flash-free`, `longcat-2.5-preview-free` 等）；
+    - 优化短别名映射引擎（`mimo`, `ultra`, `ling`, `fledge` 等自动平滑重定向至最新存活模型）。
 - `0.1.22`：
   - **支持 OpenAI Responses API 协议与双供应商路由架构 (彻底修复 Issue #1)**：
     - **双供应商精准分流**：将 OpenCode Zen 拆分为 `opencode-zen-free`（走 `openai-completions`，负责 Big Pickle, Xiaomi MiMo, NVIDIA Nemotron, Ling, Space Bunny）与 `opencode-zen-free-responses`（走 `openai-responses`，负责 Meta Muse Spark 1.3/1.2 Contributor Free）；
@@ -240,12 +249,12 @@ pi install git:github.com/1837620622/ck-pi-extension
 # ck-pi-zen-session (English)
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.1.22-blue.svg?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.1.23-blue.svg?style=flat-square" alt="Version" />
   <img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License" />
   <img src="https://img.shields.io/badge/runtime-Pi%20Agent%20%3E%3D0.85.0-orange.svg?style=flat-square" alt="Pi Runtime" />
   <img src="https://img.shields.io/badge/protocol-Completions%20%26%20Responses-informational.svg?style=flat-square" alt="Protocol" />
   <img src="https://img.shields.io/badge/session%20algorithm-Descending%20Timestamp%20Base62-purple.svg?style=flat-square" alt="Session Algorithm" />
-  <img src="https://img.shields.io/badge/zero--cost%20models-Verified-success.svg?style=flat-square" alt="Zero Cost Models" />
+  <img src="https://img.shields.io/badge/zero--cost%20models-9%20Verified-success.svg?style=flat-square" alt="Zero Cost Models" />
 </p>
 
 <p align="center">
@@ -335,7 +344,7 @@ Posting Muse Spark models to `/zen/v1/chat/completions` results in HTTP 400:
 In `ck-pi-zen-session 0.1.22`, a dual-provider architecture was introduced:
 
 1. **`opencode-zen-free` (api: `openai-completions`)**:
-   - Models: `mimo-v2.5-free`, `mimo-v2.6-flash-free`, `nemotron-3.5-lightning-free`, `nemotron-3-ultra-free`, `big-pickle`, `ling-3.0-flash-fin-free`, `space-bunny-free`, `space-bunny-alpha`, `jev-1.13-free`.
+   - Models: `fledge-alpha-free`, `ling-3.1-flash-free`, `mimo-v2.6-flash-free`, `nemotron-3.5-lightning-free`, `big-pickle`, `space-bunny-free`, `longcat-2.5-preview-free`.
    - Endpoint: `/zen/v1/chat/completions`.
    - Tools format: Nested function structure (`{ type: "function", function: { ... } }`).
    - Parameters: `stream_options: { include_usage: true }`, `reasoning_effort`.
@@ -385,15 +394,13 @@ The extension syncs official free models with verified context windows and think
 
 | Model ID | Protocol | Provider | Context Window | Max Output | Thinking Levels | Modality |
 |:---|:---|:---|:---|:---|:---|:---|
-| `mimo-v2.5-free` | Completions | `opencode-zen-free` | 200,000 | 32,000 | Full support (OpenAI low/med/high) | Text, Vision |
+| `fledge-alpha-free` | Completions | `opencode-zen-free` | 200,000 | 32,768 | Full support (OpenAI low/med/high) | Text |
+| `ling-3.1-flash-free` | Completions | `opencode-zen-free` | 262,144 | 32,768 | Full support (OpenAI low/med/high) | Text |
 | `mimo-v2.6-flash-free` | Completions | `opencode-zen-free` | 200,000 | 32,000 | Full support (OpenAI low/med/high) | Text, Vision |
 | `nemotron-3.5-lightning-free` | Completions | `opencode-zen-free` | 262,144 | 262,144 | Full support (OpenAI low/med/high) | Text |
-| `nemotron-3-ultra-free` | Completions | `opencode-zen-free` | 1,000,000 (1M) | 128,000 | Full support (OpenAI low/med/high) | Text |
-| `ling-3.0-flash-fin-free` | Completions | `opencode-zen-free` | 262,144 | 32,768 | Full support (OpenAI low/med/high) | Text |
 | `big-pickle` | Completions | `opencode-zen-free` | 200,000 | 32,000 | Full support (OpenAI low/med/high) | Text |
 | `space-bunny-free` | Completions | `opencode-zen-free` | 200,000 | 32,000 | Full support (OpenAI low/med/high) | Text, Vision |
-| `space-bunny-alpha` | Completions | `opencode-zen-free` | 200,000 | 32,000 | Full support (OpenAI low/med/high) | Text, Vision |
-| `jev-1.13-free` | Completions | `opencode-zen-free` | 128,000 | 16,384 | Base model (no reasoning) | Text |
+| `longcat-2.5-preview-free` | Completions | `opencode-zen-free` | 200,000 | 32,000 | Full support (OpenAI low/med/high) | Text |
 | `muse-spark-1.3-contributor-free` | Responses | `opencode-zen-free-responses` | 1,048,576 (1M) | 131,072 | Full support (OpenAI low/med/high) | Text, Vision |
 | `muse-spark-1.2-contributor-free` | Responses | `opencode-zen-free-responses` | 1,048,576 (1M) | 131,072 | Full support (OpenAI low/med/high) | Text, Vision |
 
@@ -448,6 +455,17 @@ pi install git:github.com/1837620622/ck-pi-extension
 
 ## 7. Changelog
 
+- `0.1.23`:
+  - **Auto-compaction token cap & truncation crash fix (`generation hit the token cap and the summary is incomplete`)**:
+    - Relaxed compaction output ceiling to 16,384 tokens with forced `reasoning_effort: "low"` and CoT suppression, preventing reasoning models (such as `fledge-alpha-free`) from exhausting the compaction token budget;
+    - Intercepted upstream `finish_reason: "length"` during compaction tasks and smoothly normalized to `finish_reason: "stop"` whenever non-empty text is generated, eliminating Pi's compaction crash.
+  - **End-to-end safety moderation defense (`finish_reason: content_filter`)**:
+    - Integrated `sanitizeSensitiveAuditContent` desensitization engine: automatically sanitized SQL injection patterns, XSS script tags, exploit tools, password hashes, and card numbers inside `<conversation>` tags during compaction to prevent triggering upstream content moderation filters;
+    - Intercepted `finish_reason: "content_filter"`: synthesized structured session progress checkpoints with `finish_reason: "stop"` during compaction, and preserved partial generations with friendly notices during regular chat.
+  - **Optimized free model catalog & detection algorithm**:
+    - Delisted inactive models (`mimo-v2.5-free`, `ling-3.0-flash-fin-free`, `nemotron-3-ultra-free`);
+    - Synchronized 9 verified active free models (`fledge-alpha-free`, `ling-3.1-flash-free`, `longcat-2.5-preview-free`, etc.);
+    - Upgraded short alias resolver (`mimo`, `ultra`, `ling`, `fledge`) to seamlessly route to working replacements.
 - `0.1.22`:
   - **Support OpenAI Responses API protocol & dual-provider architecture (Resolves Issue #1)**:
     - **Dual-provider routing**: Partitioned OpenCode Zen into `opencode-zen-free` (`openai-completions`) and `opencode-zen-free-responses` (`openai-responses`);

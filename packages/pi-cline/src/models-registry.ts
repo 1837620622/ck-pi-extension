@@ -43,40 +43,7 @@ export const STANDARD_THINKING_LEVELS: Record<string, string | null> = {
  * 实测确认 100% 零额度消耗 (Cost: $0.000000) 的 Cline 免费与隐身模型注册表
  */
 export const KNOWN_CLINE_FREE_MODELS: Record<string, ClineModelDefinition> = {
-	// ==================== 1. 隐身与智能路由零消耗模型 (Stealth & Smart Routers) ====================
-	"stealth/space-bunny-alpha": {
-		id: "stealth/space-bunny-alpha",
-		name: "Stealth Space Bunny Alpha (1M Free) (Cline Free)",
-		contextWindow: 1000000,
-		maxTokens: 32768,
-		reasoning: true,
-		input: ["text"],
-		thinkingLevelMap: STANDARD_THINKING_LEVELS,
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-		isFree: true,
-	},
-	"openrouter/fusion": {
-		id: "openrouter/fusion",
-		name: "OpenRouter Fusion (1M Meta Router) (Cline Free)",
-		contextWindow: 1000000,
-		maxTokens: 32768,
-		reasoning: true,
-		input: ["text"],
-		thinkingLevelMap: STANDARD_THINKING_LEVELS,
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-		isFree: true,
-	},
-	"openrouter/pareto-code": {
-		id: "openrouter/pareto-code",
-		name: "OpenRouter Pareto Code (2M Free) (Cline Free)",
-		contextWindow: 2000000,
-		maxTokens: 32768,
-		reasoning: true,
-		input: ["text"],
-		thinkingLevelMap: STANDARD_THINKING_LEVELS,
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-		isFree: true,
-	},
+	// ==================== 1. 智能免费路由模型 (Smart Free Router) ====================
 	"openrouter/free": {
 		id: "openrouter/free",
 		name: "OpenRouter Auto Free Router (200k) (Cline Free)",
@@ -136,42 +103,9 @@ export const KNOWN_CLINE_FREE_MODELS: Record<string, ClineModelDefinition> = {
 	},
 
 	// ==================== 3. 主力代码与推理思考免费模型 (Core Coding & Reasoning) ====================
-	"deepseek/deepseek-v4.1-flash": {
-		id: "deepseek/deepseek-v4.1-flash",
-		name: "DeepSeek V4.1 Flash (Cline Free)",
-		contextWindow: 131072,
-		maxTokens: 32768,
-		reasoning: true,
-		input: ["text"],
-		thinkingLevelMap: STANDARD_THINKING_LEVELS,
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-		isFree: true,
-	},
-	"inclusionai/ling-3.0-flash-fin:free": {
-		id: "inclusionai/ling-3.0-flash-fin:free",
-		name: "InclusionAI Ling 3.0 Flash Fin (262k Free) (Cline Free)",
-		contextWindow: 262144,
-		maxTokens: 32768,
-		reasoning: true,
-		input: ["text"],
-		thinkingLevelMap: STANDARD_THINKING_LEVELS,
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-		isFree: true,
-	},
 	"inclusionai/ling-3.0-flash-sante:free": {
 		id: "inclusionai/ling-3.0-flash-sante:free",
 		name: "InclusionAI Ling 3.0 Flash Sante (262k Free) (Cline Free)",
-		contextWindow: 262144,
-		maxTokens: 32768,
-		reasoning: true,
-		input: ["text"],
-		thinkingLevelMap: STANDARD_THINKING_LEVELS,
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-		isFree: true,
-	},
-	"qwen/qwen3.8-27b:free": {
-		id: "qwen/qwen3.8-27b:free",
-		name: "Qwen 3.8 27B (262k Free) (Cline Free)",
 		contextWindow: 262144,
 		maxTokens: 32768,
 		reasoning: true,
@@ -320,16 +254,16 @@ export function resolveFreeModelId(rawId?: string): string {
 	// 1. 剔除客户端或供应商前缀
 	id = id.replace(/^(cline|cline-free|cline-bot)\//i, "");
 
-	// 2. 快捷别名转换
+	// 2. 快捷别名转换 (已下架/停用模型自动平滑路由至有效高可用免费模型)
 	const lower = id.toLowerCase();
 	if (lower === "free" || lower === "auto" || lower === "openrouter") {
 		return "openrouter/free";
 	}
-	if (lower === "fusion") {
-		return "openrouter/fusion";
+	if (lower === "fusion" || lower === "openrouter/fusion") {
+		return "openrouter/free";
 	}
-	if (lower === "code" || lower === "pareto" || lower === "pareto-code") {
-		return "openrouter/pareto-code";
+	if (lower === "code" || lower === "pareto" || lower === "pareto-code" || lower === "openrouter/pareto-code") {
+		return "openrouter/free";
 	}
 	if (
 		lower === "deepseekv4.1 flash-cline" ||
@@ -340,24 +274,31 @@ export function resolveFreeModelId(rawId?: string): string {
 		lower === "deepseek-v4.1" ||
 		lower === "deepseek/deepseek-v4.1-flash"
 	) {
-		return "deepseek/deepseek-v4.1-flash";
+		return "openrouter/free";
 	}
 	if (
 		lower === "bunny" ||
 		lower === "stealth" ||
 		lower === "space-bunny" ||
-		lower === "space-bunny-alpha"
+		lower === "space-bunny-alpha" ||
+		lower === "stealth/space-bunny-alpha"
 	) {
-		return "stealth/space-bunny-alpha";
+		return "openrouter/free";
 	}
-	if (lower === "ling" || lower === "flash" || lower === "flash-fin") {
-		return "inclusionai/ling-3.0-flash-fin:free";
+	if (
+		lower === "ling" ||
+		lower === "flash" ||
+		lower === "flash-fin" ||
+		lower === "inclusionai/ling-3.0-flash-fin:free" ||
+		lower === "inclusionai/ling-3.0-flash-fin"
+	) {
+		return "inclusionai/ling-3.0-flash-sante:free";
 	}
 	if (lower === "sante" || lower === "flash-sante") {
 		return "inclusionai/ling-3.0-flash-sante:free";
 	}
-	if (lower === "qwen" || lower === "qwen-free") {
-		return "qwen/qwen3.8-27b:free";
+	if (lower === "qwen" || lower === "qwen-free" || lower === "qwen/qwen3.8-27b:free") {
+		return "openrouter/free";
 	}
 	if (lower === "550b" || lower === "ultra") {
 		return "nvidia/nemotron-3-ultra-550b-a55b:free";
@@ -407,12 +348,7 @@ export function resolveFreeModelId(rawId?: string): string {
 		return id;
 	}
 
-	// 自动追加 stealth/ 前缀（如调用者输入 space-bunny-alpha）
-	if (KNOWN_CLINE_FREE_MODELS[`stealth/${id}`]) {
-		return `stealth/${id}`;
-	}
-
-	// 4. 自动追加 :free 保护（若同名免费版存在，如用户只写了 inclusionai/ling-3.0-flash-fin）
+	// 4. 自动追加 :free 保护（若同名免费版存在，如用户只写了 inclusionai/ling-3.0-flash-sante）
 	const withFree = `${id}:free`;
 	if (KNOWN_CLINE_FREE_MODELS[withFree]) {
 		return withFree;
@@ -431,18 +367,13 @@ export function isClineFreeModel(rawId: string): boolean {
 	return (
 		lower.includes("free") ||
 		lower.endsWith(":free") ||
-		lower.startsWith("stealth/") ||
 		lower.startsWith("openrouter/free") ||
-		lower === "openrouter/free" ||
-		lower === "openrouter/fusion" ||
-		lower === "openrouter/pareto-code" ||
-		lower === "deepseek/deepseek-v4.1-flash" ||
-		lower.includes("space-bunny")
+		lower === "openrouter/free"
 	);
 }
 
 /**
- * 智能模型参数与能力自动推断
+ * 智能模型参数与能力自动推断引擎 (优化防扣费与上下文自动识别)
  */
 export function inferClineModelCapabilities(
 	modelId: string,
@@ -459,17 +390,22 @@ export function inferClineModelCapabilities(
 	}
 
 	const lower = modelId.toLowerCase();
-	let isFree =
-		lower.includes("free") ||
-		lower.endsWith(":free") ||
-		lower.startsWith("stealth/") ||
-		lower.startsWith("openrouter/free") ||
-		lower === "openrouter/free" ||
+	const isDeadOrPaid =
+		lower === "stealth/space-bunny-alpha" ||
 		lower === "openrouter/fusion" ||
 		lower === "openrouter/pareto-code" ||
-		lower.includes("space-bunny");
+		lower === "deepseek/deepseek-v4.1-flash" ||
+		lower === "qwen/qwen3.8-27b:free" ||
+		lower === "inclusionai/ling-3.0-flash-fin:free";
 
-	if (!isFree && raw && typeof raw === "object") {
+	let isFree =
+		!isDeadOrPaid &&
+		(lower.includes("free") ||
+			lower.endsWith(":free") ||
+			lower.startsWith("openrouter/free") ||
+			lower === "openrouter/free");
+
+	if (!isFree && !isDeadOrPaid && raw && typeof raw === "object") {
 		// 1. 显式布尔免费标记
 		if (raw.is_free === true || raw.isFree === true || raw.free === true) {
 			isFree = true;

@@ -69,10 +69,16 @@ describe("Cline 模型注册表与能力推断测试", () => {
 
 	it("inferClineModelCapabilities: 精准识别已知与未知免费模型", () => {
 		// 已知模型
-		const ling = inferClineModelCapabilities("inclusionai/ling-3.0-flash-fin:free");
+		const ling = inferClineModelCapabilities("inclusionai/ling-3.0-flash-sante:free");
 		assert.equal(ling.isFree, true);
 		assert.equal(ling.contextWindow, 262144);
 		assert.equal(ling.reasoning, true);
+
+		// 已下架/陷阱模型被安全识别为非免费
+		const deadFin = inferClineModelCapabilities("inclusionai/ling-3.0-flash-fin:free");
+		assert.equal(deadFin.isFree, false);
+		const deadBunny = inferClineModelCapabilities("stealth/space-bunny-alpha");
+		assert.equal(deadBunny.isFree, false);
 
 		const ultra = inferClineModelCapabilities("nvidia/nemotron-3-ultra-550b-a55b:free");
 		assert.equal(ultra.isFree, true);
@@ -115,24 +121,25 @@ describe("Cline 模型注册表与能力推断测试", () => {
 
 	it("resolveFreeModelId: 正确剥离前缀、解析短别名并自动追加 :free 保护", () => {
 		// 剥离前缀
-		assert.equal(resolveFreeModelId("cline/inclusionai/ling-3.0-flash-fin:free"), "inclusionai/ling-3.0-flash-fin:free");
+		assert.equal(resolveFreeModelId("cline/inclusionai/ling-3.0-flash-sante:free"), "inclusionai/ling-3.0-flash-sante:free");
 		assert.equal(resolveFreeModelId("cline-free/openrouter/free"), "openrouter/free");
 
 		// 快捷别名
 		assert.equal(resolveFreeModelId("free"), "openrouter/free");
-		assert.equal(resolveFreeModelId("fusion"), "openrouter/fusion");
-		assert.equal(resolveFreeModelId("code"), "openrouter/pareto-code");
-		assert.equal(resolveFreeModelId("bunny"), "stealth/space-bunny-alpha");
-		assert.equal(resolveFreeModelId("space-bunny"), "stealth/space-bunny-alpha");
-		assert.equal(resolveFreeModelId("space-bunny-alpha"), "stealth/space-bunny-alpha");
-		assert.equal(resolveFreeModelId("qwen"), "qwen/qwen3.8-27b:free");
-		assert.equal(resolveFreeModelId("ling"), "inclusionai/ling-3.0-flash-fin:free");
+		assert.equal(resolveFreeModelId("fusion"), "openrouter/free");
+		assert.equal(resolveFreeModelId("code"), "openrouter/free");
+		assert.equal(resolveFreeModelId("bunny"), "openrouter/free");
+		assert.equal(resolveFreeModelId("space-bunny"), "openrouter/free");
+		assert.equal(resolveFreeModelId("space-bunny-alpha"), "openrouter/free");
+		assert.equal(resolveFreeModelId("qwen"), "openrouter/free");
+		assert.equal(resolveFreeModelId("ling"), "inclusionai/ling-3.0-flash-sante:free");
+		assert.equal(resolveFreeModelId("sante"), "inclusionai/ling-3.0-flash-sante:free");
 		assert.equal(resolveFreeModelId("550b"), "nvidia/nemotron-3-ultra-550b-a55b:free");
 		assert.equal(resolveFreeModelId("reasoning"), "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free");
 		assert.equal(resolveFreeModelId("laguna"), "poolside/laguna-s-2.1:free");
 
 		// 自动追加 :free 保护
-		assert.equal(resolveFreeModelId("inclusionai/ling-3.0-flash-fin"), "inclusionai/ling-3.0-flash-fin:free");
+		assert.equal(resolveFreeModelId("inclusionai/ling-3.0-flash-sante"), "inclusionai/ling-3.0-flash-sante:free");
 		assert.equal(resolveFreeModelId("nvidia/nemotron-3.5-lightning"), "nvidia/nemotron-3.5-lightning:free");
 
 		// 默认兜底
@@ -146,8 +153,8 @@ describe("Cline 模型注册表与能力推断测试", () => {
 		assert.equal(formatTokens(32_768), "33k");
 		assert.equal(formatTokens(500), "500");
 
-		const card = formatClineModelCard(KNOWN_CLINE_FREE_MODELS["inclusionai/ling-3.0-flash-fin:free"]);
-		assert.ok(card.includes("inclusionai/ling-3.0-flash-fin:free"));
+		const card = formatClineModelCard(KNOWN_CLINE_FREE_MODELS["inclusionai/ling-3.0-flash-sante:free"]);
+		assert.ok(card.includes("inclusionai/ling-3.0-flash-sante:free"));
 		assert.ok(card.includes("[FREE]"));
 		assert.ok(card.includes("[THINK]"));
 
@@ -187,7 +194,7 @@ describe("Cline 本地反向代理服务器测试", () => {
 		assert.equal(json.object, "list");
 		assert.ok(Array.isArray(json.data));
 		assert.ok(json.data.length >= 10);
-		assert.ok(json.data.some((m: any) => m.id === "inclusionai/ling-3.0-flash-fin:free"));
+		assert.ok(json.data.some((m: any) => m.id === "inclusionai/ling-3.0-flash-sante:free"));
 	});
 
 	it("处理 OPTIONS 预检请求并返回合规 CORS 响应头", async () => {
@@ -305,7 +312,7 @@ describe("配置同步与落盘逻辑测试", () => {
 		assert.equal(modelIds.length, uniqueIds.size, "cline-free 注册的模型 ID 必须完全唯一，绝无重复别名干扰");
 		assert.ok(!uniqueIds.has("bunny"), "短别名 bunny 绝不可作为独立模型注册");
 		assert.ok(!uniqueIds.has("550b"), "短别名 550b 绝不可作为独立模型注册");
-		assert.ok(uniqueIds.has("stealth/space-bunny-alpha"), "必须包含规范模型 ID stealth/space-bunny-alpha");
+		assert.ok(uniqueIds.has("inclusionai/ling-3.0-flash-sante:free"), "必须包含规范模型 ID inclusionai/ling-3.0-flash-sante:free");
 
 		// 验证 auth.json
 		const authData = JSON.parse(readFileSync(tempAuthPath, "utf-8"));
@@ -1005,5 +1012,101 @@ describe("Extension 钩子、命令与拦截测试", () => {
 		assert.ok(totalText.includes("网络传输中途异常中断"), "包含友好且醒目的中断提示，告知用户接续");
 		assert.ok(totalText.includes('"finish_reason":"stop"'), "包含合法完备的 finish_reason 闭合帧，防止 SDK 挂起");
 		assert.ok(totalText.includes("data: [DONE]"), "优雅追加 [DONE] 结束标志，避免客户端崩溃");
+	});
+
+	it("installClineFetchInterceptor 遭遇 content_filter 时自动平滑转换为 stop 并合成安全检查点总结", async () => {
+		const mockGlobal: any = {
+			fetch: async () => {
+				const body = JSON.stringify({
+					choices: [
+						{
+							index: 0,
+							message: { role: "assistant", content: "Partial explanation before filter" },
+							finish_reason: "content_filter",
+						},
+					],
+				});
+				return new Response(body, {
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				});
+			},
+		};
+
+		installClineFetchInterceptor(mockGlobal);
+
+		const res = await mockGlobal.fetch("https://api.cline.bot/api/v1/chat/completions", {
+			method: "POST",
+			body: JSON.stringify({
+				model: "inclusionai/ling-3.0-flash-sante:free",
+				messages: [
+					{ role: "user", content: "Summarize this conversation:\n<conversation>secret exploit audit</conversation>" },
+				],
+			}),
+		});
+
+		assert.equal(res.status, 200);
+		const data = await res.json();
+		assert.equal(data.choices[0].finish_reason, "stop", "finish_reason 必须被平滑重写为 stop");
+		assert.ok(
+			data.choices[0].message.content.includes("会话进展与安全审计检查点"),
+			"压缩任务遭遇 content_filter 时合成为合规检查点",
+		);
+	});
+
+	it("installClineFetchInterceptor 遭遇 length (token cap) 时在 Compaction 任务下自动重写为 stop", async () => {
+		const mockGlobal: any = {
+			fetch: async () => {
+				const body = JSON.stringify({
+					choices: [
+						{
+							index: 0,
+							message: { role: "assistant", content: "Summary reached token cap..." },
+							finish_reason: "length",
+						},
+					],
+				});
+				return new Response(body, {
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				});
+			},
+		};
+
+		installClineFetchInterceptor(mockGlobal);
+
+		const res = await mockGlobal.fetch("https://api.cline.bot/api/v1/chat/completions", {
+			method: "POST",
+			body: JSON.stringify({
+				model: "inclusionai/ling-3.0-flash-sante:free",
+				messages: [
+					{ role: "user", content: "Compact and summarize session:\n<conversation>long session...</conversation>" },
+				],
+			}),
+		});
+
+		assert.equal(res.status, 200);
+		const data = await res.json();
+		assert.equal(data.choices[0].finish_reason, "stop", "压缩任务下的 length 必须重写为 stop 消除 token cap 崩溃");
+	});
+
+	it("pruneClineContext 针对 <conversation> 包含敏感审计模式进行脱敏，消除 content_filter 诱因", () => {
+		const payload = {
+			messages: [
+				{
+					role: "user",
+					content:
+						"Summarize:\n<conversation>\nSELECT * FROM users WHERE '1'='1' UNION SELECT credit_card FROM payments;\n<script>alert(1)</script>\n</conversation>",
+				},
+			],
+		};
+
+		const modified = pruneClineContext(payload as any);
+		assert.equal(modified, true);
+		const text = (payload.messages[0].content as string);
+		assert.ok(!text.includes("UNION SELECT"), "SQL 敏感审计特征被脱敏");
+		assert.ok(!text.includes("<script>"), "XSS 特征被脱敏");
+		assert.ok(text.includes("[sql_audit_statement]"), "包含 SQL 脱敏占位");
+		assert.ok(text.includes("[xss_audit_script]"), "包含 XSS 脱敏占位");
 	});
 });

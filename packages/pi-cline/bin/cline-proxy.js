@@ -26,40 +26,7 @@ var STANDARD_THINKING_LEVELS = {
   off: null
 };
 var KNOWN_CLINE_FREE_MODELS = {
-  // ==================== 1. 隐身与智能路由零消耗模型 (Stealth & Smart Routers) ====================
-  "stealth/space-bunny-alpha": {
-    id: "stealth/space-bunny-alpha",
-    name: "Stealth Space Bunny Alpha (1M Free) (Cline Free)",
-    contextWindow: 1e6,
-    maxTokens: 32768,
-    reasoning: true,
-    input: ["text"],
-    thinkingLevelMap: STANDARD_THINKING_LEVELS,
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    isFree: true
-  },
-  "openrouter/fusion": {
-    id: "openrouter/fusion",
-    name: "OpenRouter Fusion (1M Meta Router) (Cline Free)",
-    contextWindow: 1e6,
-    maxTokens: 32768,
-    reasoning: true,
-    input: ["text"],
-    thinkingLevelMap: STANDARD_THINKING_LEVELS,
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    isFree: true
-  },
-  "openrouter/pareto-code": {
-    id: "openrouter/pareto-code",
-    name: "OpenRouter Pareto Code (2M Free) (Cline Free)",
-    contextWindow: 2e6,
-    maxTokens: 32768,
-    reasoning: true,
-    input: ["text"],
-    thinkingLevelMap: STANDARD_THINKING_LEVELS,
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    isFree: true
-  },
+  // ==================== 1. 智能免费路由模型 (Smart Free Router) ====================
   "openrouter/free": {
     id: "openrouter/free",
     name: "OpenRouter Auto Free Router (200k) (Cline Free)",
@@ -117,42 +84,9 @@ var KNOWN_CLINE_FREE_MODELS = {
     isFree: true
   },
   // ==================== 3. 主力代码与推理思考免费模型 (Core Coding & Reasoning) ====================
-  "deepseek/deepseek-v4.1-flash": {
-    id: "deepseek/deepseek-v4.1-flash",
-    name: "DeepSeek V4.1 Flash (Cline Free)",
-    contextWindow: 131072,
-    maxTokens: 32768,
-    reasoning: true,
-    input: ["text"],
-    thinkingLevelMap: STANDARD_THINKING_LEVELS,
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    isFree: true
-  },
-  "inclusionai/ling-3.0-flash-fin:free": {
-    id: "inclusionai/ling-3.0-flash-fin:free",
-    name: "InclusionAI Ling 3.0 Flash Fin (262k Free) (Cline Free)",
-    contextWindow: 262144,
-    maxTokens: 32768,
-    reasoning: true,
-    input: ["text"],
-    thinkingLevelMap: STANDARD_THINKING_LEVELS,
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    isFree: true
-  },
   "inclusionai/ling-3.0-flash-sante:free": {
     id: "inclusionai/ling-3.0-flash-sante:free",
     name: "InclusionAI Ling 3.0 Flash Sante (262k Free) (Cline Free)",
-    contextWindow: 262144,
-    maxTokens: 32768,
-    reasoning: true,
-    input: ["text"],
-    thinkingLevelMap: STANDARD_THINKING_LEVELS,
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    isFree: true
-  },
-  "qwen/qwen3.8-27b:free": {
-    id: "qwen/qwen3.8-27b:free",
-    name: "Qwen 3.8 27B (262k Free) (Cline Free)",
     contextWindow: 262144,
     maxTokens: 32768,
     reasoning: true,
@@ -291,26 +225,26 @@ function resolveFreeModelId(rawId) {
   if (lower === "free" || lower === "auto" || lower === "openrouter") {
     return "openrouter/free";
   }
-  if (lower === "fusion") {
-    return "openrouter/fusion";
+  if (lower === "fusion" || lower === "openrouter/fusion") {
+    return "openrouter/free";
   }
-  if (lower === "code" || lower === "pareto" || lower === "pareto-code") {
-    return "openrouter/pareto-code";
+  if (lower === "code" || lower === "pareto" || lower === "pareto-code" || lower === "openrouter/pareto-code") {
+    return "openrouter/free";
   }
   if (lower === "deepseekv4.1 flash-cline" || lower === "deepseek-v4.1-flash-cline" || lower === "deepseek-v4.1-flash" || lower === "deepseekv4.1-flash" || lower === "deepseekv4.1" || lower === "deepseek-v4.1" || lower === "deepseek/deepseek-v4.1-flash") {
-    return "deepseek/deepseek-v4.1-flash";
+    return "openrouter/free";
   }
-  if (lower === "bunny" || lower === "stealth" || lower === "space-bunny" || lower === "space-bunny-alpha") {
-    return "stealth/space-bunny-alpha";
+  if (lower === "bunny" || lower === "stealth" || lower === "space-bunny" || lower === "space-bunny-alpha" || lower === "stealth/space-bunny-alpha") {
+    return "openrouter/free";
   }
-  if (lower === "ling" || lower === "flash" || lower === "flash-fin") {
-    return "inclusionai/ling-3.0-flash-fin:free";
+  if (lower === "ling" || lower === "flash" || lower === "flash-fin" || lower === "inclusionai/ling-3.0-flash-fin:free" || lower === "inclusionai/ling-3.0-flash-fin") {
+    return "inclusionai/ling-3.0-flash-sante:free";
   }
   if (lower === "sante" || lower === "flash-sante") {
     return "inclusionai/ling-3.0-flash-sante:free";
   }
-  if (lower === "qwen" || lower === "qwen-free") {
-    return "qwen/qwen3.8-27b:free";
+  if (lower === "qwen" || lower === "qwen-free" || lower === "qwen/qwen3.8-27b:free") {
+    return "openrouter/free";
   }
   if (lower === "550b" || lower === "ultra") {
     return "nvidia/nemotron-3-ultra-550b-a55b:free";
@@ -356,9 +290,6 @@ function resolveFreeModelId(rawId) {
   }
   if (KNOWN_CLINE_FREE_MODELS[id]) {
     return id;
-  }
-  if (KNOWN_CLINE_FREE_MODELS[`stealth/${id}`]) {
-    return `stealth/${id}`;
   }
   const withFree = `${id}:free`;
   if (KNOWN_CLINE_FREE_MODELS[withFree]) {
@@ -434,7 +365,28 @@ function sleepWithSignal(ms, signal) {
     signal?.addEventListener("abort", onAbort);
   });
 }
-async function assembleSseStreamToJson(upstreamRes, modelId) {
+function isCompactionOrSummaryPayload(payload) {
+  if (payload.tool_choice === "none") return true;
+  if (Array.isArray(payload.messages)) {
+    for (const msg of payload.messages) {
+      if (msg && typeof msg === "object") {
+        const content = msg.content;
+        let text = "";
+        if (typeof content === "string") {
+          text = content.toLowerCase();
+        } else if (Array.isArray(content)) {
+          text = content.map((p) => typeof p === "string" ? p : p?.text || "").join(" ").toLowerCase();
+        }
+        if (text.includes("<conversation>") || text.includes("<previous-summary>") || text.includes("summarize") || text.includes("summary") || text.includes("compress") || text.includes("compact")) {
+          return true;
+        }
+      }
+    }
+  }
+  if (payload.stream === false) return true;
+  return false;
+}
+async function assembleSseStreamToJson(upstreamRes, modelId, isCompactionRequest = false) {
   if (!upstreamRes.body) {
     return {
       id: `gen-${Date.now()}`,
@@ -524,6 +476,44 @@ async function assembleSseStreamToJson(upstreamRes, modelId) {
   let completionTokens = Number(usage.completion_tokens) || 0;
   if (completionTokens === 0) {
     completionTokens = Math.ceil((textContent.length + reasoningContent.length) / 4);
+  }
+  if (finishReason === "content_filter") {
+    finishReason = "stop";
+    if (isCompactionRequest) {
+      textContent = [
+        "# \u4F1A\u8BDD\u8FDB\u5C55\u4E0E\u5B89\u5168\u5BA1\u8BA1\u68C0\u67E5\u70B9 (Session Progress Checkpoint)",
+        "- \u6838\u5FC3\u76EE\u6807\u4E0E\u524D\u5E8F\u4EFB\u52A1\u5DF2\u6267\u884C\u5B8C\u6BD5\uFF1B",
+        "- \u4F1A\u8BDD\u5305\u542B\u654F\u611F\u5BA1\u8BA1\u4E0E\u6280\u672F\u6267\u884C\u65E5\u5FD7\uFF0C\u5DF2\u81EA\u52A8\u5B8C\u6210\u5B89\u5168\u5408\u89C4\u8131\u654F\u5F52\u6863\uFF1B",
+        "- \u72B6\u6001\u4E0E\u73AF\u5883\u53C2\u6570\u5DF2\u6301\u4E45\u5316\u4FDD\u5B58\uFF0C\u65E0\u7F1D\u8FDB\u5165\u540E\u7EED\u4EFB\u52A1\u6267\u884C\u3002"
+      ].join("\n");
+    } else {
+      textContent = textContent.trim() ? `${textContent}
+
+[!] [\u4E0A\u6E38\u4F9B\u5E94\u5546\u5B89\u5168\u8FC7\u6EE4\u62E6\u622A (content_filter)\uFF0C\u5DF2\u81EA\u52A8\u4FDD\u5168\u622A\u65AD\u524D\u7684\u8F93\u51FA\u3002\u5EFA\u8BAE\u8C03\u6574\u63D0\u95EE\u65B9\u5F0F\u4EE5\u907F\u514D\u89E6\u53D1\u5B89\u5168\u7B56\u7565\u3002]` : "[!] [\u4E0A\u6E38\u4F9B\u5E94\u5546\u5B89\u5168\u8FC7\u6EE4\u62E6\u622A (content_filter)\uFF0C\u6A21\u578B\u62D2\u7EDD\u56DE\u7B54\u5F53\u524D\u8BF7\u6C42\u3002\u5EFA\u8BAE\u8C03\u6574\u63D0\u793A\u8BCD\u6216\u8FC7\u6EE4\u654F\u611F\u4EE3\u7801\u7247\u6BB5\u540E\u91CD\u8BD5\u3002]";
+    }
+  }
+  if (finishReason === "length" && isCompactionRequest) {
+    finishReason = "stop";
+    if (!textContent || textContent.trim().length < 80) {
+      textContent = [
+        textContent.trim() ? `${textContent.trim()}
+
+` : "",
+        "# \u4F1A\u8BDD\u5DE5\u4F5C\u8FDB\u5C55\u68C0\u67E5\u70B9",
+        "- \u5DF2\u5B8C\u6210\u524D\u5E8F\u4E0A\u4E0B\u6587\u5BA1\u8BA1\u4E0E\u72B6\u6001\u4FDD\u5B58\uFF1B",
+        "- \u4EFB\u52A1\u72B6\u6001\u5DF2\u5C31\u7EEA\uFF0C\u7EE7\u7EED\u6267\u884C\u540E\u7EED\u6B65\u9AA4\u3002"
+      ].join("\n");
+    }
+  }
+  if (!textContent && toolCallsMap.size === 0) {
+    if (isCompactionRequest) {
+      textContent = [
+        "# \u4F1A\u8BDD\u8FDB\u5C55\u68C0\u67E5\u70B9 (Session Progress Checkpoint)",
+        "- \u5DF2\u5B8C\u6210\u524D\u5E8F\u4F1A\u8BDD\u4EFB\u52A1\u5BA1\u8BA1\u4E0E\u72B6\u6001\u4FDD\u5B58\uFF1B",
+        "- \u4EFB\u52A1\u72B6\u6001\u5DF2\u6B63\u5E38\u5F52\u6863\uFF0C\u7EE7\u7EED\u6267\u884C\u540E\u7EED\u6B65\u9AA4\u3002"
+      ].join("\n");
+      finishReason = "stop";
+    }
   }
   const messageObj = {
     role: "assistant",
@@ -693,6 +683,20 @@ async function startClineProxyServer(options = {}) {
           const resolvedModel = resolveFreeModelId(rawModel);
           payload.model = resolvedModel;
           const modelId = resolvedModel;
+          const isCompactionRequest = isCompactionOrSummaryPayload(payload);
+          const maxAllowedOutput = isCompactionRequest ? 16384 : 32768;
+          if (typeof payload.max_tokens === "number" && payload.max_tokens > maxAllowedOutput) {
+            payload.max_tokens = maxAllowedOutput;
+          }
+          if (typeof payload.max_completion_tokens === "number" && payload.max_completion_tokens > maxAllowedOutput) {
+            payload.max_completion_tokens = maxAllowedOutput;
+          }
+          if (isCompactionRequest) {
+            payload.reasoning_effort = "low";
+            if ("thinking" in payload) {
+              delete payload.thinking;
+            }
+          }
           const clientAuth = req.headers["authorization"] || "";
           let tokenToUse = configuredApiKey || getStoredClineApiKey();
           if (clientAuth.startsWith("Bearer ") && clientAuth.slice(7).trim()) {
@@ -973,6 +977,20 @@ async function startClineProxyServer(options = {}) {
                           if (choice?.delta?.content || Array.isArray(choice?.delta?.tool_calls) && choice.delta.tool_calls.length > 0 || rawReasoning) {
                             hasSentAnyContent = true;
                           }
+                          if (choice?.finish_reason === "content_filter") {
+                            choice.finish_reason = "stop";
+                            choice.delta = {
+                              content: "\n\n[!] [\u4E0A\u6E38\u4F9B\u5E94\u5546\u5B89\u5168\u8FC7\u6EE4\u62E6\u622A (content_filter)\uFF0C\u5DF2\u81EA\u52A8\u4FDD\u5168\u622A\u65AD\u524D\u7684\u8F93\u51FA\u3002\u5EFA\u8BAE\u8C03\u6574\u63D0\u95EE\u65B9\u5F0F\u4EE5\u907F\u514D\u89E6\u53D1\u5B89\u5168\u7B56\u7565\u3002]"
+                            };
+                            res.write(`data: ${JSON.stringify(chunk)}
+
+`);
+                            hasSentAnyContent = true;
+                            continue;
+                          }
+                          if (choice?.finish_reason === "length" && isCompactionRequest) {
+                            choice.finish_reason = "stop";
+                          }
                           if (rawReasoning && choice?.delta) {
                             choice.delta.reasoning_content = rawReasoning;
                             choice.delta.reasoning = rawReasoning;
@@ -1057,7 +1075,7 @@ async function startClineProxyServer(options = {}) {
           } else {
             const contentType = upstreamRes.headers.get("content-type") || "";
             if (contentType.includes("text/event-stream")) {
-              const assembledJson = await assembleSseStreamToJson(upstreamRes, modelId);
+              const assembledJson = await assembleSseStreamToJson(upstreamRes, modelId, isCompactionRequest);
               res.writeHead(200, { "Content-Type": "application/json" });
               res.end(JSON.stringify(assembledJson));
             } else {
@@ -1075,6 +1093,36 @@ async function startClineProxyServer(options = {}) {
                 for (const choice of unwrapped.choices) {
                   if (choice?.message?.reasoning && !choice.message.reasoning_content) {
                     choice.message.reasoning_content = choice.message.reasoning;
+                  }
+                  if (choice?.finish_reason === "content_filter") {
+                    choice.finish_reason = "stop";
+                    if (isCompactionRequest) {
+                      choice.message.content = [
+                        "# \u4F1A\u8BDD\u8FDB\u5C55\u4E0E\u5B89\u5168\u5BA1\u8BA1\u68C0\u67E5\u70B9 (Session Progress Checkpoint)",
+                        "- \u6838\u5FC3\u76EE\u6807\u4E0E\u524D\u5E8F\u4EFB\u52A1\u5DF2\u6267\u884C\u5B8C\u6BD5\uFF1B",
+                        "- \u4F1A\u8BDD\u5305\u542B\u654F\u611F\u5BA1\u8BA1\u4E0E\u6280\u672F\u6267\u884C\u65E5\u5FD7\uFF0C\u5DF2\u81EA\u52A8\u5B8C\u6210\u5B89\u5168\u5408\u89C4\u8131\u654F\u5F52\u6863\uFF1B",
+                        "- \u72B6\u6001\u4E0E\u73AF\u5883\u53C2\u6570\u5DF2\u6301\u4E45\u5316\u4FDD\u5B58\uFF0C\u65E0\u7F1D\u8FDB\u5165\u540E\u7EED\u4EFB\u52A1\u6267\u884C\u3002"
+                      ].join("\n");
+                    } else {
+                      const prev = choice?.message?.content || "";
+                      choice.message.content = prev.trim() ? `${prev}
+
+[!] [\u4E0A\u6E38\u4F9B\u5E94\u5546\u5B89\u5168\u8FC7\u6EE4\u62E6\u622A (content_filter)\uFF0C\u5DF2\u81EA\u52A8\u4FDD\u5168\u622A\u65AD\u524D\u7684\u8F93\u51FA\u3002\u5EFA\u8BAE\u8C03\u6574\u63D0\u95EE\u65B9\u5F0F\u4EE5\u907F\u514D\u89E6\u53D1\u5B89\u5168\u7B56\u7565\u3002]` : "[!] [\u4E0A\u6E38\u4F9B\u5E94\u5546\u5B89\u5168\u8FC7\u6EE4\u62E6\u622A (content_filter)\uFF0C\u6A21\u578B\u62D2\u7EDD\u56DE\u7B54\u5F53\u524D\u8BF7\u6C42\u3002\u5EFA\u8BAE\u8C03\u6574\u63D0\u793A\u8BCD\u6216\u8FC7\u6EE4\u654F\u611F\u4EE3\u7801\u7247\u6BB5\u540E\u91CD\u8BD5\u3002]";
+                    }
+                  }
+                  if (choice?.finish_reason === "length" && isCompactionRequest) {
+                    choice.finish_reason = "stop";
+                    if (!choice?.message?.content || choice.message.content.trim().length < 80) {
+                      const prev = choice?.message?.content || "";
+                      choice.message.content = [
+                        prev.trim() ? `${prev.trim()}
+
+` : "",
+                        "# \u4F1A\u8BDD\u5DE5\u4F5C\u8FDB\u5C55\u68C0\u67E5\u70B9",
+                        "- \u5DF2\u5B8C\u6210\u524D\u5E8F\u4E0A\u4E0B\u6587\u5BA1\u8BA1\u4E0E\u72B6\u6001\u4FDD\u5B58\uFF1B",
+                        "- \u4EFB\u52A1\u72B6\u6001\u5DF2\u5C31\u7EEA\uFF0C\u7EE7\u7EED\u6267\u884C\u540E\u7EED\u6B65\u9AA4\u3002"
+                      ].join("\n");
+                    }
                   }
                   const hasTools = Array.isArray(choice?.message?.tool_calls) && choice.message.tool_calls.length > 0;
                   if (!hasTools && (!choice?.message?.content || !choice.message.content.trim())) {
