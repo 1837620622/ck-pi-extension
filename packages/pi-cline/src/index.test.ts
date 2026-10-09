@@ -137,6 +137,8 @@ describe("Cline 模型注册表与能力推断测试", () => {
 		assert.equal(resolveFreeModelId("550b"), "nvidia/nemotron-3-ultra-550b-a55b:free");
 		assert.equal(resolveFreeModelId("reasoning"), "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free");
 		assert.equal(resolveFreeModelId("laguna"), "poolside/laguna-s-2.1:free");
+		assert.equal(resolveFreeModelId("dots"), "dots-studio/dots-3-note-preview:free");
+		assert.equal(resolveFreeModelId("apodex"), "apodex/apodex-1.1-mini:free");
 
 		// 自动追加 :free 保护
 		assert.equal(resolveFreeModelId("inclusionai/ling-3.0-flash-sante"), "inclusionai/ling-3.0-flash-sante:free");
@@ -1088,6 +1090,33 @@ describe("Extension 钩子、命令与拦截测试", () => {
 		assert.equal(res.status, 200);
 		const data = await res.json();
 		assert.equal(data.choices[0].finish_reason, "stop", "压缩任务下的 length 必须重写为 stop 消除 token cap 崩溃");
+	});
+
+	it("installClineFetchInterceptor 针对 Compaction 任务自动将 max_tokens 提升至至少 16384", async () => {
+		let capturedPayload: any = null;
+		const mockGlobal: any = {
+			fetch: async (_url: any, init: any) => {
+				capturedPayload = JSON.parse(init.body);
+				return new Response(JSON.stringify({ choices: [{ index: 0, message: { role: "assistant", content: "ok" } }] }), {
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				});
+			},
+		};
+
+		installClineFetchInterceptor(mockGlobal);
+		await mockGlobal.fetch("https://api.cline.bot/api/v1/chat/completions", {
+			method: "POST",
+			body: JSON.stringify({
+				model: "openrouter/free",
+				messages: [{ role: "user", content: "Compact and summarize session:\n<conversation>long session...</conversation>" }],
+				max_tokens: 1600, // 极小 token 预算
+			}),
+		});
+
+		assert.ok(capturedPayload);
+		assert.equal(capturedPayload.max_tokens, 16384, "压缩任务必须将 max_tokens 提升至 16384");
+		assert.equal(capturedPayload.reasoning_effort, "low", "压缩任务必须降低推理思考负载");
 	});
 
 	it("pruneClineContext 针对 <conversation> 包含敏感审计模式进行脱敏，消除 content_filter 诱因", () => {

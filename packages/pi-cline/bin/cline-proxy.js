@@ -279,13 +279,13 @@ function resolveFreeModelId(rawId) {
   if (lower === "inkling-small") {
     return "thinkingmachines/inkling-small:free";
   }
-  if (lower === "note" || lower === "dots-note") {
+  if (lower === "note" || lower === "dots" || lower === "dots-note" || lower === "dots-studio") {
     return "dots-studio/dots-3-note-preview:free";
   }
   if (lower === "lfm" || lower === "lfm-2.5") {
     return "liquid/lfm-2.5-2.6b:free";
   }
-  if (lower === "apodex" || lower === "apodex-mini" || lower === "apodex-1.1-mini") {
+  if (lower === "apodex" || lower === "apodex-mini" || lower === "apodex-1.1" || lower === "apodex-1.1-mini") {
     return "apodex/apodex-1.1-mini:free";
   }
   if (KNOWN_CLINE_FREE_MODELS[id]) {
@@ -684,12 +684,17 @@ async function startClineProxyServer(options = {}) {
           payload.model = resolvedModel;
           const modelId = resolvedModel;
           const isCompactionRequest = isCompactionOrSummaryPayload(payload);
-          const maxAllowedOutput = isCompactionRequest ? 16384 : 32768;
-          if (typeof payload.max_tokens === "number" && payload.max_tokens > maxAllowedOutput) {
-            payload.max_tokens = maxAllowedOutput;
-          }
-          if (typeof payload.max_completion_tokens === "number" && payload.max_completion_tokens > maxAllowedOutput) {
-            payload.max_completion_tokens = maxAllowedOutput;
+          if (isCompactionRequest) {
+            payload.max_tokens = Math.max(Number(payload.max_tokens) || 0, 16384);
+            payload.max_completion_tokens = Math.max(Number(payload.max_completion_tokens) || 0, 16384);
+          } else {
+            const maxAllowedOutput = 32768;
+            if (typeof payload.max_tokens === "number" && payload.max_tokens > maxAllowedOutput) {
+              payload.max_tokens = maxAllowedOutput;
+            }
+            if (typeof payload.max_completion_tokens === "number" && payload.max_completion_tokens > maxAllowedOutput) {
+              payload.max_completion_tokens = maxAllowedOutput;
+            }
           }
           if (isCompactionRequest) {
             payload.reasoning_effort = "low";

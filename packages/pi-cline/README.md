@@ -1,7 +1,7 @@
 # ck-pi-cline
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.1.8-blue.svg?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.1.9-blue.svg?style=flat-square" alt="Version" />
   <img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License" />
   <img src="https://img.shields.io/badge/runtime-Pi%20Agent%20%3E%3D0.85.0-orange.svg?style=flat-square" alt="Pi Runtime" />
   <img src="https://img.shields.io/badge/protocol-OpenAI%20Compatible-informational.svg?style=flat-square" alt="Protocol" />
@@ -303,6 +303,15 @@ console.log(completion.choices[0].message.content);
 
 ## 六、版本变更记录 (Changelog)
 
+### v0.1.9
+* **全新免费模型深度对接与别名路由强化 (New Free Models & Alias Enhancement)**：
+  * 正式收录并适配最新 `apodex/apodex-1.1-mini:free` 等活跃免费模型，强化 `dots-studio/dots-3-note-preview:free`、`cohere/north-mini-code:free` 等代码与推理模型；
+  * 针对上游已取消免费标识的 `inclusionai/ling-3.0-flash-sante`，路由层平滑安全重定向至 `openrouter/free`，彻底杜绝扣费与 404 隐患；
+  * 增强短别名支持（`dots`, `apodex`, `laguna`, `north`, `gemma` 等）。
+* **会话压缩深度自愈与 Token Cap 彻底防御 (Auto-compaction Token Cap Boost)**：
+  * 针对 Pi 压缩模块传入的极小 `max_tokens`（通常仅 1000~2000 tokens），拦截层与本地反向代理双重强制提升至至少 16384 tokens，从源头根除 `Summarization failed: generation hit the token cap` 异常；
+  * 强化流式与非流式 `finish_reason: "content_filter"` 与 `finish_reason: "length"` 的捕获，平滑重写为 `stop` 并兜底输出合规的结构化会话进度检查点，确保压缩任务 100% 成功。
+
 ### v0.1.8
 * **全链路会话压缩与安全策略防御 (content_filter & Token Cap Fix)**：
   * **修复 Token Cap 截断异常**：调优压缩任务输出上限至 16,384 tokens，并在压缩模式下强制设置 `reasoning_effort: "low"` 并剥离思考过程，彻底消除推理模型触发 token cap 导致压缩失败；
@@ -352,7 +361,7 @@ console.log(completion.choices[0].message.content);
 # ck-pi-cline (English)
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.1.8-blue.svg?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.1.9-blue.svg?style=flat-square" alt="Version" />
   <img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License" />
   <img src="https://img.shields.io/badge/runtime-Pi%20Agent%20%3E%3D0.85.0-orange.svg?style=flat-square" alt="Pi Runtime" />
   <img src="https://img.shields.io/badge/protocol-OpenAI%20Compatible-informational.svg?style=flat-square" alt="Protocol" />
@@ -504,6 +513,15 @@ for chunk in response:
 ---
 
 ## 6. Changelog
+
+### v0.1.9
+- **New Free Models Integration & Enhanced Routing**:
+  - Registered and calibrated newly active free models such as `apodex/apodex-1.1-mini:free`, `dots-studio/dots-3-note-preview:free`, and `cohere/north-mini-code:free`;
+  - Safely and smoothly routed unflagged `inclusionai/ling-3.0-flash-sante` to `openrouter/free` to eliminate unexpected charges or 404s;
+  - Expanded shorthand aliases (`dots`, `apodex`, `laguna`, `north`, `gemma`, etc.).
+- **Auto-compaction Token Cap Boost & Crash Defense**:
+  - Compaction requests dynamically boost `max_tokens` / `max_completion_tokens` to at least 16,384 tokens with `reasoning_effort: "low"` to eliminate token cap exhaustion crashes;
+  - Both interceptor and proxy intercept and normalize `finish_reason: "content_filter"` and `finish_reason: "length"` to `"stop"`, synthesizing structured checkpoints when needed.
 
 ### v0.1.8
 - **Auto-compaction & content_filter defense**:

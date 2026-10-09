@@ -441,16 +441,22 @@ export function installClineFetchInterceptor(targetGlobal: typeof globalThis = g
 					modified = true;
 				}
 
-				// 安全限制 max_tokens
+				// 安全限制与放宽 max_tokens：压缩任务强制提升至至少 16384，杜绝深思考模型撞 token cap 截断错误
 				isCompactionRequest = isCompactionOrSummaryRequest(payload);
-				const maxAllowedOutput = isCompactionRequest ? 16384 : 32768;
-				if (typeof payload.max_tokens === "number" && (payload.max_tokens as number) > maxAllowedOutput) {
-					payload.max_tokens = maxAllowedOutput;
+				if (isCompactionRequest) {
+					payload.max_tokens = Math.max(Number(payload.max_tokens) || 0, 16384);
+					payload.max_completion_tokens = Math.max(Number(payload.max_completion_tokens) || 0, 16384);
 					modified = true;
-				}
-				if (typeof payload.max_completion_tokens === "number" && (payload.max_completion_tokens as number) > maxAllowedOutput) {
-					payload.max_completion_tokens = maxAllowedOutput;
-					modified = true;
+				} else {
+					const maxAllowedOutput = 32768;
+					if (typeof payload.max_tokens === "number" && (payload.max_tokens as number) > maxAllowedOutput) {
+						payload.max_tokens = maxAllowedOutput;
+						modified = true;
+					}
+					if (typeof payload.max_completion_tokens === "number" && (payload.max_completion_tokens as number) > maxAllowedOutput) {
+						payload.max_completion_tokens = maxAllowedOutput;
+						modified = true;
+					}
 				}
 
 				if (isCompactionRequest) {

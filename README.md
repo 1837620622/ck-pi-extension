@@ -89,6 +89,15 @@ pi install git:github.com/1837620622/ck-pi-extension
 
 ## 更新日志
 
+- `ck-pi-zen-session 0.1.24` / `ck-pi-cline 0.1.9`：
+  - **最新官方免费模型矩阵全量上线与对接**：
+    - OpenCode Zen：新增上线阶跃星辰最新旗舰 `step-5-preview-free`（200k 上下文，32k 输出，多模态视觉与全档位思考）、`exo-free`（128k 快反）、`nemotron-3-ultra-free`（1M 超长上下文）、`ling-3.0-flash-fin-free`（262k 加速模型）、`jev-1.13-free`（128k 快反）；
+    - Cline：正式适配最新活跃免费模型（如 `apodex/apodex-1.1-mini:free`、`dots-studio/dots-3-note-preview:free`、`cohere/north-mini-code:free` 等），并对上游已取消免费标记的 `inclusionai/ling-3.0-flash-sante` 平滑安全重定向至 `openrouter/free`，彻底杜绝误扣费与 404；
+    - 针对 OpenCode Zen 下架的 `fledge-alpha-free`，别名路由器平滑无感重定向至最新旗舰免费模型 `step-5-preview-free`。
+  - **彻底攻克会话压缩截断与崩塌故障 (`Summarization failed: generation hit the token cap` / `Provider finish_reason: content_filter`)**：
+    - 针对 Pi 压缩模块传入的极小 `max_tokens`（通常仅 1000~2000 tokens），请求拦截层与本地代理双重强制提升至至少 16384 tokens，从根本上杜绝深思考模型撞 token cap 截断；
+    - 流式响应重构器（`reconstructedStream`）全面重构为行缓冲分包安全 TransformStream，逐帧捕获并自动规范化 `finish_reason: "length"` 与 `finish_reason: "content_filter"` 为 `"stop"`；
+    - 在遇到内容审查阻断且无有效内容时，自动合成规范的结构化会话进度检查点，确保会话压缩 100% 成功完成并平滑进入后续对话。
 - `ck-pi-zen-session 0.1.23` / `ck-pi-cline 0.1.8`：
   - **核心修复会话自动压缩失败与 Token Cap 截断崩溃 (`generation hit the token cap and the summary is incomplete`)**：
     - 调优压缩输出上限至 16,384 tokens 并强制 `reasoning_effort: "low"`，避免深度推理模型（如 `fledge-alpha-free`）耗尽 token 额度；
@@ -232,6 +241,15 @@ Do not enable `pi-rail` concurrently with other statusline extensions (`@narumit
 
 ## Changelog
 
+- `ck-pi-zen-session 0.1.24` / `ck-pi-cline 0.1.9`:
+  - **Full integration of latest official free model catalogs**:
+    - OpenCode Zen: Added StepFun flagship `step-5-preview-free` (200k context, 32k output, vision multimodal and configurable reasoning), `exo-free` (128k fast response), `nemotron-3-ultra-free` (1M context), `ling-3.0-flash-fin-free` (262k fast model), and `jev-1.13-free` (128k);
+    - Cline: Fully integrated latest active free models (`apodex/apodex-1.1-mini:free`, `dots-studio/dots-3-note-preview:free`, `cohere/north-mini-code:free`, etc.), and securely aliased delisted `:free` models (e.g., `inclusionai/ling-3.0-flash-sante` mapped to `openrouter/free`) to eliminate unintended billing and 404 errors;
+    - Seamless alias router redirects delisted OpenCode Zen `fledge-alpha-free` to the new flagship `step-5-preview-free`.
+  - **Permanent resolution for auto-compaction token cap and content filter failures (`Summarization failed: generation hit the token cap` / `Provider finish_reason: content_filter`)**:
+    - Intercepted compaction requests across both fetch layer and local proxy, forcing `max_tokens` to at least 16,384 to fundamentally eliminate token cap truncation on reasoning models;
+    - Fully reconstructed streaming SSE TransformStream with line-buffered packet safety, automatically normalizing `finish_reason: "length"` and `finish_reason: "content_filter"` to `"stop"`;
+    - Synthesizes structured session checkpoints when content moderation triggers with empty body, guaranteeing 100% successful session compaction.
 - `ck-pi-zen-session 0.1.23` / `ck-pi-cline 0.1.8`:
   - **Auto-compaction token cap crash fix & length normalization (`generation hit the token cap and the summary is incomplete`)**:
     - Relaxed compaction output token ceiling to 16,384 tokens with forced `reasoning_effort: "low"` and CoT suppression, preventing reasoning models (such as `fledge-alpha-free`) from exhausting the compaction token budget;

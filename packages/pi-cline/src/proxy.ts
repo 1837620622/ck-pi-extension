@@ -459,12 +459,17 @@ export async function startClineProxyServer(
 					const modelId = resolvedModel;
 
 					const isCompactionRequest = isCompactionOrSummaryPayload(payload);
-					const maxAllowedOutput = isCompactionRequest ? 16384 : 32768;
-					if (typeof payload.max_tokens === "number" && (payload.max_tokens as number) > maxAllowedOutput) {
-						payload.max_tokens = maxAllowedOutput;
-					}
-					if (typeof payload.max_completion_tokens === "number" && (payload.max_completion_tokens as number) > maxAllowedOutput) {
-						payload.max_completion_tokens = maxAllowedOutput;
+					if (isCompactionRequest) {
+						payload.max_tokens = Math.max(Number(payload.max_tokens) || 0, 16384);
+						payload.max_completion_tokens = Math.max(Number(payload.max_completion_tokens) || 0, 16384);
+					} else {
+						const maxAllowedOutput = 32768;
+						if (typeof payload.max_tokens === "number" && (payload.max_tokens as number) > maxAllowedOutput) {
+							payload.max_tokens = maxAllowedOutput;
+						}
+						if (typeof payload.max_completion_tokens === "number" && (payload.max_completion_tokens as number) > maxAllowedOutput) {
+							payload.max_completion_tokens = maxAllowedOutput;
+						}
 					}
 					if (isCompactionRequest) {
 						payload.reasoning_effort = "low";

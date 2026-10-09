@@ -74,6 +74,54 @@ export const GRANULAR_THINKING_LEVELS: Record<string, string | null> = {
  * 官方已知免费模型精确规格字典
  */
 export const KNOWN_ZEN_FREE_MODELS: Record<string, ZenModelDefinition> = {
+	"step-5-preview-free": {
+		id: "step-5-preview-free",
+		name: "StepFun Step-5 Preview Free (OpenCode Zen)",
+		contextWindow: 200000,
+		maxTokens: 32768,
+		reasoning: true,
+		input: ["text", "image"],
+		thinkingLevelMap: STANDARD_THINKING_LEVELS,
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+	},
+	"exo-free": {
+		id: "exo-free",
+		name: "Exo Free (OpenCode Zen)",
+		contextWindow: 128000,
+		maxTokens: 16384,
+		reasoning: false,
+		input: ["text"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+	},
+	"nemotron-3-ultra-free": {
+		id: "nemotron-3-ultra-free",
+		name: "NVIDIA Nemotron 3 Ultra Free (OpenCode Zen)",
+		contextWindow: 1000000,
+		maxTokens: 32768,
+		reasoning: true,
+		input: ["text"],
+		thinkingLevelMap: STANDARD_THINKING_LEVELS,
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+	},
+	"ling-3.0-flash-fin-free": {
+		id: "ling-3.0-flash-fin-free",
+		name: "Ling 3.0 Flash Fin Free (OpenCode Zen)",
+		contextWindow: 262144,
+		maxTokens: 32768,
+		reasoning: true,
+		input: ["text"],
+		thinkingLevelMap: STANDARD_THINKING_LEVELS,
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+	},
+	"jev-1.13-free": {
+		id: "jev-1.13-free",
+		name: "Jev 1.13 Free (OpenCode Zen)",
+		contextWindow: 128000,
+		maxTokens: 16384,
+		reasoning: false,
+		input: ["text"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+	},
 	"fledge-alpha-free": {
 		id: "fledge-alpha-free",
 		name: "Fledge Alpha Free (OpenCode Zen)",
@@ -305,7 +353,8 @@ export function inferModelCapabilities(
 		lower.includes("instruct-only") ||
 		lower.includes("base") ||
 		lower.includes("instant") ||
-		lower.includes("jev")
+		lower.includes("jev") ||
+		lower.includes("exo")
 	) {
 		reasoning = false;
 	}
@@ -343,6 +392,7 @@ export function inferModelCapabilities(
 		lower.includes("claude") ||
 		lower.includes("mimo") ||
 		lower.includes("muse") ||
+		lower.includes("step") ||
 		lower.includes("gpt-4o") ||
 		lower.includes("gpt-5")
 	) {
@@ -361,6 +411,7 @@ export function inferModelCapabilities(
 		.replace(/\bMinimax\b/g, "MiniMax")
 		.replace(/\bGpt\b/g, "GPT")
 		.replace(/\bGlm\b/g, "GLM")
+		.replace(/\bStepfun\b/g, "StepFun")
 		.replace(/\bOpencode\b/g, "OpenCode");
 
 	let displayName = baseCleanName;
@@ -380,6 +431,10 @@ export function inferModelCapabilities(
 		displayName = `Xiaomi ${displayName}`;
 	} else if (lower.includes("muse") && !displayName.includes("Meta")) {
 		displayName = `Meta ${displayName}`;
+	} else if (lower.includes("step") && !displayName.includes("StepFun")) {
+		displayName = `StepFun ${displayName}`;
+	} else if (lower.includes("exo") && !displayName.includes("Exo")) {
+		displayName = `Exo ${displayName}`;
 	}
 
 	displayName = `${displayName} (OpenCode Zen)`;
@@ -653,7 +708,20 @@ export function resolveZenModelId(rawId?: string): string {
 	// 2. 快捷别名转换 (自动对齐已下架模型的继承替代方案)
 	const lower = id.toLowerCase();
 	if (lower === "fledge" || lower === "fledge-alpha" || lower === "fledge-alpha-free") {
-		return "fledge-alpha-free";
+		return "step-5-preview-free";
+	}
+	if (
+		lower === "step" ||
+		lower === "step5" ||
+		lower === "step-5" ||
+		lower === "step-5-preview" ||
+		lower === "step-5-preview-free" ||
+		lower === "stepfun"
+	) {
+		return "step-5-preview-free";
+	}
+	if (lower === "exo" || lower === "exo-free") {
+		return "exo-free";
 	}
 	if (lower === "pickle" || lower === "big-pickle") {
 		return "big-pickle";
@@ -681,26 +749,38 @@ export function resolveZenModelId(rawId?: string): string {
 		lower === "ultra" ||
 		lower === "nemotron-ultra" ||
 		lower === "550b" ||
-		lower === "nemotron-3-ultra-free"
+		lower === "nemotron-3-ultra" ||
+		lower === "nemotron-3-ultra-free" ||
+		lower === "ultra-free"
 	) {
-		return "nemotron-3.5-lightning-free";
+		return "nemotron-3-ultra-free";
 	}
 	if (
 		lower === "lightning" ||
 		lower === "nemotron-lightning" ||
+		lower === "nemotron-3.5-lightning" ||
 		lower === "nemotron-3.5-lightning-free"
 	) {
 		return "nemotron-3.5-lightning-free";
 	}
 	if (
-		lower === "ling" ||
+		lower === "ling-3.0" ||
 		lower === "flash-fin" ||
-		lower === "ling-3.0-flash-fin-free" ||
+		lower === "ling-3.0-flash-fin" ||
+		lower === "ling-3.0-flash-fin-free"
+	) {
+		return "ling-3.0-flash-fin-free";
+	}
+	if (
+		lower === "ling" ||
 		lower === "ling-3.1" ||
 		lower === "ling-3.1-flash" ||
 		lower === "ling-3.1-flash-free"
 	) {
 		return "ling-3.1-flash-free";
+	}
+	if (lower === "jev" || lower === "jev-1.13" || lower === "jev-1.13-free") {
+		return "jev-1.13-free";
 	}
 	if (
 		lower === "spark" ||

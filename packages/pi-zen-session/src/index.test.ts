@@ -114,8 +114,13 @@ describe("OpenCode Zen Session 算法单元测试", () => {
 });
 
 describe("OpenCode Zen 模型库与参数注册表测试", () => {
-	it("包含全部已确认的 9 款可用免费模型（已排除非聊天协议的 jev-1.13-free）", () => {
+	it("包含全部已确认的可用免费模型（包含最新 Step-5、Exo、Nemotron-3-Ultra 等）", () => {
 		const expectedModels = [
+			"step-5-preview-free",
+			"exo-free",
+			"nemotron-3-ultra-free",
+			"ling-3.0-flash-fin-free",
+			"jev-1.13-free",
 			"fledge-alpha-free",
 			"ling-3.1-flash-free",
 			"mimo-v2.6-flash-free",
@@ -135,6 +140,11 @@ describe("OpenCode Zen 模型库与参数注册表测试", () => {
 	it("模型上下文上限与输出参数准确", () => {
 		assert.equal(KNOWN_ZEN_FREE_MODELS["nemotron-3.5-lightning-free"].contextWindow, 262144);
 		assert.equal(KNOWN_ZEN_FREE_MODELS["muse-spark-1.3-contributor-free"].contextWindow, 1048576);
+		assert.equal(KNOWN_ZEN_FREE_MODELS["nemotron-3-ultra-free"].contextWindow, 1000000);
+		assert.equal(KNOWN_ZEN_FREE_MODELS["step-5-preview-free"].contextWindow, 200000);
+		assert.equal(KNOWN_ZEN_FREE_MODELS["step-5-preview-free"].reasoning, true);
+		assert.ok(KNOWN_ZEN_FREE_MODELS["step-5-preview-free"].input.includes("image"));
+		assert.equal(KNOWN_ZEN_FREE_MODELS["exo-free"].reasoning, false);
 		assert.equal(KNOWN_ZEN_FREE_MODELS["fledge-alpha-free"].contextWindow, 200000);
 		assert.equal(KNOWN_ZEN_FREE_MODELS["big-pickle"].reasoning, true);
 	});
@@ -216,16 +226,23 @@ describe("OpenCode Zen 模型库与参数注册表测试", () => {
 	});
 
 	it("resolveZenModelId: 能够正确解析短别名与供应商前缀", () => {
+		assert.equal(resolveZenModelId("fledge"), "step-5-preview-free");
+		assert.equal(resolveZenModelId("fledge-alpha-free"), "step-5-preview-free");
+		assert.equal(resolveZenModelId("step"), "step-5-preview-free");
+		assert.equal(resolveZenModelId("step-5"), "step-5-preview-free");
+		assert.equal(resolveZenModelId("exo"), "exo-free");
 		assert.equal(resolveZenModelId("pickle"), "big-pickle");
 		assert.equal(resolveZenModelId("bunny"), "space-bunny-free");
 		assert.equal(resolveZenModelId("space-bunny"), "space-bunny-free");
 		assert.equal(resolveZenModelId("space-bunny-alpha"), "space-bunny-free");
 		assert.equal(resolveZenModelId("mimo"), "mimo-v2.6-flash-free");
 		assert.equal(resolveZenModelId("flash"), "mimo-v2.6-flash-free");
-		assert.equal(resolveZenModelId("ultra"), "nemotron-3.5-lightning-free");
-		assert.equal(resolveZenModelId("550b"), "nemotron-3.5-lightning-free");
+		assert.equal(resolveZenModelId("ultra"), "nemotron-3-ultra-free");
+		assert.equal(resolveZenModelId("550b"), "nemotron-3-ultra-free");
 		assert.equal(resolveZenModelId("lightning"), "nemotron-3.5-lightning-free");
+		assert.equal(resolveZenModelId("ling-3.0"), "ling-3.0-flash-fin-free");
 		assert.equal(resolveZenModelId("ling"), "ling-3.1-flash-free");
+		assert.equal(resolveZenModelId("jev"), "jev-1.13-free");
 		assert.equal(resolveZenModelId("spark"), "muse-spark-1.3-contributor-free");
 		assert.equal(resolveZenModelId("opencode-zen-free/big-pickle"), "big-pickle");
 		assert.equal(resolveZenModelId(""), "big-pickle");
@@ -1359,6 +1376,69 @@ describe("Compaction 压缩防护、深度上下文修剪与透明重试机制�
 		const json = await assembled.json();
 		assert.equal(json.choices[0].finish_reason, "stop", "finish_reason 必须被规范化为 stop，彻底消除 token cap 截断失败");
 		assert.ok(json.choices[0].message.content.includes("This is a comprehensive summary"));
+	});
+
+	it("installZenFetchInterceptor: 针对 Compaction 请求自动将 max_tokens 提升至至少 16384", async () => {
+		let capturedPayload: any = null;
+		const mockGlobal: any = {
+			fetch: async (_input: any, init: any) => {
+				capturedPayload = JSON.parse(init.body);
+				const sseData = 'data: {"id":"1","choices":[{"index":0,"delta":{"content":"Summary"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n';
+				return new Response(sseData, { status: 200, headers: { "content-type": "text/event-stream" } });
+			},
+		};
+
+		installZenFetchInterceptor(mockGlobal);
+		await mockGlobal.fetch("https://opencode.ai/zen/v1/chat/completions", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				model: "step-5-preview-free",
+				messages: [{ role: "user", content: "The messages above are a conversation to summarize." }],
+				max_tokens: 1600, // Pi 压缩时传入的极小 token 上限
+				stream: true,
+			}),
+		});
+
+		assert.ok(capturedPayload);
+		assert.equal(capturedPayload.max_tokens, 16384, "压缩任务下 max_tokens 必须被提升至 16384");
+		assert.equal(capturedPayload.reasoning_effort, "low", "压缩任务下必须压制深思考");
+	});
+
+	it("installZenFetchInterceptor: 流式响应遇 content_filter 和 length 时在流中平滑改写为 stop", async () => {
+		const sseStreamChunks = [
+			'data: {"id":"1","choices":[{"index":0,"delta":{"content":"Partial summary..."},"finish_reason":"content_filter"}]}\n\n',
+			"data: [DONE]\n\n",
+		];
+
+		const mockGlobal: any = {
+			fetch: async () => {
+				const stream = new ReadableStream({
+					start(controller) {
+						for (const chunk of sseStreamChunks) {
+							controller.enqueue(new TextEncoder().encode(chunk));
+						}
+						controller.close();
+					},
+				});
+				return new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } });
+			},
+		};
+
+		installZenFetchInterceptor(mockGlobal);
+		const res = await mockGlobal.fetch("https://opencode.ai/zen/v1/chat/completions", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				model: "step-5-preview-free",
+				messages: [{ role: "user", content: "summarize conversation" }],
+				stream: true,
+			}),
+		});
+
+		const text = await res.text();
+		assert.ok(text.includes('"finish_reason":"stop"'), "流式响应中的 content_filter 必须被改写为 stop");
+		assert.ok(!text.includes('"finish_reason":"content_filter"'), "流式响应中严禁泄露 content_filter");
 	});
 });
 

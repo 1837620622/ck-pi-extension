@@ -333,13 +333,13 @@ export function resolveFreeModelId(rawId?: string): string {
 	if (lower === "inkling-small") {
 		return "thinkingmachines/inkling-small:free";
 	}
-	if (lower === "note" || lower === "dots-note") {
+	if (lower === "note" || lower === "dots" || lower === "dots-note" || lower === "dots-studio") {
 		return "dots-studio/dots-3-note-preview:free";
 	}
 	if (lower === "lfm" || lower === "lfm-2.5") {
 		return "liquid/lfm-2.5-2.6b:free";
 	}
-	if (lower === "apodex" || lower === "apodex-mini" || lower === "apodex-1.1-mini") {
+	if (lower === "apodex" || lower === "apodex-mini" || lower === "apodex-1.1" || lower === "apodex-1.1-mini") {
 		return "apodex/apodex-1.1-mini:free";
 	}
 

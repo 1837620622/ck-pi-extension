@@ -1,12 +1,12 @@
 # ck-pi-zen-session
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.1.23-blue.svg?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.1.24-blue.svg?style=flat-square" alt="Version" />
   <img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License" />
   <img src="https://img.shields.io/badge/runtime-Pi%20Agent%20%3E%3D0.85.0-orange.svg?style=flat-square" alt="Pi Runtime" />
   <img src="https://img.shields.io/badge/protocol-Completions%20%26%20Responses-informational.svg?style=flat-square" alt="Protocol" />
   <img src="https://img.shields.io/badge/session%20algorithm-Descending%20Timestamp%20Base62-purple.svg?style=flat-square" alt="Session Algorithm" />
-  <img src="https://img.shields.io/badge/zero--cost%20models-9%20Verified-success.svg?style=flat-square" alt="Zero Cost Models" />
+  <img src="https://img.shields.io/badge/zero--cost%20models-13%20Verified-success.svg?style=flat-square" alt="Zero Cost Models" />
 </p>
 
 <p align="center">
@@ -146,15 +146,20 @@ OpenCode Zen 上游网关对不同的模型系列启用了不同的传输协议�
 
 | 模型 ID | 协议 | 供应商 | 上下文窗口 | 最大输出 | 推理思考等级 | 支持模态 |
 |:---|:---|:---|:---|:---|:---|:---|
-| `fledge-alpha-free` | Completions | `opencode-zen-free` | 200,000 | 32,768 | 全档位支持 (OpenAI low/med/high) | 文本 |
+| `step-5-preview-free` | Completions | `opencode-zen-free` | 200,000 | 32,768 | 全档位支持 (OpenAI low/med/high) | 文本、图像 (多模态) |
+| `exo-free` | Completions | `opencode-zen-free` | 128,000 | 16,384 | 不支持 (快反系统/无需思考) | 文本 |
+| `nemotron-3-ultra-free` | Completions | `opencode-zen-free` | 1,000,000 (1M) | 32,768 | 全档位支持 (OpenAI low/med/high) | 文本 |
+| `ling-3.0-flash-fin-free` | Completions | `opencode-zen-free` | 262,144 | 32,768 | 全档位支持 (OpenAI low/med/high) | 文本 |
 | `ling-3.1-flash-free` | Completions | `opencode-zen-free` | 262,144 | 32,768 | 全档位支持 (OpenAI low/med/high) | 文本 |
-| `mimo-v2.6-flash-free` | Completions | `opencode-zen-free` | 200,000 | 32,000 | 全档位支持 (OpenAI low/med/high) | 文本、图像 |
-| `nemotron-3.5-lightning-free` | Completions | `opencode-zen-free` | 262,144 | 262,144 | 全档位支持 (OpenAI low/med/high) | 文本 |
+| `mimo-v2.6-flash-free` | Completions | `opencode-zen-free` | 200,000 | 32,000 | 全档位支持 (OpenAI low/med/high) | 文本、图像 (多模态) |
+| `nemotron-3.5-lightning-free` | Completions | `opencode-zen-free` | 262,144 | 32,768 | 全档位支持 (OpenAI low/med/high) | 文本 |
 | `big-pickle` | Completions | `opencode-zen-free` | 200,000 | 32,000 | 全档位支持 (OpenAI low/med/high) | 文本 |
-| `space-bunny-free` | Completions | `opencode-zen-free` | 200,000 | 32,000 | 全档位支持 (OpenAI low/med/high) | 文本、图像 |
+| `space-bunny-free` | Completions | `opencode-zen-free` | 200,000 | 32,000 | 全档位支持 (OpenAI low/med/high) | 文本、图像 (多模态) |
 | `longcat-2.5-preview-free` | Completions | `opencode-zen-free` | 200,000 | 32,000 | 全档位支持 (OpenAI low/med/high) | 文本 |
-| `muse-spark-1.3-contributor-free` | Responses | `opencode-zen-free-responses` | 1,048,576 (1M) | 131,072 | 全档位支持 (OpenAI low/med/high) | 文本、图像 |
-| `muse-spark-1.2-contributor-free` | Responses | `opencode-zen-free-responses` | 1,048,576 (1M) | 131,072 | 全档位支持 (OpenAI low/med/high) | 文本、图像 |
+| `jev-1.13-free` | Completions | `opencode-zen-free` | 128,000 | 16,384 | 不支持 (快反系统/无需思考) | 文本 |
+| `muse-spark-1.3-contributor-free` | Responses | `opencode-zen-free-responses` | 1,048,576 (1M) | 32,768 | 全档位支持 (OpenAI low/med/high) | 文本、图像 (多模态) |
+| `muse-spark-1.2-contributor-free` | Responses | `opencode-zen-free-responses` | 1,048,576 (1M) | 32,768 | 全档位支持 (OpenAI low/med/high) | 文本、图像 (多模态) |
+| `fledge-alpha-free` | Completions | `opencode-zen-free` | 200,000 | 32,000 | 上游已下架 (已自动平滑重定向至 step-5-preview-free) | 文本、图像 (多模态) |
 
 > 若 OpenCode 后端未来发布新免费模型，插件将自动在线探测发现并使用安全的自适应参数接入。
 
@@ -209,6 +214,14 @@ pi install git:github.com/1837620622/ck-pi-extension
 
 ## 七、更新日志
 
+- `0.1.24`：
+  - **全新对接与上线 OpenCode Zen 最新免费模型矩阵**：
+    - 全面收录并高精适配 13 款可用官方免费模型：包含最新旗舰 `step-5-preview-free`（阶跃星辰 Step-5 免费模型，200k 上下文，32k 输出，多模态视觉与全档位思考）、`exo-free`（128k 极速快反）、`nemotron-3-ultra-free`（1M 超长上下文）、`ling-3.0-flash-fin-free`（262k 金融与代码加速）、`jev-1.13-free`（128k 快反）；
+    - 针对上游下架的 `fledge-alpha-free`，路由器自动平滑无感重定向至最新旗舰免费模型 `step-5-preview-free`，彻底避免 404 或内容过滤报错。
+  - **彻底攻克会话压缩截断与崩塌故障 (`Summarization failed: generation hit the token cap` / `Provider finish_reason: content_filter`)**：
+    - 针对 Pi 会话压缩默认传入的 1600 tokens 极小 token 预算，请求拦截层强制将其提升至 16384 tokens，并在压缩总结请求中强制压制深思考（`reasoning_effort: "low"`），从根本上避免深思考模型耗尽 token cap 触发截断；
+    - 流式响应重构器（`reconstructedStream`）全面重构为行缓冲分包安全 TransformStream，逐帧捕获并自动规范化 `finish_reason: "length"` 与 `finish_reason: "content_filter"` 为 `"stop"`；
+    - 在遇到安全策略阻断且尚未生成有效内容时，自动合成规范的结构化会话进度检查点，确保会话压缩 100% 成功完成并平滑进入后续对话。
 - `0.1.23`：
   - **核心修复会话压缩失败与 Token Cap 崩溃问题 (`generation hit the token cap and the summary is incomplete`)**：
     - 调优压缩输出上限至 16,384 tokens，并在压缩总结请求中强制设置 `reasoning_effort: "low"` 并剔除冗余思考，避免深度推理模型（如 `fledge-alpha-free`）耗尽 token 额度；
@@ -394,15 +407,20 @@ The extension syncs official free models with verified context windows and think
 
 | Model ID | Protocol | Provider | Context Window | Max Output | Thinking Levels | Modality |
 |:---|:---|:---|:---|:---|:---|:---|
-| `fledge-alpha-free` | Completions | `opencode-zen-free` | 200,000 | 32,768 | Full support (OpenAI low/med/high) | Text |
+| `step-5-preview-free` | Completions | `opencode-zen-free` | 200,000 | 32,768 | Full support (OpenAI low/med/high) | Text, Vision |
+| `exo-free` | Completions | `opencode-zen-free` | 128,000 | 16,384 | Unsupported (fast reflex / no thinking) | Text |
+| `nemotron-3-ultra-free` | Completions | `opencode-zen-free` | 1,000,000 (1M) | 32,768 | Full support (OpenAI low/med/high) | Text |
+| `ling-3.0-flash-fin-free` | Completions | `opencode-zen-free` | 262,144 | 32,768 | Full support (OpenAI low/med/high) | Text |
 | `ling-3.1-flash-free` | Completions | `opencode-zen-free` | 262,144 | 32,768 | Full support (OpenAI low/med/high) | Text |
 | `mimo-v2.6-flash-free` | Completions | `opencode-zen-free` | 200,000 | 32,000 | Full support (OpenAI low/med/high) | Text, Vision |
-| `nemotron-3.5-lightning-free` | Completions | `opencode-zen-free` | 262,144 | 262,144 | Full support (OpenAI low/med/high) | Text |
+| `nemotron-3.5-lightning-free` | Completions | `opencode-zen-free` | 262,144 | 32,768 | Full support (OpenAI low/med/high) | Text |
 | `big-pickle` | Completions | `opencode-zen-free` | 200,000 | 32,000 | Full support (OpenAI low/med/high) | Text |
 | `space-bunny-free` | Completions | `opencode-zen-free` | 200,000 | 32,000 | Full support (OpenAI low/med/high) | Text, Vision |
 | `longcat-2.5-preview-free` | Completions | `opencode-zen-free` | 200,000 | 32,000 | Full support (OpenAI low/med/high) | Text |
-| `muse-spark-1.3-contributor-free` | Responses | `opencode-zen-free-responses` | 1,048,576 (1M) | 131,072 | Full support (OpenAI low/med/high) | Text, Vision |
-| `muse-spark-1.2-contributor-free` | Responses | `opencode-zen-free-responses` | 1,048,576 (1M) | 131,072 | Full support (OpenAI low/med/high) | Text, Vision |
+| `jev-1.13-free` | Completions | `opencode-zen-free` | 128,000 | 16,384 | Unsupported (fast reflex / no thinking) | Text |
+| `muse-spark-1.3-contributor-free` | Responses | `opencode-zen-free-responses` | 1,048,576 (1M) | 32,768 | Full support (OpenAI low/med/high) | Text, Vision |
+| `muse-spark-1.2-contributor-free` | Responses | `opencode-zen-free-responses` | 1,048,576 (1M) | 32,768 | Full support (OpenAI low/med/high) | Text, Vision |
+| `fledge-alpha-free` | Completions | `opencode-zen-free` | 200,000 | 32,000 | Delisted upstream (aliased to step-5-preview-free) | Text, Vision |
 
 ---
 
@@ -455,17 +473,14 @@ pi install git:github.com/1837620622/ck-pi-extension
 
 ## 7. Changelog
 
-- `0.1.23`:
-  - **Auto-compaction token cap & truncation crash fix (`generation hit the token cap and the summary is incomplete`)**:
-    - Relaxed compaction output ceiling to 16,384 tokens with forced `reasoning_effort: "low"` and CoT suppression, preventing reasoning models (such as `fledge-alpha-free`) from exhausting the compaction token budget;
-    - Intercepted upstream `finish_reason: "length"` during compaction tasks and smoothly normalized to `finish_reason: "stop"` whenever non-empty text is generated, eliminating Pi's compaction crash.
-  - **End-to-end safety moderation defense (`finish_reason: content_filter`)**:
-    - Integrated `sanitizeSensitiveAuditContent` desensitization engine: automatically sanitized SQL injection patterns, XSS script tags, exploit tools, password hashes, and card numbers inside `<conversation>` tags during compaction to prevent triggering upstream content moderation filters;
-    - Intercepted `finish_reason: "content_filter"`: synthesized structured session progress checkpoints with `finish_reason: "stop"` during compaction, and preserved partial generations with friendly notices during regular chat.
-  - **Optimized free model catalog & detection algorithm**:
-    - Delisted inactive models (`mimo-v2.5-free`, `ling-3.0-flash-fin-free`, `nemotron-3-ultra-free`);
-    - Synchronized 9 verified active free models (`fledge-alpha-free`, `ling-3.1-flash-free`, `longcat-2.5-preview-free`, etc.);
-    - Upgraded short alias resolver (`mimo`, `ultra`, `ling`, `fledge`) to seamlessly route to working replacements.
+- `0.1.24`:
+  - **Full integration & synchronization with OpenCode Zen latest free models**:
+    - Registered 13 active official free models: `step-5-preview-free` (StepFun Step-5, 200k context, 32k output, multimodal vision & full thinking levels), `exo-free` (128k fast reflex), `nemotron-3-ultra-free` (1M long context), `ling-3.0-flash-fin-free` (262k finance/code accelerated), `jev-1.13-free` (128k fast reflex);
+    - Delisted model graceful migration: `fledge-alpha-free` smoothly redirected to `step-5-preview-free` without 404s or moderation crashes.
+  - **Auto-compaction token cap & truncation crash permanent fix (`Summarization failed: generation hit the token cap` / `Provider finish_reason: content_filter`)**:
+    - Compaction max tokens boost: forced minimum 16,384 tokens with `reasoning_effort: "low"` during summarization tasks, eliminating token cap exhaustion;
+    - Robust SSE stream transformer: upgraded `reconstructedStream` to a line-buffered TransformStream that intercepts and normalizes both `finish_reason: "length"` and `finish_reason: "content_filter"` to `"stop"`;
+    - Synthesized structured progress checkpoints when content filter is encountered with empty text, guaranteeing 100% successful session compaction.
 - `0.1.22`:
   - **Support OpenAI Responses API protocol & dual-provider architecture (Resolves Issue #1)**:
     - **Dual-provider routing**: Partitioned OpenCode Zen into `opencode-zen-free` (`openai-completions`) and `opencode-zen-free-responses` (`openai-responses`);
