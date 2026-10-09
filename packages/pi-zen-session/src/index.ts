@@ -1341,14 +1341,20 @@ export default function piZenSession(pi: ExtensionAPI): void {
 			}
 
 			// F. 安全上限钳位与防死循环微调 (防止超长 max_tokens 失控导致 400 报错)
-			const maxAllowedOutput = isCompaction ? 8192 : 32768;
-			if (typeof transformed.max_tokens === "number" && (transformed.max_tokens as number) > maxAllowedOutput) {
-				transformed.max_tokens = maxAllowedOutput;
+			if (isCompaction) {
+				transformed.max_tokens = Math.max(Number(transformed.max_tokens) || 0, 16384);
+				transformed.max_completion_tokens = Math.max(Number(transformed.max_completion_tokens) || 0, 16384);
 				modified = true;
-			}
-			if (typeof transformed.max_completion_tokens === "number" && (transformed.max_completion_tokens as number) > maxAllowedOutput) {
-				transformed.max_completion_tokens = maxAllowedOutput;
-				modified = true;
+			} else {
+				const maxAllowedOutput = 32768;
+				if (typeof transformed.max_tokens === "number" && (transformed.max_tokens as number) > maxAllowedOutput) {
+					transformed.max_tokens = maxAllowedOutput;
+					modified = true;
+				}
+				if (typeof transformed.max_completion_tokens === "number" && (transformed.max_completion_tokens as number) > maxAllowedOutput) {
+					transformed.max_completion_tokens = maxAllowedOutput;
+					modified = true;
+				}
 			}
 			const isReasoning = ctx.model?.reasoning === true || transformed.reasoning_effort !== undefined;
 			if (!isReasoning && transformed.frequency_penalty === undefined) {

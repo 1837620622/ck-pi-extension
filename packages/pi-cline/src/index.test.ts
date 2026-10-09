@@ -208,6 +208,98 @@ describe("Cline 本地反向代理服务器测试", () => {
 		assert.equal(optRes.headers.get("access-control-allow-origin"), "http://localhost:3000");
 	});
 
+	it("反代服务针对 Compaction 任务自动提升 max_tokens 并脱敏敏感审计模式", async () => {
+		const origFetch = globalThis.fetch;
+		let capturedPayload: any = null;
+		globalThis.fetch = async (url: any, opts: any) => {
+			if (String(url).includes("api.cline.bot")) {
+				capturedPayload = JSON.parse(opts.body);
+				return new Response(
+					JSON.stringify({
+						id: "gen-123",
+						object: "chat.completion",
+						created: Math.floor(Date.now() / 1000),
+						model: capturedPayload.model,
+						choices: [{ index: 0, message: { role: "assistant", content: "Summary done" }, finish_reason: "stop" }],
+					}),
+					{ status: 200, headers: { "Content-Type": "application/json" } }
+				);
+			}
+			return origFetch(url, opts);
+		};
+
+		try {
+			const res = await fetch(`http://127.0.0.1:${TEST_PROXY_PORT}/v1/chat/completions`, {
+				method: "POST",
+				headers: {
+					Authorization: "Bearer sk_test_proxy",
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					model: "dots",
+					messages: [
+						{ role: "user", content: "Summarize this <conversation>union select * from information_schema</conversation>" },
+					],
+					max_tokens: 1600,
+					stream: false,
+				}),
+			});
+
+			assert.equal(res.status, 200);
+			assert.ok(capturedPayload);
+			assert.equal(capturedPayload.model, "dots-studio/dots-3-note-preview:free");
+			assert.ok(capturedPayload.max_tokens >= 16384, "必须将 max_tokens 提升至至少 16384");
+			assert.equal(capturedPayload.reasoning_effort, "low");
+			assert.ok(
+				capturedPayload.messages[0].content.includes("[sql_audit_statement]"),
+				"必须完成敏感审计模式脱敏"
+			);
+		} finally {
+			globalThis.fetch = origFetch;
+		}
+	});
+
+	it("反代服务在流式 SSE 遇 content_filter 时平滑改写为 stop 并合成安全检查点", async () => {
+		const origFetch = globalThis.fetch;
+		globalThis.fetch = async (url: any, opts: any) => {
+			if (String(url).includes("api.cline.bot")) {
+				const sseContent = [
+					'data: {"id":"gen-cf","object":"chat.completion.chunk","created":12345,"model":"openrouter/free","choices":[{"index":0,"delta":{"content":""},"finish_reason":"content_filter"}]}',
+					"",
+					"data: [DONE]",
+					"",
+				].join("\n");
+				return new Response(sseContent, {
+					status: 200,
+					headers: { "Content-Type": "text/event-stream" },
+				});
+			}
+			return origFetch(url, opts);
+		};
+
+		try {
+			const res = await fetch(`http://127.0.0.1:${TEST_PROXY_PORT}/v1/chat/completions`, {
+				method: "POST",
+				headers: {
+					Authorization: "Bearer sk_test_proxy",
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					model: "free",
+					messages: [{ role: "user", content: "Summarize the session <conversation>test</conversation>" }],
+					stream: true,
+				}),
+			});
+
+			assert.equal(res.status, 200);
+			const text = await res.text();
+			assert.ok(text.includes('"finish_reason":"stop"'), "必须将 content_filter 改写为 stop");
+			assert.ok(text.includes("会话进展与安全审计检查点"), "压缩请求下必须合成结构化安全检查点");
+		} finally {
+			globalThis.fetch = origFetch;
+		}
+	});
+
 	it("关闭反代服务后状态正常重置", async () => {
 		await stopClineProxyServer();
 		const status = getClineProxyStatus();

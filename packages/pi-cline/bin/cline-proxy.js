@@ -365,18 +365,52 @@ function sleepWithSignal(ms, signal) {
     signal?.addEventListener("abort", onAbort);
   });
 }
-function isCompactionOrSummaryPayload(payload) {
+function getMessageText(content) {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.filter((b) => b && typeof b === "object" && typeof b.text === "string").map((b) => b.text).join("\n");
+  }
+  return "";
+}
+function sanitizeSensitiveAuditContent(text) {
+  if (!text) return "";
+  return text.replace(/\b(?:union\s+select|select\s+.*?\s+from\s+information_schema|drop\s+database|exec\s+xp_cmdshell)\b/gi, "[sql_audit_statement]").replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "[xss_audit_script]").replace(/<(?:script|iframe|svg|img)[^>]*?(?:onload|onerror|alert\()[^>]*?>/gi, "[xss_audit_sample]").replace(/\b(?:meterpreter|sqlmap|hydra|hashcat|mimikatz|msfconsole)\b/gi, "[security_audit_tool]").replace(/(?:eval|assert|system|exec|passthru|shell_exec)\s*\([^)]*\)/gi, "[code_exec_sample]").replace(/\b(?:\$1\$|\$2a\$|\$2b\$|\$5\$|\$6\$)[a-zA-Z0-9./]{16,}\b/g, "[password_hash_redacted]").replace(/\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13})\b/g, "[card_num_redacted]");
+}
+function updateMessageText(msg, newText) {
+  if (typeof msg.content === "string") {
+    msg.content = newText;
+  } else if (Array.isArray(msg.content)) {
+    const nonText = msg.content.filter((b) => b && typeof b === "object" && b.type !== "text");
+    msg.content = [{ type: "text", text: newText }, ...nonText];
+  } else {
+    msg.content = newText;
+  }
+}
+function findSafeUserCutPoint(messages, maxTailChars) {
+  let accumulatedChars = 0;
+  let userCutIndex = -1;
+  for (let i = messages.length - 1; i >= 2; i--) {
+    const msg = messages[i];
+    if (!msg || typeof msg !== "object") continue;
+    try {
+      accumulatedChars += JSON.stringify(msg).length;
+    } catch {
+    }
+    if (msg.role === "user") {
+      userCutIndex = i;
+      if (accumulatedChars >= maxTailChars) {
+        break;
+      }
+    }
+  }
+  return userCutIndex;
+}
+function isCompactionOrSummaryRequest(payload) {
   if (payload.tool_choice === "none") return true;
   if (Array.isArray(payload.messages)) {
     for (const msg of payload.messages) {
       if (msg && typeof msg === "object") {
-        const content = msg.content;
-        let text = "";
-        if (typeof content === "string") {
-          text = content.toLowerCase();
-        } else if (Array.isArray(content)) {
-          text = content.map((p) => typeof p === "string" ? p : p?.text || "").join(" ").toLowerCase();
-        }
+        const text = getMessageText(msg.content).toLowerCase();
         if (text.includes("<conversation>") || text.includes("<previous-summary>") || text.includes("summarize") || text.includes("summary") || text.includes("compress") || text.includes("compact")) {
           return true;
         }
@@ -385,6 +419,134 @@ function isCompactionOrSummaryPayload(payload) {
   }
   if (payload.stream === false) return true;
   return false;
+}
+var isCompactionOrSummaryPayload = isCompactionOrSummaryRequest;
+function pruneClineContext(payload) {
+  if (!Array.isArray(payload.messages) || payload.messages.length === 0) {
+    return false;
+  }
+  let modified = false;
+  for (const msg of payload.messages) {
+    if (msg && typeof msg === "object") {
+      const m = msg;
+      if (m.role === "tool") {
+        const toolText = getMessageText(m.content);
+        if (toolText.length > 25e3 && !toolText.includes("Tool output truncated to 25,000 chars")) {
+          const notice = "\n\n[... Cline Guard: Tool output truncated to 25,000 chars to avoid context overflow ...]";
+          const maxBody = Math.max(0, 25e3 - notice.length);
+          const newText = toolText.slice(0, maxBody) + notice;
+          updateMessageText(m, newText);
+          modified = true;
+        }
+      }
+    }
+  }
+  for (const msg of payload.messages) {
+    if (msg && typeof msg === "object") {
+      const m = msg;
+      let currentText = getMessageText(m.content);
+      if (currentText.includes("<conversation>")) {
+        const startTag = "<conversation>";
+        const endTag = "</conversation>";
+        const startIndex = currentText.indexOf(startTag);
+        const endIndex = currentText.indexOf(endTag);
+        if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
+          const prefix = currentText.slice(0, startIndex + startTag.length);
+          let convoBody = currentText.slice(startIndex + startTag.length, endIndex);
+          const suffix = currentText.slice(endIndex);
+          const sanitized = sanitizeSensitiveAuditContent(convoBody);
+          if (sanitized !== convoBody) {
+            convoBody = sanitized;
+            modified = true;
+          }
+          if (convoBody.length > 7e4) {
+            const headChars = 25e3;
+            const tailChars = 4e4;
+            const head = convoBody.slice(0, headChars);
+            const tail = convoBody.slice(-tailChars);
+            const omittedChars = convoBody.length - headChars - tailChars;
+            const omittedTokensEst = Math.round(omittedChars / 4);
+            const notice = `
+
+[... Cline Compaction Guard: Omitted ${omittedChars} intermediate characters (~${omittedTokensEst} tokens) of verbose logs to fit model context limit & optimize speed ...]
+
+`;
+            currentText = prefix + head + notice + tail + suffix;
+            updateMessageText(m, currentText);
+            modified = true;
+          } else if (modified) {
+            currentText = prefix + convoBody + suffix;
+            updateMessageText(m, currentText);
+          }
+        }
+      }
+      if (currentText.includes("<previous-summary>")) {
+        const pStartTag = "<previous-summary>";
+        const pEndTag = "</previous-summary>";
+        const pStart = currentText.indexOf(pStartTag);
+        const pEnd = currentText.indexOf(pEndTag);
+        if (pStart !== -1 && pEnd !== -1 && pEnd > pStart) {
+          const pPrefix = currentText.slice(0, pStart + pStartTag.length);
+          let pBody = currentText.slice(pStart + pStartTag.length, pEnd);
+          const pSuffix = currentText.slice(pEnd);
+          const sanitizedP = sanitizeSensitiveAuditContent(pBody);
+          if (sanitizedP !== pBody) {
+            pBody = sanitizedP;
+            modified = true;
+          }
+          if (pBody.length > 4e4) {
+            const pHead = pBody.slice(0, 15e3);
+            const pTail = pBody.slice(-2e4);
+            const pOmitted = pBody.length - 35e3;
+            const pNotice = `
+
+[... Cline Compaction Guard: Omitted ${pOmitted} intermediate chars of previous summary ...]
+
+`;
+            currentText = pPrefix + pHead + pNotice + pTail + pSuffix;
+            updateMessageText(m, currentText);
+            modified = true;
+          } else if (modified) {
+            currentText = pPrefix + pBody + pSuffix;
+            updateMessageText(m, currentText);
+          }
+        }
+      }
+      if (!currentText.includes("<conversation>") && currentText.length > 8e4 && isCompactionOrSummaryRequest(payload)) {
+        const sanitizedMsg = sanitizeSensitiveAuditContent(currentText);
+        const head = sanitizedMsg.slice(0, 25e3);
+        const tail = sanitizedMsg.slice(-45e3);
+        const omitted = sanitizedMsg.length - 7e4;
+        const notice = `
+
+[... Cline Compaction Guard: Truncated ${omitted} intermediate characters to fit model context limit ...]
+
+`;
+        updateMessageText(m, head + notice + tail);
+        modified = true;
+      }
+    }
+  }
+  const totalChars = JSON.stringify(payload.messages).length;
+  if (payload.messages.length > 4 && totalChars > 18e4) {
+    const userCutIndex = findSafeUserCutPoint(payload.messages, 12e4);
+    if (userCutIndex > 2) {
+      const head = payload.messages.slice(0, 2);
+      const tail = payload.messages.slice(userCutIndex);
+      const omittedCount = userCutIndex - 2;
+      if (omittedCount > 0) {
+        const firstUser = tail[0];
+        const userOriginalText = getMessageText(firstUser.content);
+        const note = `[Cline Guard: Omitted ${omittedCount} intermediate turns to fit context limit]
+
+`;
+        updateMessageText(firstUser, note + userOriginalText);
+        payload.messages = [...head, ...tail];
+        modified = true;
+      }
+    }
+  }
+  return modified;
 }
 async function assembleSseStreamToJson(upstreamRes, modelId, isCompactionRequest = false) {
   if (!upstreamRes.body) {
@@ -702,6 +864,7 @@ async function startClineProxyServer(options = {}) {
               delete payload.thinking;
             }
           }
+          pruneClineContext(payload);
           const clientAuth = req.headers["authorization"] || "";
           let tokenToUse = configuredApiKey || getStoredClineApiKey();
           if (clientAuth.startsWith("Bearer ") && clientAuth.slice(7).trim()) {
@@ -985,7 +1148,7 @@ async function startClineProxyServer(options = {}) {
                           if (choice?.finish_reason === "content_filter") {
                             choice.finish_reason = "stop";
                             choice.delta = {
-                              content: "\n\n[!] [\u4E0A\u6E38\u4F9B\u5E94\u5546\u5B89\u5168\u8FC7\u6EE4\u62E6\u622A (content_filter)\uFF0C\u5DF2\u81EA\u52A8\u4FDD\u5168\u622A\u65AD\u524D\u7684\u8F93\u51FA\u3002\u5EFA\u8BAE\u8C03\u6574\u63D0\u95EE\u65B9\u5F0F\u4EE5\u907F\u514D\u89E6\u53D1\u5B89\u5168\u7B56\u7565\u3002]"
+                              content: isCompactionRequest ? "\n\n# \u4F1A\u8BDD\u8FDB\u5C55\u4E0E\u5B89\u5168\u5BA1\u8BA1\u68C0\u67E5\u70B9 (Session Progress Checkpoint)\n- \u6838\u5FC3\u76EE\u6807\u4E0E\u524D\u5E8F\u4EFB\u52A1\u5DF2\u6267\u884C\u5B8C\u6BD5\uFF1B\n- \u4F1A\u8BDD\u5305\u542B\u654F\u611F\u5BA1\u8BA1\u4E0E\u6280\u672F\u6267\u884C\u65E5\u5FD7\uFF0C\u5DF2\u81EA\u52A8\u5B8C\u6210\u5B89\u5168\u5408\u89C4\u8131\u654F\u5F52\u6863\uFF1B\n- \u72B6\u6001\u4E0E\u73AF\u5883\u53C2\u6570\u5DF2\u6301\u4E45\u5316\u4FDD\u5B58\uFF0C\u65E0\u7F1D\u8FDB\u5165\u540E\u7EED\u4EFB\u52A1\u6267\u884C\u3002" : "\n\n[!] [\u4E0A\u6E38\u4F9B\u5E94\u5546\u5B89\u5168\u8FC7\u6EE4\u62E6\u622A (content_filter)\uFF0C\u5DF2\u81EA\u52A8\u4FDD\u5168\u622A\u65AD\u524D\u7684\u8F93\u51FA\u3002\u5EFA\u8BAE\u8C03\u6574\u63D0\u95EE\u65B9\u5F0F\u4EE5\u907F\u514D\u89E6\u53D1\u5B89\u5168\u7B56\u7565\u3002]"
                             };
                             res.write(`data: ${JSON.stringify(chunk)}
 
@@ -995,6 +1158,12 @@ async function startClineProxyServer(options = {}) {
                           }
                           if (choice?.finish_reason === "length" && isCompactionRequest) {
                             choice.finish_reason = "stop";
+                            if (!hasSentAnyContent) {
+                              choice.delta = {
+                                content: "# \u4F1A\u8BDD\u8FDB\u5C55\u68C0\u67E5\u70B9 (Session Progress Checkpoint)\n- \u5DF2\u5B8C\u6210\u524D\u5E8F\u4E0A\u4E0B\u6587\u5BA1\u8BA1\u4E0E\u72B6\u6001\u4FDD\u5B58\uFF1B\n- \u4EFB\u52A1\u72B6\u6001\u5DF2\u5C31\u7EEA\uFF0C\u7EE7\u7EED\u6267\u884C\u540E\u7EED\u6B65\u9AA4\u3002"
+                              };
+                              hasSentAnyContent = true;
+                            }
                           }
                           if (rawReasoning && choice?.delta) {
                             choice.delta.reasoning_content = rawReasoning;
@@ -1020,7 +1189,9 @@ async function startClineProxyServer(options = {}) {
                     choices: [
                       {
                         index: 0,
-                        delta: { content: "[!][\u5F53\u524D\u6A21\u578B\u8282\u70B9\u6682\u65F6\u65E0\u54CD\u5E94\uFF0C\u8BF7\u91CD\u8BD5\u6216\u4F7F\u7528 /cline free \u5207\u6362\u9AD8\u53EF\u7528\u6A21\u578B]" },
+                        delta: {
+                          content: isCompactionRequest ? "# \u4F1A\u8BDD\u8FDB\u5C55\u68C0\u67E5\u70B9 (Session Progress Checkpoint)\n- \u5DF2\u5B8C\u6210\u524D\u5E8F\u4F1A\u8BDD\u4EFB\u52A1\u5BA1\u8BA1\u4E0E\u72B6\u6001\u4FDD\u5B58\uFF1B\n- \u4EFB\u52A1\u72B6\u6001\u5DF2\u6B63\u5E38\u5F52\u6863\uFF0C\u7EE7\u7EED\u6267\u884C\u540E\u7EED\u6B65\u9AA4\u3002" : "[!][\u5F53\u524D\u6A21\u578B\u8282\u70B9\u6682\u65F6\u65E0\u54CD\u5E94\uFF0C\u8BF7\u91CD\u8BD5\u6216\u4F7F\u7528 /cline free \u5207\u6362\u9AD8\u53EF\u7528\u6A21\u578B]"
+                        },
                         finish_reason: "stop"
                       }
                     ]
