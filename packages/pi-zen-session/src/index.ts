@@ -91,6 +91,7 @@ export function registerZenProviderToPi(
 					"User-Agent": ZEN_USER_AGENT,
 					"x-opencode-client": "cli",
 					"x-opencode-session": sessionId,
+					"x-opencode-session-id": sessionId,
 					"x-opencode-project": generateZenProjectId(),
 					"x-session-affinity": sessionId,
 					"X-Session-Id": sessionId,
@@ -118,6 +119,7 @@ export function registerZenProviderToPi(
 					"User-Agent": ZEN_USER_AGENT,
 					"x-opencode-client": "cli",
 					"x-opencode-session": sessionId,
+					"x-opencode-session-id": sessionId,
 					"x-opencode-project": generateZenProjectId(),
 					"x-session-affinity": sessionId,
 					"X-Session-Id": sessionId,
@@ -501,8 +503,12 @@ export function installZenFetchInterceptor(targetGlobal: typeof globalThis = glo
 			headers.set("x-opencode-project", generateZenProjectId());
 		}
 		headers.set("x-opencode-session", currentSession);
+		headers.set("x-opencode-session-id", currentSession);
 		headers.set("x-session-affinity", currentSession);
 		headers.set("X-Session-Id", currentSession);
+		if (!headers.has("x-opencode-request")) {
+			headers.set("x-opencode-request", generateZenRequestId());
+		}
 
 		// 拦截并修补请求体：在 Summarization / Compaction / 非工具调用场景下强制注入官方 tools
 		let newBody = init?.body;
@@ -1204,11 +1210,12 @@ export default function piZenSession(pi: ExtensionAPI): void {
 				debouncedAutoSync(true);
 			}
 
-			// 注入全部官方客户端 7 维对齐请求头
+			// 注入全部官方客户端 8 维对齐请求头
 			delete event.headers["user-agent"];
 			event.headers["User-Agent"] = ZEN_USER_AGENT;
 			event.headers["x-opencode-client"] = "cli";
 			event.headers["x-opencode-session"] = currentSession;
+			event.headers["x-opencode-session-id"] = currentSession;
 			event.headers["x-opencode-project"] = generateZenProjectId();
 			event.headers["x-session-affinity"] = currentSession;
 			event.headers["X-Session-Id"] = currentSession;
@@ -1603,6 +1610,7 @@ export async function handleZenCommand(
 					"User-Agent": ZEN_USER_AGENT,
 					"x-opencode-client": "cli",
 					"x-opencode-session": getStoredZenSessionId() || generateZenSessionId(),
+					"x-opencode-session-id": getStoredZenSessionId() || generateZenSessionId(),
 				},
 				body: pingBody,
 				signal: AbortSignal.timeout(15_000),

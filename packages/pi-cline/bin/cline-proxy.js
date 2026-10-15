@@ -13,8 +13,11 @@ var CLINE_CLIENT_HEADERS = {
   "x-platform-version": "1.106.0",
   "x-client-type": "cline-vscode",
   "http-referer": "https://cline.bot",
+  "HTTP-Referer": "https://cline.bot",
   "x-platform": "vscode",
-  "x-title": "Cline"
+  "X-Platform": "vscode",
+  "x-title": "Cline",
+  "X-Title": "Cline"
 };
 var STANDARD_THINKING_LEVELS = {
   minimal: "low",
@@ -771,15 +774,38 @@ async function startClineProxyServer(options = {}) {
       const token = clientAuth.startsWith("Bearer ") && clientAuth.slice(7).trim() || configuredApiKey || getStoredClineApiKey();
       if (!onlyFree && token) {
         try {
-          const upstreamRes = await fetch(`${CLINE_BASE_URL}/models`, {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              ...CLINE_CLIENT_HEADERS
-            },
+          const headers = {
+            Authorization: `Bearer ${token}`,
+            ...CLINE_CLIENT_HEADERS
+          };
+          let upstreamRes = await fetch(`${CLINE_BASE_URL}/models`, {
+            headers,
             signal: AbortSignal.timeout(1e4)
           }).catch(() => null);
+          if (!upstreamRes || !upstreamRes.ok) {
+            upstreamRes = await fetch(`${CLINE_BASE_URL}/models`, {
+              headers: CLINE_CLIENT_HEADERS,
+              signal: AbortSignal.timeout(8e3)
+            }).catch(() => null);
+          }
           if (upstreamRes && upstreamRes.ok) {
             const data = await upstreamRes.json();
+            if (data && Array.isArray(data.data)) {
+              const existingIds = new Set(data.data.map((m) => m.id));
+              for (const freeModel of Object.values(KNOWN_CLINE_FREE_MODELS)) {
+                if (!existingIds.has(freeModel.id)) {
+                  data.data.push({
+                    id: freeModel.id,
+                    object: "model",
+                    created: Math.floor(Date.now() / 1e3),
+                    owned_by: "cline",
+                    permission: [],
+                    root: freeModel.id,
+                    parent: null
+                  });
+                }
+              }
+            }
             res.writeHead(200, { "Content-Type": "application/json" });
             res.end(JSON.stringify(data));
             return;

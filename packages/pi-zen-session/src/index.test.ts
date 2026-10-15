@@ -130,6 +130,8 @@ describe("OpenCode Zen 模型库与参数注册表测试", () => {
 			"longcat-2.5-preview-free",
 			"muse-spark-1.3-contributor-free",
 			"muse-spark-1.2-contributor-free",
+			"cat-jam-free",
+			"deepseek-v4.1-flash-free",
 		];
 
 		for (const id of expectedModels) {
@@ -147,6 +149,12 @@ describe("OpenCode Zen 模型库与参数注册表测试", () => {
 		assert.equal(KNOWN_ZEN_FREE_MODELS["exo-free"].reasoning, false);
 		assert.equal(KNOWN_ZEN_FREE_MODELS["fledge-alpha-free"].contextWindow, 200000);
 		assert.equal(KNOWN_ZEN_FREE_MODELS["big-pickle"].reasoning, true);
+		assert.equal(KNOWN_ZEN_FREE_MODELS["cat-jam-free"].contextWindow, 262144);
+		assert.equal(KNOWN_ZEN_FREE_MODELS["cat-jam-free"].reasoning, true);
+		assert.ok(KNOWN_ZEN_FREE_MODELS["cat-jam-free"].input.includes("image"));
+		assert.equal(KNOWN_ZEN_FREE_MODELS["deepseek-v4.1-flash-free"].contextWindow, 1000000);
+		assert.equal(KNOWN_ZEN_FREE_MODELS["deepseek-v4.1-flash-free"].reasoning, true);
+		assert.ok(KNOWN_ZEN_FREE_MODELS["deepseek-v4.1-flash-free"].input.includes("image"));
 	});
 
 	it("支持未知未来免费模型自适应回退", () => {
@@ -242,6 +250,10 @@ describe("OpenCode Zen 模型库与参数注册表测试", () => {
 		assert.equal(resolveZenModelId("lightning"), "nemotron-3.5-lightning-free");
 		assert.equal(resolveZenModelId("ling-3.0"), "ling-3.0-flash-fin-free");
 		assert.equal(resolveZenModelId("ling"), "ling-3.1-flash-free");
+		assert.equal(resolveZenModelId("cat-jam"), "cat-jam-free");
+		assert.equal(resolveZenModelId("catjam"), "cat-jam-free");
+		assert.equal(resolveZenModelId("deepseek"), "deepseek-v4.1-flash-free");
+		assert.equal(resolveZenModelId("deepseek-v4.1"), "deepseek-v4.1-flash-free");
 		assert.equal(resolveZenModelId("jev"), "jev-1.13-free");
 		assert.equal(resolveZenModelId("spark"), "muse-spark-1.3-contributor-free");
 		assert.equal(resolveZenModelId("opencode-zen-free/big-pickle"), "big-pickle");
@@ -339,7 +351,7 @@ describe("配置同步与落盘逻辑测试", () => {
 			);
 			assert.equal(
 				writtenModels.providers[ZEN_PROVIDER_ID].headers["User-Agent"],
-				"opencode/1.18.32 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14",
+				"opencode/latest/2.0.28/cli",
 			);
 
 			// 验证 auth.json
@@ -479,10 +491,14 @@ describe("Extension API 钩子拦截测试", () => {
 
 		assert.equal(
 			headerEvent.headers["User-Agent"],
-			"opencode/1.18.32 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14",
+			"opencode/latest/2.0.28/cli",
 		);
 		assert.equal(headerEvent.headers["x-opencode-client"], "cli");
 		assert.ok(headerEvent.headers["x-opencode-session"].startsWith("ses_"));
+		assert.equal(
+			headerEvent.headers["x-opencode-session-id"],
+			headerEvent.headers["x-opencode-session"],
+		);
 		assert.ok(headerEvent.headers["x-opencode-project"].startsWith("prj_"));
 		assert.equal(
 			headerEvent.headers["x-session-affinity"],
@@ -820,7 +836,7 @@ describe("Extension API 钩子拦截测试", () => {
 
 		assert.ok(capturedInit, "全局 Fetch 必须成功拦截目标请求");
 		const headers = new Headers(capturedInit?.headers);
-		assert.equal(headers.get("User-Agent"), "opencode/1.18.32 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14");
+		assert.equal(headers.get("User-Agent"), "opencode/latest/2.0.28/cli");
 		assert.equal(headers.get("x-opencode-client"), "cli");
 		assert.ok(headers.get("x-opencode-session")?.startsWith("ses_"));
 		assert.ok(headers.get("x-opencode-request")?.startsWith("msg_"));
@@ -980,7 +996,7 @@ describe("Extension API 钩子拦截测试", () => {
 			"Request 对象的 Authorization 必须完整保留",
 		);
 		assert.equal(headers.get("X-Custom-Client"), "my-client");
-		assert.equal(headers.get("User-Agent"), "opencode/1.18.32 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14");
+		assert.equal(headers.get("User-Agent"), "opencode/latest/2.0.28/cli");
 		assert.ok(headers.get("x-opencode-session")?.startsWith("ses_"));
 	});
 

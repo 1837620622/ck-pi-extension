@@ -189,16 +189,31 @@ export async function fetchZenModelCatalog(
 	}
 
 	try {
-		const res = await fetch(`${ZEN_BASE_URL}/models`, {
-			method: "GET",
-			headers: {
-				Authorization: `Bearer ${apiKey.trim()}`,
-				"User-Agent": ZEN_USER_AGENT,
-			},
-			signal: AbortSignal.timeout(15_000),
-		});
+		const headers: Record<string, string> = {
+			"User-Agent": ZEN_USER_AGENT,
+		};
+		if (apiKey && apiKey.trim()) {
+			headers["Authorization"] = `Bearer ${apiKey.trim()}`;
+		}
 
-		if (res.ok) {
+		let res = await fetch(`${ZEN_BASE_URL}/models`, {
+			method: "GET",
+			headers,
+			signal: AbortSignal.timeout(15_000),
+		}).catch(() => null);
+
+		// 若携带 Auth 遇到 401/403/服务端校验失败，回退无凭据重试（该元数据端点公开可读）
+		if ((!res || !res.ok) && headers["Authorization"]) {
+			res = await fetch(`${ZEN_BASE_URL}/models`, {
+				method: "GET",
+				headers: {
+					"User-Agent": ZEN_USER_AGENT,
+				},
+				signal: AbortSignal.timeout(10_000),
+			}).catch(() => null);
+		}
+
+		if (res && res.ok) {
 			const data = (await res.json()) as { data?: Array<{ id: string; [key: string]: unknown }> };
 			if (data && Array.isArray(data.data)) {
 				// 自动识别所有带 free / zero / pickle / trial / demo / community 标识或零额度的免费模型
@@ -206,10 +221,9 @@ export async function fetchZenModelCatalog(
 					const id = String(item.id || "");
 					const lower = id.toLowerCase();
 
-					// 排除非对话类模型与已知已下架/废弃模型
+					// 排除非对话类内部模型与已知已下架/废弃模型
 					if (
-						lower.startsWith("jev-") ||
-						lower.includes("jev") ||
+						lower === "test" ||
 						lower.includes("system-1") ||
 						lower === "mimo-v2.5-free" ||
 						lower === "ling-3.0-flash-fin-free" ||
@@ -248,6 +262,48 @@ export async function fetchZenModelCatalog(
 					}
 				}
 			}
+		}
+
+		// 尝试从官方 models.opencode.ai/api.json 深度补齐上下文规格与模态
+		try {
+			const apiRes = await fetch("https://models.opencode.ai/api.json", {
+				signal: AbortSignal.timeout(5_000),
+			}).catch(() => null);
+			if (apiRes && apiRes.ok) {
+				const apiDoc = (await apiRes.json()) as { opencode?: { models?: Record<string, any> } };
+				const opModels = apiDoc?.opencode?.models;
+				if (opModels && typeof opModels === "object") {
+					for (const [id, raw] of Object.entries(opModels)) {
+						const lower = id.toLowerCase();
+						const isFreeModel =
+							raw.cost?.input === 0 ||
+							lower.includes("free") ||
+							lower.endsWith("-free") ||
+							id === "big-pickle" ||
+							KNOWN_ZEN_FREE_MODELS[id] !== undefined;
+
+						if (isFreeModel && lower !== "test") {
+							const existing = modelsMap.get(id);
+							if (existing) {
+								const inferred = inferModelCapabilities(id, raw);
+								modelsMap.set(id, {
+									...existing,
+									contextWindow: raw.limit?.context || inferred.contextWindow || existing.contextWindow,
+									maxTokens: raw.limit?.output ? Math.min(raw.limit.output, 65536) : inferred.maxTokens || existing.maxTokens,
+									reasoning: typeof raw.reasoning === "boolean" ? raw.reasoning : existing.reasoning,
+									input: Array.isArray(raw.modalities?.input)
+										? raw.modalities.input.includes("image") ? ["text", "image"] : ["text"]
+										: existing.input,
+								});
+							} else if (lower.endsWith("-free") || lower.includes("free")) {
+								modelsMap.set(id, inferModelCapabilities(id, raw));
+							}
+						}
+					}
+				}
+			}
+		} catch {
+			// 忽略补充端点异常
 		}
 	} catch {
 		// 网络故障或离线时，基于已知与本地自定义模型安全运行
@@ -611,6 +667,7 @@ async function doSyncZenConfiguration(options: ZenSyncOptions = {}): Promise<Zen
 			"User-Agent": ZEN_USER_AGENT,
 			"x-opencode-client": "cli",
 			"x-opencode-session": targetSession,
+			"x-opencode-session-id": targetSession,
 			"x-opencode-project": generateZenProjectId(),
 			"x-session-affinity": targetSession,
 			"X-Session-Id": targetSession,
@@ -633,6 +690,7 @@ async function doSyncZenConfiguration(options: ZenSyncOptions = {}): Promise<Zen
 			"User-Agent": ZEN_USER_AGENT,
 			"x-opencode-client": "cli",
 			"x-opencode-session": targetSession,
+			"x-opencode-session-id": targetSession,
 			"x-opencode-project": generateZenProjectId(),
 			"x-session-affinity": targetSession,
 			"X-Session-Id": targetSession,
@@ -734,6 +792,7 @@ export function updateCcSwitchDb(
 								headers["User-Agent"] = ZEN_USER_AGENT;
 								headers["x-opencode-client"] = "cli";
 								headers["x-opencode-session"] = sessionId;
+								headers["x-opencode-session-id"] = sessionId;
 								headers["x-opencode-project"] = generateZenProjectId();
 								headers["x-session-affinity"] = sessionId;
 								headers["X-Session-Id"] = sessionId;
@@ -746,6 +805,7 @@ export function updateCcSwitchDb(
 								headers["User-Agent"] = ZEN_USER_AGENT;
 								headers["x-opencode-client"] = "cli";
 								headers["x-opencode-session"] = sessionId;
+								headers["x-opencode-session-id"] = sessionId;
 								headers["x-opencode-project"] = generateZenProjectId();
 								headers["x-session-affinity"] = sessionId;
 								headers["X-Session-Id"] = sessionId;

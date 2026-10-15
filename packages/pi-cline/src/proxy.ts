@@ -568,17 +568,41 @@ export async function startClineProxyServer(
 
 			if (!onlyFree && token) {
 				try {
+					const headers: Record<string, string> = {
+						Authorization: `Bearer ${token}`,
+						...CLINE_CLIENT_HEADERS,
+					};
 					// 尝试向上游同步，失败则快速回退本地已知免费模型
-					const upstreamRes = await fetch(`${CLINE_BASE_URL}/models`, {
-						headers: {
-							Authorization: `Bearer ${token}`,
-							...CLINE_CLIENT_HEADERS,
-						},
+					let upstreamRes = await fetch(`${CLINE_BASE_URL}/models`, {
+						headers,
 						signal: AbortSignal.timeout(10_000),
 					}).catch(() => null);
 
+					if (!upstreamRes || !upstreamRes.ok) {
+						upstreamRes = await fetch(`${CLINE_BASE_URL}/models`, {
+							headers: CLINE_CLIENT_HEADERS,
+							signal: AbortSignal.timeout(8_000),
+						}).catch(() => null);
+					}
+
 					if (upstreamRes && upstreamRes.ok) {
 						const data = await upstreamRes.json();
+						if (data && Array.isArray(data.data)) {
+							const existingIds = new Set(data.data.map((m: any) => m.id));
+							for (const freeModel of Object.values(KNOWN_CLINE_FREE_MODELS)) {
+								if (!existingIds.has(freeModel.id)) {
+									data.data.push({
+										id: freeModel.id,
+										object: "model",
+										created: Math.floor(Date.now() / 1000),
+										owned_by: "cline",
+										permission: [],
+										root: freeModel.id,
+										parent: null,
+									});
+								}
+							}
+						}
 						res.writeHead(200, { "Content-Type": "application/json" });
 						res.end(JSON.stringify(data));
 						return;

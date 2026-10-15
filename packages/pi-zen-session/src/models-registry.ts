@@ -10,7 +10,7 @@ import type { ZenModelDefinition } from "./types.js";
 export const ZEN_PROVIDER_ID = "opencode-zen-free";
 export const ZEN_RESPONSES_PROVIDER_ID = "opencode-zen-free-responses";
 export const ZEN_BASE_URL = "https://opencode.ai/zen/v1";
-export const ZEN_USER_AGENT = "opencode/1.18.32 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14";
+export const ZEN_USER_AGENT = "opencode/latest/2.0.28/cli";
 
 /**
  * 判定模型 ID 是否属于必须走 OpenAI Responses API 协议的端点模型 (如 Meta Muse Spark 家族)
@@ -212,6 +212,26 @@ export const KNOWN_ZEN_FREE_MODELS: Record<string, ZenModelDefinition> = {
 		thinkingLevelMap: MUSE_SPARK_THINKING_LEVELS,
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 	},
+	"cat-jam-free": {
+		id: "cat-jam-free",
+		name: "Cat Jam Free (OpenCode Zen)",
+		contextWindow: 262144,
+		maxTokens: 32768,
+		reasoning: true,
+		input: ["text", "image"],
+		thinkingLevelMap: STANDARD_THINKING_LEVELS,
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+	},
+	"deepseek-v4.1-flash-free": {
+		id: "deepseek-v4.1-flash-free",
+		name: "DeepSeek V4.1 Flash Free (OpenCode Zen)",
+		contextWindow: 1000000,
+		maxTokens: 32768,
+		reasoning: true,
+		input: ["text", "image"],
+		thinkingLevelMap: STANDARD_THINKING_LEVELS,
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+	},
 };
 
 /**
@@ -277,6 +297,8 @@ export function inferModelCapabilities(
 		lower.includes("256k") ||
 		(lower.includes("nemotron") && lower.includes("lightning")) ||
 		lower.includes("ling") ||
+		lower.includes("cat-jam") ||
+		lower.includes("catjam") ||
 		(lower.includes("kimi") && !lower.includes("k3"))
 	) {
 		contextWindow = 262144;
@@ -393,6 +415,10 @@ export function inferModelCapabilities(
 		lower.includes("mimo") ||
 		lower.includes("muse") ||
 		lower.includes("step") ||
+		lower.includes("cat-jam") ||
+		lower.includes("catjam") ||
+		lower.includes("deepseek-v4.1") ||
+		lower.includes("deepseekv4.1") ||
 		lower.includes("gpt-4o") ||
 		lower.includes("gpt-5")
 	) {
@@ -803,6 +829,28 @@ export function resolveZenModelId(rawId?: string): string {
 		lower === "longcat-2.5-preview-free"
 	) {
 		return "longcat-2.5-preview-free";
+	}
+	if (
+		lower === "cat-jam" ||
+		lower === "catjam" ||
+		lower === "cat-jam-free" ||
+		lower === "catjam-free" ||
+		lower === "jam"
+	) {
+		return "cat-jam-free";
+	}
+	if (
+		lower === "deepseek" ||
+		lower === "deepseek-free" ||
+		lower === "deepseek-v4.1" ||
+		lower === "deepseek-v4.1-free" ||
+		lower === "deepseek-v4.1-flash" ||
+		lower === "deepseek-v4.1-flash-free" ||
+		lower === "deepseekv4.1" ||
+		lower === "deepseekv4" ||
+		lower === "deepseek-v4"
+	) {
+		return "deepseek-v4.1-flash-free";
 	}
 
 	// 3. 若直接匹配已知免费模型

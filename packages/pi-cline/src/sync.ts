@@ -213,16 +213,30 @@ export async function fetchClineModelCatalog(
 
 	// 3. 安全查询远端模型元数据列表 (严格仅使用 GET /models，绝不大批量测试 completions，0 Token 0 扣费消耗)
 	try {
-		const res = await fetch(`${CLINE_BASE_URL}/models`, {
-			method: "GET",
-			headers: {
-				Authorization: `Bearer ${apiKey.trim()}`,
-				...CLINE_CLIENT_HEADERS,
-			},
-			signal: AbortSignal.timeout(15_000),
-		});
+		const headers: Record<string, string> = {
+			...CLINE_CLIENT_HEADERS,
+		};
+		if (apiKey && apiKey.trim()) {
+			headers["Authorization"] = `Bearer ${apiKey.trim()}`;
+		}
 
-		if (res.ok) {
+		let res = await fetch(`${CLINE_BASE_URL}/models`, {
+			method: "GET",
+			headers,
+			signal: AbortSignal.timeout(15_000),
+		}).catch(() => null);
+
+		if ((!res || !res.ok) && headers["Authorization"]) {
+			res = await fetch(`${CLINE_BASE_URL}/models`, {
+				method: "GET",
+				headers: {
+					...CLINE_CLIENT_HEADERS,
+				},
+				signal: AbortSignal.timeout(10_000),
+			}).catch(() => null);
+		}
+
+		if (res && res.ok) {
 			const data = (await res.json()) as { data?: Array<{ id: string; [key: string]: unknown }> };
 			if (data && Array.isArray(data.data) && data.data.length > 0) {
 				// 将远端返回的免费模型推断并合入 (仅限零额度免费模型，与 Zen 保持一致)

@@ -25,8 +25,11 @@ export const CLINE_CLIENT_HEADERS: Record<string, string> = {
 	"x-platform-version": "1.106.0",
 	"x-client-type": "cline-vscode",
 	"http-referer": "https://cline.bot",
+	"HTTP-Referer": "https://cline.bot",
 	"x-platform": "vscode",
+	"X-Platform": "vscode",
 	"x-title": "Cline",
+	"X-Title": "Cline",
 };
 
 export const STANDARD_THINKING_LEVELS: Record<string, string | null> = {
