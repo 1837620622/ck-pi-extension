@@ -54,21 +54,26 @@ OpenCode Zen 免费模型同步、双协议路由 (Completions & Responses)、�
 - **官方算法深度逆向**：
   完整对齐 OpenCode 客户端 `Identifier.descending("ses")` 与 `Identifier.ascending("msg")` 算法，生成 30 位降序会话 ID 与升序请求 ID，支持毫秒级时间戳反解。
 
-- **全套官方级伪装请求头**：
-  自动注入全部 7 个官方客户端对齐请求头：
-  - `User-Agent`: `opencode/1.18.32 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14`
+- **全套官方级伪装请求头 (v2 规约严格对齐)**：
+  自动注入全部官方客户端对齐请求头：
+  - `User-Agent`: `opencode/latest/2.0.28/cli`
   - `x-opencode-client`: `cli`
   - `x-opencode-session`: `ses_<12位反转时间戳十六进制><14位Base62>`
-  - `x-opencode-request`: `msg_<12位升序时间戳十六进制><14位Base62>`（每次 HTTP 请求唯一）
-  - `x-opencode-project`: `prj_<16位工作区哈希>`（与官方项目哈希行为对齐）
+  - `x-opencode-session-id`: 与 session 严格同步
+  - `x-opencode-project`: `global` (官方 v2 免密通道强校验项目空间标识)
   - `x-session-affinity`: 与 session 严格同步
   - `X-Session-Id`: 与 session 严格同步
+  - `Authorization`: `Bearer public` (官方池化免密凭据，无需 API Key)
+  *(严格剔除 v1 废弃请求头 `x-opencode-request` 与 `HTTP-Referer`，杜绝连接重置或 403 异常)*
+
+- **官方 v2 闸门指纹工具注入 (read & shell)**：
+  严格基于 OpenCode CLI 官方 `read` 与 `shell` 函数原型进行逐字指纹对齐，消除 `tool_choice: "none"` 导致的 403 FreeTierError。
 
 - **25 分钟平滑轮换与 401/403 自动换新自愈**：
   官方后端免费会话限制约 1 小时（超时直接 403 `FreeTierError`）。本插件在底层拦截器和生命周期钩子中设置 25 分钟主动换新阈值，且在收到 401/403 异常时当场自动轮换并重试，彻底杜绝死锁。
 
 - **全局 Fetch 底层拦截与会话压缩 403 根治**：
-  Pi 执行上下文压缩时常发起纯文本无工具请求，导致网关拦截。底层拦截器自动注入官方 6 大核心工具链（`bash`, `edit`, `glob`, `grep`, `read`, `write`）与 `tool_choice: "none"`，并对 ChatCompletions 执行 SSE-to-JSON 汇聚反序列化，彻底解决压缩卡死。
+  Pi 执行上下文压缩时常发起纯文本无工具请求，导致网关拦截。底层拦截器自动注入官方工具指纹，并对 ChatCompletions 执行 SSE-to-JSON 汇聚反序列化，彻底解决压缩卡死。
 
 - **同模型 3 次透明重试自愈**：
   遇网络抖动、网关超时（500/502/503/504/520-525/533）或上游伪 200 空响应（`Provider returned an empty response`）时，底层无损流预读并在内存中自动进行 3 次指数退避重试，严禁擅自跨模型降级。
@@ -222,6 +227,11 @@ pi install git:github.com/1837620622/ck-pi-extension
     - 针对 Pi 会话压缩默认传入的 1600 tokens 极小 token 预算，请求拦截层强制将其提升至 16384 tokens，并在压缩总结请求中强制压制深思考（`reasoning_effort: "low"`），从根本上避免深思考模型耗尽 token cap 触发截断；
     - 流式响应重构器（`reconstructedStream`）全面重构为行缓冲分包安全 TransformStream，逐帧捕获并自动规范化 `finish_reason: "length"` 与 `finish_reason: "content_filter"` 为 `"stop"`；
     - 在遇到安全策略阻断且尚未生成有效内容时，自动合成规范的结构化会话进度检查点，确保会话压缩 100% 成功完成并平滑进入后续对话。
+- `0.1.27`：
+  - **100% 官方免密公用通道 (Zero-Config Keyless)**：无需配置任何 API Key，默认注入 `Authorization: Bearer public` 官方池化凭据，零门槛即开即用；
+  - **官方 v2 闸门指纹严格对齐**：端点规范化至 `/inference/v1`，严格剔除 v1 专有 `x-opencode-request` 与 `HTTP-Referer`，`x-opencode-project` 锁定为官方强校验 `global`；
+  - **官方 v2.0.26 工具集逐字对齐**：精准注入官方 `read` 与 `shell` 双工具指纹，彻底移除触发 403 FreeTierError 的 `tool_choice: "none"`；
+  - **最新免费模型扩充**：扩充支持 `glm-5.3-flash-free` (1M), `nemotron-3.5-super-vl-free` (1M), `deepseek-v4.1-flash-free` (1M) 等最新免费模型。
 - `0.1.23`：
   - **核心修复会话压缩失败与 Token Cap 崩溃问题 (`generation hit the token cap and the summary is incomplete`)**：
     - 调优压缩输出上限至 16,384 tokens，并在压缩总结请求中强制设置 `reasoning_effort: "low"` 并剔除冗余思考，避免深度推理模型（如 `fledge-alpha-free`）耗尽 token 额度；

@@ -227,6 +227,39 @@ export const KNOWN_CLINE_FREE_MODELS: Record<string, ClineModelDefinition> = {
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 		isFree: true,
 	},
+	"nvidia/nemotron-3.5-super-vl:free": {
+		id: "nvidia/nemotron-3.5-super-vl:free",
+		name: "NVIDIA Nemotron 3.5 Super VL (1M Free) (Cline Free)",
+		contextWindow: 1048576,
+		maxTokens: 32768,
+		reasoning: true,
+		input: ["text", "image"],
+		thinkingLevelMap: STANDARD_THINKING_LEVELS,
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		isFree: true,
+	},
+	"recursive/flint-v1.0:free": {
+		id: "recursive/flint-v1.0:free",
+		name: "Recursive Flint v1.0 (262k Free) (Cline Free)",
+		contextWindow: 262144,
+		maxTokens: 32768,
+		reasoning: true,
+		input: ["text"],
+		thinkingLevelMap: STANDARD_THINKING_LEVELS,
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		isFree: true,
+	},
+	"xingchen-agi/xing4.0-29b-a4b:free": {
+		id: "xingchen-agi/xing4.0-29b-a4b:free",
+		name: "XingChen 4.0 29B A4B (262k Free) (Cline Free)",
+		contextWindow: 262144,
+		maxTokens: 32768,
+		reasoning: true,
+		input: ["text"],
+		thinkingLevelMap: STANDARD_THINKING_LEVELS,
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		isFree: true,
+	},
 	"apodex/apodex-1.1-mini:free": {
 		id: "apodex/apodex-1.1-mini:free",
 		name: "Apodex 1.1 Mini (Free) (Cline Free)",
@@ -344,6 +377,22 @@ export function resolveFreeModelId(rawId?: string): string {
 	}
 	if (lower === "apodex" || lower === "apodex-mini" || lower === "apodex-1.1" || lower === "apodex-1.1-mini") {
 		return "apodex/apodex-1.1-mini:free";
+	}
+	if (lower === "flint" || lower === "recursive-flint" || lower === "flint-v1" || lower === "recursive/flint") {
+		return "recursive/flint-v1.0:free";
+	}
+	if (lower === "xing" || lower === "xing4" || lower === "xingchen" || lower === "xingchen-agi/xing4.0-29b-a4b") {
+		return "xingchen-agi/xing4.0-29b-a4b:free";
+	}
+	if (
+		lower === "super-vl" ||
+		lower === "supervl" ||
+		lower === "nemotron-vl" ||
+		lower === "nemotron-super-vl" ||
+		lower === "nemotron-3.5-super-vl" ||
+		lower === "nvidia/nemotron-3.5-super-vl"
+	) {
+		return "nvidia/nemotron-3.5-super-vl:free";
 	}
 
 	// 3. 若直接匹配已知免费或隐身模型

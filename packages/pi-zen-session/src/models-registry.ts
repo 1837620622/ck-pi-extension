@@ -9,8 +9,10 @@ import type { ZenModelDefinition } from "./types.js";
 
 export const ZEN_PROVIDER_ID = "opencode-zen-free";
 export const ZEN_RESPONSES_PROVIDER_ID = "opencode-zen-free-responses";
-export const ZEN_BASE_URL = "https://opencode.ai/zen/v1";
+export const ZEN_BASE_URL = "https://opencode.ai/inference/v1";
+export const ZEN_LEGACY_BASE_URL = "https://opencode.ai/zen/v1";
 export const ZEN_USER_AGENT = "opencode/latest/2.0.28/cli";
+export const ZEN_DEFAULT_KEY = "public";
 
 /**
  * 判定模型 ID 是否属于必须走 OpenAI Responses API 协议的端点模型 (如 Meta Muse Spark 家族)
@@ -225,7 +227,27 @@ export const KNOWN_ZEN_FREE_MODELS: Record<string, ZenModelDefinition> = {
 	"deepseek-v4.1-flash-free": {
 		id: "deepseek-v4.1-flash-free",
 		name: "DeepSeek V4.1 Flash Free (OpenCode Zen)",
-		contextWindow: 1000000,
+		contextWindow: 1048576,
+		maxTokens: 32768,
+		reasoning: true,
+		input: ["text", "image"],
+		thinkingLevelMap: STANDARD_THINKING_LEVELS,
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+	},
+	"glm-5.3-flash-free": {
+		id: "glm-5.3-flash-free",
+		name: "GLM 5.3 Flash Free (OpenCode Zen)",
+		contextWindow: 1048576,
+		maxTokens: 32768,
+		reasoning: true,
+		input: ["text", "image"],
+		thinkingLevelMap: STANDARD_THINKING_LEVELS,
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+	},
+	"nemotron-3.5-super-vl-free": {
+		id: "nemotron-3.5-super-vl-free",
+		name: "NVIDIA Nemotron 3.5 Super VL Free (OpenCode Zen)",
+		contextWindow: 1048576,
 		maxTokens: 32768,
 		reasoning: true,
 		input: ["text", "image"],
@@ -568,15 +590,43 @@ export function resolveModelDefinitions(
 }
 
 /**
- * OpenCode 官方 6 大核心内置工具规范与 Schema 定义
- * 严格对齐 OpenCode 客户端源码（按字母顺序排序：bash, edit, glob, grep, read, write）
+ * OpenCode 官方 v2 闸门强校验指纹工具 (read 与 shell)
+ * 逐字对齐 OpenCode 官方 v2.0.26 CLI，description 与 schema 必须完全一致以防 403 FreeTierError
  */
-export const OPENCODE_OFFICIAL_TOOLS = [
+export const OPENCODE_V2_FINGERPRINT_TOOLS = [
 	{
 		type: "function",
 		function: {
-			name: "bash",
-			description: "Execute bash commands in the workspace environment",
+			name: "read",
+			description:
+				"Read the contents of a file or directory. Supports text files, images, and PDFs. Images and PDFs are presented directly to the model. Each text line is prefixed by its 1-based line number as <line>: <content>. The prefix is for reference and is not part of the file content. Directory entries are returned one per line. Use offset and limit to read large files or directories in sections. Prefer one larger read over many small slices, and use grep to find specific content in large files.",
+			parameters: {
+				type: "object",
+				properties: {
+					path: { type: "string", description: "File or directory to read" },
+					offset: {
+						type: "integer",
+						minimum: 0,
+						description: "The line or directory entry to start reading from (1-based)",
+					},
+					limit: {
+						type: "integer",
+						minimum: 0,
+						description:
+							"The maximum number of lines or directory entries to read (defaults to and capped at 2000)",
+					},
+				},
+				required: ["path"],
+				additionalProperties: false,
+			},
+		},
+	},
+	{
+		type: "function",
+		function: {
+			name: "shell",
+			description:
+				"Execute a shell command and return its output. Commands run on Linux using bash. Quote file paths containing spaces or special characters. Prefer dedicated tools over shell commands when possible. When output is large, the full result is saved to a file and a truncated preview is returned. Rely on automatic truncation unless filtering the output is more useful. Commands accept an optional timeout, background commands have no timeout by default. Background commands return immediately, and you will be notified when they complete.",
 			parameters: {
 				type: "object",
 				properties: {
@@ -584,139 +634,40 @@ export const OPENCODE_OFFICIAL_TOOLS = [
 					workdir: {
 						type: "string",
 						description:
-							"Working directory. Defaults to the active Location; relative paths resolve within it.",
+							"Working directory to execute the command in. Defaults to the current working directory. When possible, avoid changing directories in the command and set the working directory here instead.",
+					},
+					timeout: {
+						type: "integer",
+						minimum: 0,
+						description:
+							"Timeout in milliseconds. Set to 0 to disable the timeout. Defaults to 120000 for foreground commands. Background commands have no timeout by default.",
+					},
+					background: {
+						type: "boolean",
+						description:
+							"Run the command in the background and return immediately (useful for dev servers and long-running builds). You do not need to use '&' at the end of the command when using this parameter. You will be notified when it completes. DO NOT poll for completion.",
 					},
 				},
 				required: ["command"],
-			},
-		},
-	},
-	{
-		type: "function",
-		function: {
-			name: "edit",
-			description: "Edit a file by replacing text",
-			parameters: {
-				type: "object",
-				properties: {
-					path: {
-						type: "string",
-						description:
-							"File path to edit. Relative paths resolve within the active Location.",
-					},
-					oldString: { type: "string", description: "The string in the file to be replaced" },
-					newString: { type: "string", description: "The string to replace oldString with" },
-					replaceAll: {
-						type: "boolean",
-						description: "Replace all occurrences of oldString (default false)",
-					},
-				},
-				required: ["path", "oldString", "newString"],
-			},
-		},
-	},
-	{
-		type: "function",
-		function: {
-			name: "glob",
-			description: "Find files matching a glob pattern",
-			parameters: {
-				type: "object",
-				properties: {
-					pattern: {
-						type: "string",
-						description: 'File pattern to include in the search (e.g. "*.js", "*.{ts,tsx}")',
-					},
-					path: {
-						type: "string",
-						description: "Relative directory to search in. Defaults to the active Location.",
-					},
-				},
-				required: ["pattern"],
-			},
-		},
-	},
-	{
-		type: "function",
-		function: {
-			name: "grep",
-			description: "Search file contents using regular expressions",
-			parameters: {
-				type: "object",
-				properties: {
-					pattern: {
-						type: "string",
-						description: "Regex pattern to search for in file contents",
-					},
-					path: {
-						type: "string",
-						description: "Relative directory to search in. Defaults to the active Location.",
-					},
-				},
-				required: ["pattern"],
-			},
-		},
-	},
-	{
-		type: "function",
-		function: {
-			name: "read",
-			description: "Read file contents",
-			parameters: {
-				type: "object",
-				properties: {
-					path: {
-						type: "string",
-						description:
-							"File path to read. Relative paths resolve within the active Location.",
-					},
-					offset: {
-						type: "number",
-						description: "The 1-based directory entry or text line offset",
-					},
-					limit: {
-						type: "number",
-						description: "The maximum number of lines to read (defaults to 2000)",
-					},
-				},
-				required: ["path"],
-			},
-		},
-	},
-	{
-		type: "function",
-		function: {
-			name: "write",
-			description: "Write or overwrite file contents",
-			parameters: {
-				type: "object",
-				properties: {
-					path: {
-						type: "string",
-						description:
-							"File path to write. Relative paths resolve within the active Location.",
-					},
-					content: {
-						type: "string",
-						description: "Content to write to the file",
-					},
-				},
-				required: ["path", "content"],
+				additionalProperties: false,
 			},
 		},
 	},
 ];
 
+export const OPENCODE_OFFICIAL_TOOLS = OPENCODE_V2_FINGERPRINT_TOOLS;
+
 /**
- * OpenCode 官方 6 大核心内置工具规范与 Schema 定义 (OpenAI Responses 协议展平格式)
- * Responses API 工具直接以顶级 name/description/parameters 组织，不嵌套在 .function 内部
+ * OpenCode 官方工具规范 (OpenAI Responses 协议展平格式)
  */
-export const OPENCODE_OFFICIAL_RESPONSES_TOOLS = OPENCODE_OFFICIAL_TOOLS.map((t) => ({
+export const OPENCODE_V2_RESPONSES_TOOLS = OPENCODE_V2_FINGERPRINT_TOOLS.map((t) => ({
 	type: "function",
 	name: t.function.name,
 	description: t.function.description,
 	parameters: t.function.parameters,
 }));
+
+export const OPENCODE_OFFICIAL_RESPONSES_TOOLS = OPENCODE_V2_RESPONSES_TOOLS;
 
 /**
  * 免费模型路由映射与别名解析算法 (Zen Model Alias Router)
@@ -829,6 +780,23 @@ export function resolveZenModelId(rawId?: string): string {
 		lower === "longcat-2.5-preview-free"
 	) {
 		return "longcat-2.5-preview-free";
+	}
+	if (
+		lower === "glm" ||
+		lower === "glm-5.3" ||
+		lower === "glm-5.3-flash" ||
+		lower === "glm-5.3-flash-free"
+	) {
+		return "glm-5.3-flash-free";
+	}
+	if (
+		lower === "super-vl" ||
+		lower === "supervl" ||
+		lower === "nemotron-vl" ||
+		lower === "nemotron-3.5-super-vl" ||
+		lower === "nemotron-3.5-super-vl-free"
+	) {
+		return "nemotron-3.5-super-vl-free";
 	}
 	if (
 		lower === "cat-jam" ||

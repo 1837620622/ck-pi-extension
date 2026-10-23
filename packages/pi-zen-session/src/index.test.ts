@@ -152,7 +152,7 @@ describe("OpenCode Zen 模型库与参数注册表测试", () => {
 		assert.equal(KNOWN_ZEN_FREE_MODELS["cat-jam-free"].contextWindow, 262144);
 		assert.equal(KNOWN_ZEN_FREE_MODELS["cat-jam-free"].reasoning, true);
 		assert.ok(KNOWN_ZEN_FREE_MODELS["cat-jam-free"].input.includes("image"));
-		assert.equal(KNOWN_ZEN_FREE_MODELS["deepseek-v4.1-flash-free"].contextWindow, 1000000);
+		assert.equal(KNOWN_ZEN_FREE_MODELS["deepseek-v4.1-flash-free"].contextWindow, 1048576);
 		assert.equal(KNOWN_ZEN_FREE_MODELS["deepseek-v4.1-flash-free"].reasoning, true);
 		assert.ok(KNOWN_ZEN_FREE_MODELS["deepseek-v4.1-flash-free"].input.includes("image"));
 	});
@@ -293,8 +293,8 @@ describe("OpenCode Zen 模型库与参数注册表测试", () => {
 		assert.equal(completions.length, allModels.length - 2);
 		assert.ok(completions.every((m) => !m.id.startsWith("muse-spark")));
 
-		// 验证 OPENCODE_OFFICIAL_RESPONSES_TOOLS 展平结构
-		assert.equal(OPENCODE_OFFICIAL_RESPONSES_TOOLS.length, 6);
+		// 验证 OPENCODE_OFFICIAL_RESPONSES_TOOLS 展平结构 (read 与 shell)
+		assert.equal(OPENCODE_OFFICIAL_RESPONSES_TOOLS.length, 2);
 		for (const tool of OPENCODE_OFFICIAL_RESPONSES_TOOLS) {
 			assert.equal(tool.type, "function");
 			assert.ok(typeof (tool as any).name === "string" && (tool as any).name.length > 0);
@@ -499,7 +499,7 @@ describe("Extension API 钩子拦截测试", () => {
 			headerEvent.headers["x-opencode-session-id"],
 			headerEvent.headers["x-opencode-session"],
 		);
-		assert.ok(headerEvent.headers["x-opencode-project"].startsWith("prj_"));
+		assert.equal(headerEvent.headers["x-opencode-project"], "global");
 		assert.equal(
 			headerEvent.headers["x-session-affinity"],
 			headerEvent.headers["x-opencode-session"],
@@ -508,10 +508,11 @@ describe("Extension API 钩子拦截测试", () => {
 			headerEvent.headers["X-Session-Id"],
 			headerEvent.headers["x-opencode-session"],
 		);
-		assert.ok(headerEvent.headers["x-opencode-request"].startsWith("msg_"));
+		assert.equal(headerEvent.headers["x-opencode-request"], undefined);
+		assert.equal(headerEvent.headers["Authorization"], "Bearer public");
 	});
 
-	it("before_provider_request 当缺失 tools 时注入官方 6 件套，已有 tools 时严格字母重排", () => {
+	it("before_provider_request 当缺失 tools 时注入官方 read 与 shell 指纹工具", () => {
 		const handlers: Record<string, Function[]> = {};
 		const mockPi: any = {
 			registerProvider: () => {},
@@ -527,20 +528,20 @@ describe("Extension API 钩子拦截测试", () => {
 
 		const ctx = { model: { provider: "opencode-zen-free", id: "mimo-v2.5-free" } };
 
-		// 1. 无 tools 时补齐官方 6 大核心工具，并补充 stream_options
+		// 1. 无 tools 时补齐官方 read 与 shell 核心工具，并补充 stream_options
 		const emptyPayloadEvent = { payload: { model: "mimo-v2.5-free", messages: [], stream: true } };
 		const transformed = handlers["before_provider_request"][0](emptyPayloadEvent, ctx);
 		assert.ok(transformed);
 		assert.ok(Array.isArray(transformed.tools));
-		assert.equal(transformed.tools.length, 6);
+		assert.equal(transformed.tools.length, 2);
 		assert.deepEqual(
 			transformed.tools.map((t: any) => t.function.name),
-			["bash", "edit", "glob", "grep", "read", "write"],
+			["read", "shell"],
 		);
-		assert.equal(transformed.tool_choice, "auto");
+		assert.equal(transformed.tool_choice, undefined);
 		assert.deepEqual(transformed.stream_options, { include_usage: true });
 
-		// 2. 已有 tools 时严格按照函数名升序重排
+		// 2. 已有 tools 时确保 read 与 shell 指纹工具均已补齐
 		const disorderedTools = [
 			{ type: "function", function: { name: "write" } },
 			{ type: "function", function: { name: "bash" } },
@@ -551,11 +552,8 @@ describe("Extension API 钩子拦截测试", () => {
 		};
 		const sortedResult = handlers["before_provider_request"][0](withToolsEvent, ctx);
 		assert.ok(sortedResult);
-		assert.deepEqual(
-			sortedResult.tools.map((t: any) => t.function.name),
-			["bash", "read", "write"],
-			"已有工具必须按官方规约字母升序重排",
-		);
+		assert.ok(sortedResult.tools.some((t: any) => t.function.name === "read"));
+		assert.ok(sortedResult.tools.some((t: any) => t.function.name === "shell"));
 
 		// 3. reasoning_effort 规范化对齐：将 max / xhigh 降级映射为 high，将 minimal 映射为 low
 		const maxEffortEvent = {
@@ -652,8 +650,9 @@ describe("Extension API 钩子拦截测试", () => {
 		const result = handlers["before_provider_request"][0](responsesEvent, museCtx);
 		assert.ok(result);
 		assert.ok(Array.isArray(result.tools));
-		assert.equal(result.tools.length, 6);
-		assert.equal(result.tools[0].name, "bash");
+		assert.equal(result.tools.length, 2);
+		assert.equal(result.tools[0].name, "read");
+		assert.equal(result.tools[1].name, "shell");
 		assert.equal(result.tools[0].function, undefined, "Responses tools 严禁包含嵌套 function");
 		// 严禁注入 ChatCompletions 专有字段
 		assert.equal(result.stream_options, undefined);
@@ -673,10 +672,10 @@ describe("Extension API 钩子拦截测试", () => {
 		};
 		const sortedResult = handlers["before_provider_request"][0](customToolsEvent, museCtx);
 		assert.ok(sortedResult);
-		assert.deepEqual(
-			sortedResult.tools.map((t: any) => t.name),
-			["bash", "write"],
-		);
+		assert.ok(sortedResult.tools.some((t: any) => t.name === "read"));
+		assert.ok(sortedResult.tools.some((t: any) => t.name === "shell"));
+		assert.ok(sortedResult.tools.some((t: any) => t.name === "write"));
+		assert.ok(sortedResult.tools.some((t: any) => t.name === "bash"));
 	});
 
 	it("after_provider_response 遇 401 或 403 自动触发 Session 换新和用户通知", () => {
@@ -839,12 +838,12 @@ describe("Extension API 钩子拦截测试", () => {
 		assert.equal(headers.get("User-Agent"), "opencode/latest/2.0.28/cli");
 		assert.equal(headers.get("x-opencode-client"), "cli");
 		assert.ok(headers.get("x-opencode-session")?.startsWith("ses_"));
-		assert.ok(headers.get("x-opencode-request")?.startsWith("msg_"));
+		assert.equal(headers.get("x-opencode-request"), null);
 
 		const parsedBody = JSON.parse(String(capturedInit?.body));
 		assert.ok(Array.isArray(parsedBody.tools), "拦截器必须为 Summarization 请求强制注入 tools");
-		assert.equal(parsedBody.tools.length, 6, "必须注入官方 6 大核心工具");
-		assert.equal(parsedBody.tool_choice, "none", "当请求本身无工具时 tool_choice 必须为 none 保证纯文本输出");
+		assert.equal(parsedBody.tools.length, 2, "必须注入官方 read 与 shell 核心工具");
+		assert.equal(parsedBody.tool_choice, undefined, "v2 闸门对 tool_choice: none 判 403，必须安全剔除");
 		assert.deepEqual(parsedBody.stream_options, { include_usage: true });
 	});
 
@@ -935,14 +934,15 @@ describe("Extension API 钩子拦截测试", () => {
 			body: JSON.stringify(rawResponsesPayload),
 		});
 
-		assert.equal(capturedUrl, "https://opencode.ai/zen/v1/responses");
+		assert.equal(capturedUrl, "https://opencode.ai/inference/v1/responses");
 		assert.ok(capturedInit?.body);
 		const parsed = JSON.parse(String(capturedInit.body));
 
 		// 必须注入 Responses 扁平 tools 且 tool_choice 为 "auto" (防止 OpenCode 400 FreeTier 校验错误)
 		assert.ok(Array.isArray(parsed.tools));
-		assert.equal(parsed.tools.length, 6);
-		assert.equal(parsed.tools[0].name, "bash");
+		assert.equal(parsed.tools.length, 2);
+		assert.equal(parsed.tools[0].name, "read");
+		assert.equal(parsed.tools[1].name, "shell");
 		assert.equal(parsed.tools[0].function, undefined);
 		assert.equal(parsed.tool_choice, "auto");
 
@@ -988,7 +988,7 @@ describe("Extension API 钩子拦截测试", () => {
 
 		await mockGlobal.fetch(requestObj);
 
-		assert.equal(capturedUrl, "https://opencode.ai/zen/v1/chat/completions");
+		assert.equal(capturedUrl, "https://opencode.ai/inference/v1/chat/completions");
 		const headers = new Headers(capturedInit?.headers);
 		assert.equal(
 			headers.get("Authorization"),

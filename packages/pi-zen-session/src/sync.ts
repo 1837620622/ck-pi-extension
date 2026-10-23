@@ -395,7 +395,7 @@ export function getStoredZenApiKey(authPath = defaultAuthPath(), modelsPath = de
 		// 忽略读取错误
 	}
 
-	return null;
+	return "public";
 }
 
 let activeInMemorySessionId: string | null = null;
@@ -498,13 +498,13 @@ export function getZenStatusInfo(
 		// ignore
 	}
 
-	let maskedKey = "未配置";
-	if (key) {
+	let maskedKey = "免密公用通道 (Bearer public)";
+	if (key && key !== "public") {
 		maskedKey = key.length > 12 ? `${key.slice(0, 8)}...${key.slice(-4)}` : "******";
 	}
 
 	return {
-		hasKey: Boolean(key),
+		hasKey: true,
 		maskedKey,
 		sessionId,
 		sessionAgeMinutes: ageMinutes,
@@ -583,10 +583,7 @@ async function doSyncZenConfiguration(options: ZenSyncOptions = {}): Promise<Zen
 	const authPath = options.authPath ?? defaultAuthPath();
 	const dbPath = options.dbPath ?? defaultCcSwitchDbPath();
 
-	const resolvedApiKey = options.apiKey?.trim() || getStoredZenApiKey(authPath, modelsPath);
-	if (!resolvedApiKey) {
-		throw new Error("未检测到 OpenCode Zen API Key。请指定 Key，例如：/zen oc_sk_xxx");
-	}
+	const resolvedApiKey = options.apiKey?.trim() || getStoredZenApiKey(authPath, modelsPath) || "public";
 
 	// 1. 在线校验 API Key 并拉取最新免费模型及精确能力规格
 	let resolvedModels: ZenModelDefinition[] = [];
@@ -662,13 +659,13 @@ async function doSyncZenConfiguration(options: ZenSyncOptions = {}): Promise<Zen
 	modelsDoc.providers[ZEN_PROVIDER_ID] = {
 		baseUrl: ZEN_BASE_URL,
 		api: "openai-completions",
-		apiKey: resolvedApiKey || "",
+		apiKey: resolvedApiKey || "public",
 		headers: {
 			"User-Agent": ZEN_USER_AGENT,
 			"x-opencode-client": "cli",
+			"x-opencode-project": "global",
 			"x-opencode-session": targetSession,
 			"x-opencode-session-id": targetSession,
-			"x-opencode-project": generateZenProjectId(),
 			"x-session-affinity": targetSession,
 			"X-Session-Id": targetSession,
 		},
@@ -685,13 +682,13 @@ async function doSyncZenConfiguration(options: ZenSyncOptions = {}): Promise<Zen
 	modelsDoc.providers[ZEN_RESPONSES_PROVIDER_ID] = {
 		baseUrl: ZEN_BASE_URL,
 		api: "openai-responses",
-		apiKey: resolvedApiKey || "",
+		apiKey: resolvedApiKey || "public",
 		headers: {
 			"User-Agent": ZEN_USER_AGENT,
 			"x-opencode-client": "cli",
+			"x-opencode-project": "global",
 			"x-opencode-session": targetSession,
 			"x-opencode-session-id": targetSession,
-			"x-opencode-project": generateZenProjectId(),
 			"x-session-affinity": targetSession,
 			"X-Session-Id": targetSession,
 		},
@@ -793,7 +790,7 @@ export function updateCcSwitchDb(
 								headers["x-opencode-client"] = "cli";
 								headers["x-opencode-session"] = sessionId;
 								headers["x-opencode-session-id"] = sessionId;
-								headers["x-opencode-project"] = generateZenProjectId();
+								headers["x-opencode-project"] = "global";
 								headers["x-session-affinity"] = sessionId;
 								headers["X-Session-Id"] = sessionId;
 								cfg.headers = headers;
@@ -806,7 +803,7 @@ export function updateCcSwitchDb(
 								headers["x-opencode-client"] = "cli";
 								headers["x-opencode-session"] = sessionId;
 								headers["x-opencode-session-id"] = sessionId;
-								headers["x-opencode-project"] = generateZenProjectId();
+								headers["x-opencode-project"] = "global";
 								headers["x-session-affinity"] = sessionId;
 								headers["X-Session-Id"] = sessionId;
 								opts.headers = headers;
@@ -869,14 +866,24 @@ try:
                             cfg['apiKey'] = api_key
                             headers = cfg.get('headers', {})
                             headers['User-Agent'] = user_agent
+                            headers['x-opencode-client'] = 'cli'
+                            headers['x-opencode-project'] = 'global'
                             headers['x-opencode-session'] = session_id
+                            headers['x-opencode-session-id'] = session_id
+                            headers['x-session-affinity'] = session_id
+                            headers['X-Session-Id'] = session_id
                             cfg['headers'] = headers
                         elif app == 'opencode':
                             opts = cfg.get('options', {})
                             opts['apiKey'] = api_key
                             headers = opts.get('headers', {})
                             headers['User-Agent'] = user_agent
+                            headers['x-opencode-client'] = 'cli'
+                            headers['x-opencode-project'] = 'global'
                             headers['x-opencode-session'] = session_id
+                            headers['x-opencode-session-id'] = session_id
+                            headers['x-session-affinity'] = session_id
+                            headers['X-Session-Id'] = session_id
                             opts['headers'] = headers
                             cfg['options'] = opts
                         c.execute("UPDATE providers SET settings_config = ? WHERE id = ? AND app_type = ?", (json.dumps(cfg), p_id, app))

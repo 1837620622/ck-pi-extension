@@ -17,9 +17,11 @@ const B62_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxy
 let lastTimestamp = 0;
 let sequenceCounter = 0;
 
+export const OPENCODE_PROJECT = "global";
+
 /**
  * 生成符合 OpenCode 官方规约的项目标识符 (前缀 prj_)
- * 基于工作目录哈希，保持确定性与隔离性
+ * 注意：Free Tier 推理接口要求必须使用 "global"，本函数保留用于兼容
  */
 export function generateZenProjectId(cwd: string = process.cwd()): string {
 	const hash = createHash("sha256").update(cwd).digest("hex").slice(0, 16);
@@ -28,6 +30,9 @@ export function generateZenProjectId(cwd: string = process.cwd()): string {
 
 /**
  * 生成符合 OpenCode 官方规约的 Session ID (前缀 ses_)
+ * 逆向自 OpenCode 官方客户端 Identifier.descending("ses") 算法：
+ * 采用 48 位 bit-inverted 降序时间戳：~(ts_ms * 4096 + seq)
+ * seq 严格限制在 1-63 范围，保证低 12 位落在 0xfc0-0xfff 窗口
  * @param timestampMs 毫秒时间戳，默认为 Date.now()
  */
 export function generateZenSessionId(timestampMs: number = Date.now()): string {
@@ -35,11 +40,11 @@ export function generateZenSessionId(timestampMs: number = Date.now()): string {
 		lastTimestamp = timestampMs;
 		sequenceCounter = 0;
 	}
-	sequenceCounter++;
+	sequenceCounter = (sequenceCounter % 63) + 1;
 
 	// 0x1000n = 4096n
 	const combined = BigInt(timestampMs) * 0x1000n + BigInt(sequenceCounter);
-	const inverted = ~combined;
+	const inverted = ~combined & 0xffffffffffffn;
 
 	// 6 字节（48 位）大端序十六进制
 	let hex = "";
@@ -112,6 +117,21 @@ export function generateZenRequestId(timestampMs: number = Date.now()): string {
 export function isValidZenSessionId(id: string | null | undefined): boolean {
 	if (!id || typeof id !== "string") return false;
 	return /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/.test(id);
+}
+
+/**
+ * 官方 v2 闸门放行的 counter 1-63 降序时间戳十六进制特征 (低 12 位位于 0xfc0-0xfff)
+ */
+export const SESSION_DESCENDING_RE = /^[0-9a-f]{9}f[c-f][0-9a-f]$/;
+
+/**
+ * 校验 Session ID 是否符合官方 v2 降序时间戳硬性准入规范
+ */
+export function isCanonicalZenSessionId(id: string | null | undefined): boolean {
+	if (!id || typeof id !== "string") return false;
+	const trimmed = id.trim();
+	if (!isValidZenSessionId(trimmed)) return false;
+	return SESSION_DESCENDING_RE.test(trimmed.slice(4, 16));
 }
 
 /**

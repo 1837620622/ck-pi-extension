@@ -138,6 +138,9 @@ describe("Cline 模型注册表与能力推断测试", () => {
 		assert.equal(resolveFreeModelId("reasoning"), "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free");
 		assert.equal(resolveFreeModelId("laguna"), "poolside/laguna-s-2.1:free");
 		assert.equal(resolveFreeModelId("dots"), "dots-studio/dots-3-note-preview:free");
+		assert.equal(resolveFreeModelId("flint"), "recursive/flint-v1.0:free");
+		assert.equal(resolveFreeModelId("xing"), "xingchen-agi/xing4.0-29b-a4b:free");
+		assert.equal(resolveFreeModelId("super-vl"), "nvidia/nemotron-3.5-super-vl:free");
 		assert.equal(resolveFreeModelId("apodex"), "apodex/apodex-1.1-mini:free");
 
 		// 自动追加 :free 保护

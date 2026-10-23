@@ -1,7 +1,7 @@
 # ck-pi-cline
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.1.9-blue.svg?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.1.12-blue.svg?style=flat-square" alt="Version" />
   <img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License" />
   <img src="https://img.shields.io/badge/runtime-Pi%20Agent%20%3E%3D0.85.0-orange.svg?style=flat-square" alt="Pi Runtime" />
   <img src="https://img.shields.io/badge/protocol-OpenAI%20Compatible-informational.svg?style=flat-square" alt="Protocol" />
@@ -303,6 +303,15 @@ console.log(completion.choices[0].message.content);
 
 ## 六、版本变更记录 (Changelog)
 
+### v0.1.12
+* **同步最新活跃零扣费模型矩阵**：
+  * 新增收录 `recursive/flint-v1.0:free` (262k 编程 MoE 模型，专注 Agentic Coding)；
+  * 新增收录 `xingchen-agi/xing4.0-29b-a4b:free` (262k 智能推理 MoE 模型)；
+  * 新增收录 `nvidia/nemotron-3.5-super-vl:free` (1M 超大上下文多模态视觉模型)；
+  * 扩展短别名解析：支持 `flint`, `xing`, `super-vl` 快捷访问。
+* **隔离与指纹防御优化**：
+  * 完善 `isClineModelTarget`，精准捕获 `recursive/` 与 `xingchen-agi/` 供应商前缀。
+
 ### v0.1.9
 * **全新免费模型深度对接与别名路由强化 (New Free Models & Alias Enhancement)**：
   * 正式收录并适配最新 `apodex/apodex-1.1-mini:free` 等活跃免费模型，强化 `dots-studio/dots-3-note-preview:free`、`cohere/north-mini-code:free` 等代码与推理模型；
@@ -361,7 +370,7 @@ console.log(completion.choices[0].message.content);
 # ck-pi-cline (English)
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.1.9-blue.svg?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.1.12-blue.svg?style=flat-square" alt="Version" />
   <img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License" />
   <img src="https://img.shields.io/badge/runtime-Pi%20Agent%20%3E%3D0.85.0-orange.svg?style=flat-square" alt="Pi Runtime" />
   <img src="https://img.shields.io/badge/protocol-OpenAI%20Compatible-informational.svg?style=flat-square" alt="Protocol" />

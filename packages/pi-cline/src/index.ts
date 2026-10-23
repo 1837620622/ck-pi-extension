@@ -138,6 +138,8 @@ export function isClineModelTarget(
 		id.startsWith("qwen/") ||
 		id.startsWith("thinkingmachines/") ||
 		id.startsWith("apodex/") ||
+		id.startsWith("recursive/") ||
+		id.startsWith("xingchen-agi/") ||
 		id === "openrouter/free" ||
 		id === "openrouter/fusion" ||
 		id === "openrouter/pareto-code" ||
