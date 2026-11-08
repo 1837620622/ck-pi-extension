@@ -454,9 +454,9 @@ describe("配置同步与落盘逻辑测试", () => {
 			const opencodeRow = rows.find((r) => r.app_type === "opencode");
 			const responsesPiRow = respRows[0];
 
-			const piCfg = JSON.parse(piRow!.settings_config);
-			const opencodeCfg = JSON.parse(opencodeRow!.settings_config);
-			const responsesPiCfg = JSON.parse(responsesPiRow.settings_config);
+			const piCfg = JSON.parse(String(piRow!.settings_config));
+			const opencodeCfg = JSON.parse(String(opencodeRow!.settings_config));
+			const responsesPiCfg = JSON.parse(String(responsesPiRow.settings_config));
 
 			assert.equal(piCfg.headers["x-opencode-session"], testSession);
 			assert.equal(opencodeCfg.options.headers["x-opencode-session"], testSession);

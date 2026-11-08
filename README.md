@@ -89,6 +89,9 @@ pi install git:github.com/1837620622/ck-pi-extension
 
 ## 更新日志
 
+- `ck-pi-guard 0.1.3` / `ck-pi-rail 0.1.1`（npm 发布）：
+  - `ck-pi-guard`：适配 pi-coding-agent 1.5 类型（`/guard` 指令签名、重试请求体 `BodyInit`），运行时行为不变；
+  - `ck-pi-rail`：发布仓库中已有的 0.1.1 改动到 npm（此前 npm 停留在 0.1.0）。
 - `ck-pi-zen-session 0.1.28` / `ck-pi-cline 0.1.13`：
   - **修正上下文上限（#3）**：`deepseek-v4.1-flash-free` 与 `glm-5.3-flash-free` 由误报的 1M 更正为 200K 上下文 / 32K 输出（以 models.dev 元数据为准），远端同步、本地 `zen-models.json` 与推断结果都会被压回该上限；
   - **修复 `/zen model` 报错**：`fetchZenModelCatalog is not defined`；
@@ -246,6 +249,9 @@ Do not enable `pi-rail` concurrently with other statusline extensions (`@narumit
 
 ## Changelog
 
+- `ck-pi-guard 0.1.3` / `ck-pi-rail 0.1.1` (npm release):
+  - `ck-pi-guard`: pi-coding-agent 1.5 typing (`/guard` handler signature, retry body `BodyInit`); no runtime change;
+  - `ck-pi-rail`: publishes the 0.1.1 changes already in the repo (npm was still on 0.1.0).
 - `ck-pi-zen-session 0.1.28` / `ck-pi-cline 0.1.13`:
   - **Context cap fix (#3)**: `deepseek-v4.1-flash-free` and `glm-5.3-flash-free` now report 200K context / 32K output instead of 1M (per models.dev); the cap is enforced after remote sync, local `zen-models.json` and heuristics;
   - **Fixed `/zen model`**: `fetchZenModelCatalog is not defined`;
