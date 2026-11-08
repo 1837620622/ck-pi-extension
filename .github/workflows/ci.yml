@@ -16,5 +16,5 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - run: npm test
-      - run: npm pack --dry-run
+      - run: npm run pack:check
       - run: npm audit --omit=dev

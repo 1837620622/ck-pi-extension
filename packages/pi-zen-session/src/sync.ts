@@ -37,6 +37,7 @@ import {
 	formatThinkingSummary,
 	formatTokens,
 	inferModelCapabilities,
+	applyZenServerLimits,
 	KNOWN_ZEN_FREE_MODELS,
 	partitionZenModels,
 	resolveModelDefinitions,
@@ -98,7 +99,7 @@ export function loadCustomZenModels(customPath = defaultCustomZenModelsPath()): 
 				list.push(inferModelCapabilities(item.trim()));
 			} else if (item && typeof item === "object" && typeof item.id === "string" && item.id.trim()) {
 				const inferred = inferModelCapabilities(item.id.trim(), item);
-				list.push({
+				list.push(applyZenServerLimits({
 					...inferred,
 					name: typeof item.name === "string" && item.name.trim() ? item.name.trim() : inferred.name,
 					contextWindow:
@@ -110,7 +111,7 @@ export function loadCustomZenModels(customPath = defaultCustomZenModelsPath()): 
 							? item.maxTokens
 							: inferred.maxTokens,
 					reasoning: typeof item.reasoning === "boolean" ? item.reasoning : inferred.reasoning,
-				});
+				}));
 			}
 		}
 		return list;
@@ -286,7 +287,7 @@ export async function fetchZenModelCatalog(
 							const existing = modelsMap.get(id);
 							if (existing) {
 								const inferred = inferModelCapabilities(id, raw);
-								modelsMap.set(id, {
+								modelsMap.set(id, applyZenServerLimits({
 									...existing,
 									contextWindow: raw.limit?.context || inferred.contextWindow || existing.contextWindow,
 									maxTokens: raw.limit?.output ? Math.min(raw.limit.output, 65536) : inferred.maxTokens || existing.maxTokens,
@@ -294,7 +295,7 @@ export async function fetchZenModelCatalog(
 									input: Array.isArray(raw.modalities?.input)
 										? raw.modalities.input.includes("image") ? ["text", "image"] : ["text"]
 										: existing.input,
-								});
+								}));
 							} else if (lower.endsWith("-free") || lower.includes("free")) {
 								modelsMap.set(id, inferModelCapabilities(id, raw));
 							}
