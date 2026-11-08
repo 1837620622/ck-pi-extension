@@ -89,6 +89,11 @@ pi install git:github.com/1837620622/ck-pi-extension
 
 ## 更新日志
 
+- `ck-pi-zen-session 0.1.28` / `ck-pi-cline 0.1.13`：
+  - **修正上下文上限（#3）**：`deepseek-v4.1-flash-free` 与 `glm-5.3-flash-free` 由误报的 1M 更正为 200K 上下文 / 32K 输出（以 models.dev 元数据为准），远端同步、本地 `zen-models.json` 与推断结果都会被压回该上限；
+  - **修复 `/zen model` 报错**：`fetchZenModelCatalog is not defined`；
+  - **适配 pi-coding-agent 1.5**：`compat` 下沉到每个模型；开发依赖升级至 `^1.5.0`，`npm audit --omit=dev` 清零；
+  - **CI**：改为按 workspace 执行 `npm pack --dry-run`，修复 verify 自 10 月起持续失败。
 - `ck-pi-zen-session 0.1.24` / `ck-pi-cline 0.1.9`：
   - **最新官方免费模型矩阵全量上线与对接**：
     - OpenCode Zen：新增上线阶跃星辰最新旗舰 `step-5-preview-free`（200k 上下文，32k 输出，多模态视觉与全档位思考）、`exo-free`（128k 快反）、`nemotron-3-ultra-free`（1M 超长上下文）、`ling-3.0-flash-fin-free`（262k 加速模型）、`jev-1.13-free`（128k 快反）；
@@ -241,6 +246,11 @@ Do not enable `pi-rail` concurrently with other statusline extensions (`@narumit
 
 ## Changelog
 
+- `ck-pi-zen-session 0.1.28` / `ck-pi-cline 0.1.13`:
+  - **Context cap fix (#3)**: `deepseek-v4.1-flash-free` and `glm-5.3-flash-free` now report 200K context / 32K output instead of 1M (per models.dev); the cap is enforced after remote sync, local `zen-models.json` and heuristics;
+  - **Fixed `/zen model`**: `fetchZenModelCatalog is not defined`;
+  - **pi-coding-agent 1.5**: `compat` moved onto each model; devDeps bumped to `^1.5.0`, `npm audit --omit=dev` clean;
+  - **CI**: pack each workspace instead of the private root, fixing the verify job that had failed since October.
 - `ck-pi-zen-session 0.1.24` / `ck-pi-cline 0.1.9`:
   - **Full integration of latest official free model catalogs**:
     - OpenCode Zen: Added StepFun flagship `step-5-preview-free` (200k context, 32k output, vision multimodal and configurable reasoning), `exo-free` (128k fast response), `nemotron-3-ultra-free` (1M context), `ling-3.0-flash-fin-free` (262k fast model), and `jev-1.13-free` (128k);

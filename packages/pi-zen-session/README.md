@@ -1,7 +1,7 @@
 # ck-pi-zen-session
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.1.24-blue.svg?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.1.28-blue.svg?style=flat-square" alt="Version" />
   <img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License" />
   <img src="https://img.shields.io/badge/runtime-Pi%20Agent%20%3E%3D0.85.0-orange.svg?style=flat-square" alt="Pi Runtime" />
   <img src="https://img.shields.io/badge/protocol-Completions%20%26%20Responses-informational.svg?style=flat-square" alt="Protocol" />
@@ -219,6 +219,10 @@ pi install git:github.com/1837620622/ck-pi-extension
 
 ## 七、更新日志
 
+- `0.1.28`：
+  - 修正 `deepseek-v4.1-flash-free`、`glm-5.3-flash-free` 上下文为 200K / 输出 32K（原误报 1M，#3），同步与本地配置均强制该上限；
+  - 修复 `/zen model` 的 `fetchZenModelCatalog is not defined`；
+  - 适配 pi-coding-agent 1.5（`compat` 按模型声明）。
 - `0.1.24`：
   - **全新对接与上线 OpenCode Zen 最新免费模型矩阵**：
     - 全面收录并高精适配 13 款可用官方免费模型：包含最新旗舰 `step-5-preview-free`（阶跃星辰 Step-5 免费模型，200k 上下文，32k 输出，多模态视觉与全档位思考）、`exo-free`（128k 极速快反）、`nemotron-3-ultra-free`（1M 超长上下文）、`ling-3.0-flash-fin-free`（262k 金融与代码加速）、`jev-1.13-free`（128k 快反）；
@@ -231,7 +235,7 @@ pi install git:github.com/1837620622/ck-pi-extension
   - **100% 官方免密公用通道 (Zero-Config Keyless)**：无需配置任何 API Key，默认注入 `Authorization: Bearer public` 官方池化凭据，零门槛即开即用；
   - **官方 v2 闸门指纹严格对齐**：端点规范化至 `/inference/v1`，严格剔除 v1 专有 `x-opencode-request` 与 `HTTP-Referer`，`x-opencode-project` 锁定为官方强校验 `global`；
   - **官方 v2.0.26 工具集逐字对齐**：精准注入官方 `read` 与 `shell` 双工具指纹，彻底移除触发 403 FreeTierError 的 `tool_choice: "none"`；
-  - **最新免费模型扩充**：扩充支持 `glm-5.3-flash-free` (1M), `nemotron-3.5-super-vl-free` (1M), `deepseek-v4.1-flash-free` (1M) 等最新免费模型。
+  - **最新免费模型扩充**：扩充支持 `glm-5.3-flash-free` (200K，0.1.28 更正), `nemotron-3.5-super-vl-free` (1M), `deepseek-v4.1-flash-free` (200K，0.1.28 更正) 等最新免费模型。
 - `0.1.23`：
   - **核心修复会话压缩失败与 Token Cap 崩溃问题 (`generation hit the token cap and the summary is incomplete`)**：
     - 调优压缩输出上限至 16,384 tokens，并在压缩总结请求中强制设置 `reasoning_effort: "low"` 并剔除冗余思考，避免深度推理模型（如 `fledge-alpha-free`）耗尽 token 额度；
@@ -272,7 +276,7 @@ pi install git:github.com/1837620622/ck-pi-extension
 # ck-pi-zen-session (English)
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.1.23-blue.svg?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.1.28-blue.svg?style=flat-square" alt="Version" />
   <img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License" />
   <img src="https://img.shields.io/badge/runtime-Pi%20Agent%20%3E%3D0.85.0-orange.svg?style=flat-square" alt="Pi Runtime" />
   <img src="https://img.shields.io/badge/protocol-Completions%20%26%20Responses-informational.svg?style=flat-square" alt="Protocol" />
@@ -483,6 +487,10 @@ pi install git:github.com/1837620622/ck-pi-extension
 
 ## 7. Changelog
 
+- `0.1.28`:
+  - `deepseek-v4.1-flash-free` and `glm-5.3-flash-free` capped at 200K context / 32K output (was misreported as 1M, #3), enforced after sync and local config;
+  - Fixed `fetchZenModelCatalog is not defined` in `/zen model`;
+  - pi-coding-agent 1.5 compatibility (per-model `compat`).
 - `0.1.24`:
   - **Full integration & synchronization with OpenCode Zen latest free models**:
     - Registered 13 active official free models: `step-5-preview-free` (StepFun Step-5, 200k context, 32k output, multimodal vision & full thinking levels), `exo-free` (128k fast reflex), `nemotron-3-ultra-free` (1M long context), `ling-3.0-flash-fin-free` (262k finance/code accelerated), `jev-1.13-free` (128k fast reflex);
