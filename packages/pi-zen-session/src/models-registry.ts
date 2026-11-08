@@ -227,8 +227,8 @@ export const KNOWN_ZEN_FREE_MODELS: Record<string, ZenModelDefinition> = {
 	"deepseek-v4.1-flash-free": {
 		id: "deepseek-v4.1-flash-free",
 		name: "DeepSeek V4.1 Flash Free (OpenCode Zen)",
-		contextWindow: 1048576,
-		maxTokens: 32768,
+		contextWindow: 200000,
+		maxTokens: 32000,
 		reasoning: true,
 		input: ["text", "image"],
 		thinkingLevelMap: STANDARD_THINKING_LEVELS,
@@ -237,8 +237,8 @@ export const KNOWN_ZEN_FREE_MODELS: Record<string, ZenModelDefinition> = {
 	"glm-5.3-flash-free": {
 		id: "glm-5.3-flash-free",
 		name: "GLM 5.3 Flash Free (OpenCode Zen)",
-		contextWindow: 1048576,
-		maxTokens: 32768,
+		contextWindow: 200000,
+		maxTokens: 32000,
 		reasoning: true,
 		input: ["text", "image"],
 		thinkingLevelMap: STANDARD_THINKING_LEVELS,
@@ -257,6 +257,27 @@ export const KNOWN_ZEN_FREE_MODELS: Record<string, ZenModelDefinition> = {
 };
 
 /**
+ * 服务端强制的上下文/输出上限（以 models.dev 官方元数据为准）。
+ * 远端同步、本地 zen-models.json 或启发式推断给出更大的值时一律压回这里，
+ * 否则 Pi 会按虚报的窗口计算 compaction 时机，长会话在服务端被拒。
+ * 来源: https://github.com/anomalyco/models.dev/tree/dev/providers/opencode/models (2026-11-09)
+ */
+export const ZEN_SERVER_LIMITS: Record<string, { context: number; output: number }> = {
+	"deepseek-v4.1-flash-free": { context: 200000, output: 32000 },
+	"glm-5.3-flash-free": { context: 200000, output: 32000 },
+};
+
+export function applyZenServerLimits<T extends { id: string; contextWindow: number; maxTokens: number }>(def: T): T {
+	const limit = ZEN_SERVER_LIMITS[def.id] ?? ZEN_SERVER_LIMITS[def.id.replace(/^opencode(-zen)?\//, "")];
+	if (!limit) return def;
+	return {
+		...def,
+		contextWindow: Math.min(def.contextWindow, limit.context),
+		maxTokens: Math.min(def.maxTokens, limit.output),
+	};
+}
+
+/**
  * 高精智能模型能力与参数解析引擎
  * 当用户输入新 Key 或探测到未收录的免费/零额度模型时，全自动深度识别：
  * 1. 上下文窗口限制 (Context Window)
@@ -266,6 +287,13 @@ export const KNOWN_ZEN_FREE_MODELS: Record<string, ZenModelDefinition> = {
  * 5. 0 额度计费配置 (Zero-Cost Billing)
  */
 export function inferModelCapabilities(
+	modelId: string,
+	raw?: Record<string, unknown>,
+): ZenModelDefinition {
+	return applyZenServerLimits(inferModelCapabilitiesRaw(modelId, raw));
+}
+
+function inferModelCapabilitiesRaw(
 	modelId: string,
 	raw?: Record<string, unknown>,
 ): ZenModelDefinition {
@@ -875,6 +903,8 @@ export function sanitizePiModelDefinition(raw: any): PiModelEntry | null {
 			? Math.floor(raw.maxTokens)
 			: 32768;
 
+	const capped = applyZenServerLimits({ id, contextWindow, maxTokens });
+
 	const reasoning = Boolean(raw.reasoning);
 
 	const rawInput = Array.isArray(raw.input) ? raw.input : [];
@@ -898,8 +928,8 @@ export function sanitizePiModelDefinition(raw: any): PiModelEntry | null {
 	const result: PiModelEntry = {
 		id,
 		name,
-		contextWindow,
-		maxTokens,
+		contextWindow: capped.contextWindow,
+		maxTokens: capped.maxTokens,
 		reasoning,
 		input,
 		cost,

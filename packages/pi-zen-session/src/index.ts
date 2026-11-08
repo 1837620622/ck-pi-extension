@@ -46,6 +46,7 @@ export {
 };
 import {
 	addCustomZenModel,
+	fetchZenModelCatalog,
 	getActiveZenSessionId,
 	getStoredZenApiKey,
 	getStoredZenModels,
@@ -96,14 +97,16 @@ export function registerZenProviderToPi(
 					"x-session-affinity": sessionId,
 					"X-Session-Id": sessionId,
 				},
-				compat: {
-					maxTokensField: "max_tokens",
-					requiresReasoningContentOnAssistantMessages: true,
-					supportsDeveloperRole: false,
-					supportsStore: false,
-					supportsUsageInStreaming: true,
-				},
-				models: completions,
+				models: completions.map((m) => ({
+					...m,
+					compat: {
+						maxTokensField: "max_tokens",
+						requiresReasoningContentOnAssistantMessages: true,
+						supportsDeveloperRole: false,
+						supportsStore: false,
+						supportsUsageInStreaming: true,
+					},
+				})),
 			});
 		} catch {
 			// 忽略重复注册
@@ -124,11 +127,13 @@ export function registerZenProviderToPi(
 					"x-session-affinity": sessionId,
 					"X-Session-Id": sessionId,
 				},
-				compat: {
-					supportsDeveloperRole: false,
-					supportsStore: false,
-				},
-				models: responses,
+				models: responses.map((m) => ({
+					...m,
+					compat: {
+						supportsDeveloperRole: false,
+						supportsStore: false,
+					},
+				})),
 			});
 		} catch {
 			// 忽略重复注册

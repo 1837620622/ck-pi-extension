@@ -749,14 +749,16 @@ export function registerClineProviderToPi(
 			headers: {
 				...CLINE_CLIENT_HEADERS,
 			},
-			compat: {
-				maxTokensField: "max_tokens",
-				requiresReasoningContentOnAssistantMessages: true,
-				supportsDeveloperRole: false,
-				supportsStore: false,
-				supportsUsageInStreaming: true,
-			},
-			models: sanitizedModels,
+			models: sanitizedModels.map((m) => ({
+				...m,
+				compat: {
+					maxTokensField: "max_tokens",
+					requiresReasoningContentOnAssistantMessages: true,
+					supportsDeveloperRole: false,
+					supportsStore: false,
+					supportsUsageInStreaming: true,
+				},
+			})),
 		});
 	} catch {
 		// 忽略重复或上下文过期注册

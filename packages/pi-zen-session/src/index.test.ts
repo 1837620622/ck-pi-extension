@@ -25,6 +25,7 @@ import {
 	isResponsesProtocolModelId,
 	partitionZenModels,
 	OPENCODE_OFFICIAL_RESPONSES_TOOLS,
+	applyZenServerLimits,
 } from "./models-registry.js";
 import { DatabaseSync } from "node:sqlite";
 import {
@@ -152,7 +153,7 @@ describe("OpenCode Zen 模型库与参数注册表测试", () => {
 		assert.equal(KNOWN_ZEN_FREE_MODELS["cat-jam-free"].contextWindow, 262144);
 		assert.equal(KNOWN_ZEN_FREE_MODELS["cat-jam-free"].reasoning, true);
 		assert.ok(KNOWN_ZEN_FREE_MODELS["cat-jam-free"].input.includes("image"));
-		assert.equal(KNOWN_ZEN_FREE_MODELS["deepseek-v4.1-flash-free"].contextWindow, 1048576);
+		assert.equal(KNOWN_ZEN_FREE_MODELS["deepseek-v4.1-flash-free"].contextWindow, 200000);
 		assert.equal(KNOWN_ZEN_FREE_MODELS["deepseek-v4.1-flash-free"].reasoning, true);
 		assert.ok(KNOWN_ZEN_FREE_MODELS["deepseek-v4.1-flash-free"].input.includes("image"));
 	});
@@ -1460,3 +1461,28 @@ describe("Compaction 压缩防护、深度上下文修剪与透明重试机制�
 
 
 
+
+describe("Issue #3: 免费档服务端上下文上限", () => {
+	it("deepseek-v4.1-flash-free / glm-5.3-flash-free 固定为 200K / 32K", () => {
+		for (const id of ["deepseek-v4.1-flash-free", "glm-5.3-flash-free"]) {
+			const def = inferModelCapabilities(id);
+			assert.equal(def.contextWindow, 200000);
+			assert.equal(def.maxTokens, 32000);
+		}
+	});
+	it("远端同步返回 1M 也会被压回 200K", () => {
+		const def = inferModelCapabilities("deepseek-v4.1-flash-free", { context_length: 1048576, max_tokens: 384000 });
+		assert.equal(def.contextWindow, 200000);
+		assert.equal(def.maxTokens, 32000);
+	});
+	it("本地 zen-models.json 中残留的 1M 在 sanitize 时修正", () => {
+		const e = sanitizePiModelDefinition({ id: "deepseek-v4.1-flash-free", contextWindow: 1048576, maxTokens: 32768, input: ["text"] });
+		assert.equal(e?.contextWindow, 200000);
+		assert.equal(e?.maxTokens, 32000);
+	});
+	it("带 opencode/ 前缀的 ID 同样生效，其他模型不受影响", () => {
+		assert.equal(applyZenServerLimits({ id: "opencode/deepseek-v4.1-flash-free", contextWindow: 1000000, maxTokens: 1 }).contextWindow, 200000);
+		const other = { id: "big-pickle", contextWindow: 200000, maxTokens: 32000 };
+		assert.deepEqual(applyZenServerLimits(other), other);
+	});
+});
