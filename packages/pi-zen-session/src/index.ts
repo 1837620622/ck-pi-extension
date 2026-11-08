@@ -1501,9 +1501,10 @@ export default function piZenSession(pi: ExtensionAPI): void {
 				.map((cmd) => ({ value: cmd, label: cmd }));
 			return candidates.length > 0 ? candidates : null;
 		},
-		handler: async (args, ctx) => {
+		// 返回文本供测试与上层调用读取；pi 只要求 Promise<void>，忽略返回值
+		handler: (async (args: string, ctx: ExtensionCommandContext) => {
 			return await handleZenCommand(args, ctx, pi);
-		},
+		}) as unknown as (args: string, ctx: ExtensionCommandContext) => Promise<void>,
 	});
 }
 

@@ -338,7 +338,8 @@ export function installGatewayFetchInterceptor(
 				};
 
 				if (method !== "GET" && method !== "HEAD" && cachedBodySnapshot !== null) {
-					currentInit.body = cachedBodySnapshot;
+					// Uint8Array 在 Node fetch 中是合法 BodyInit；TS 5.7+ 的 ArrayBufferLike 泛型过严
+					currentInit.body = cachedBodySnapshot as BodyInit;
 					// Node 环境下提供 duplex 保障
 					(currentInit as any).duplex = "half";
 				} else if (method === "GET" || method === "HEAD") {

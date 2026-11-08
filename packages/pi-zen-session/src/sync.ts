@@ -177,7 +177,7 @@ export async function fetchZenFreeModels(apiKey: string): Promise<string[]> {
  * 校验 API Key 并拉取 OpenCode Zen 完整免费模型目录，深度解析上下文与思考等级
  */
 export async function fetchZenModelCatalog(
-	apiKey: string,
+	apiKey: string | null,
 	customPath = defaultCustomZenModelsPath(),
 ): Promise<ZenModelDefinition[]> {
 	const modelsMap = new Map<string, ZenModelDefinition>();
@@ -242,15 +242,19 @@ export async function fetchZenModelCatalog(
 						lower.includes("community") ||
 						lower.endsWith("-free");
 
+					const meta = item as {
+						free?: unknown;
+						is_free?: unknown;
+						tier?: unknown;
+						cost?: { input?: unknown; output?: unknown };
+						pricing?: { input?: unknown };
+					};
 					const isFreeByMetadata =
-						(item as { free?: boolean }).free === true ||
-						(item as { is_free?: boolean }).is_free === true ||
-						(item as { tier?: string }).tier === "free" ||
-						((item as { cost?: { input?: number; output?: number } }).cost &&
-							(item as { cost: { input: number; output: number } }).cost.input === 0 &&
-							(item as { cost: { input: number; output: number } }).cost.output === 0) ||
-						((item as { pricing?: { input?: number } }).pricing &&
-							(item as { pricing: { input: number } }).pricing.input === 0);
+						meta.free === true ||
+						meta.is_free === true ||
+						meta.tier === "free" ||
+						(meta.cost?.input === 0 && meta.cost?.output === 0) ||
+						meta.pricing?.input === 0;
 
 					const isKnown = KNOWN_ZEN_FREE_MODELS[id] !== undefined;
 
@@ -622,12 +626,14 @@ async function doSyncZenConfiguration(options: ZenSyncOptions = {}): Promise<Zen
 
 	// 2. 确定 Session ID：若显式强制更新或当前已过期，则生成全新合规 Session
 	const currentSession = getStoredZenSessionId(modelsPath);
-	let targetSession = currentSession;
+	let targetSession: string;
 	let isNewSession = false;
 
 	if (options.forceSession || !currentSession || isZenSessionExpired(currentSession, DEFAULT_SESSION_MAX_AGE_MS)) {
 		targetSession = generateZenSessionId();
 		isNewSession = true;
+	} else {
+		targetSession = currentSession;
 	}
 
 	// 3. 更新 ~/.pi/agent/models.json
