@@ -114,7 +114,7 @@ export function generateZenRequestId(timestampMs: number = Date.now()): string {
 /**
  * 校验字符串是否为标准 OpenCode Zen Session ID
  */
-export function isValidZenSessionId(id: string | null | undefined): boolean {
+export function isValidZenSessionId(id: string | null | undefined): id is string {
 	if (!id || typeof id !== "string") return false;
 	return /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/.test(id);
 }

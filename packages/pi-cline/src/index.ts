@@ -9,7 +9,9 @@
  * 5. 交互式 /cline 命令支持模型速切、Key 管理与代理监控。
  */
 
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
+
+type CommandHandler = (args: string, ctx: ExtensionCommandContext) => Promise<void>;
 import {
 	CLINE_BASE_URL,
 	CLINE_CLIENT_HEADERS,
@@ -896,9 +898,10 @@ export default function piCline(pi: ExtensionAPI): void {
 				.map((cmd) => ({ value: cmd, label: cmd }));
 			return candidates.length > 0 ? candidates : null;
 		},
-		handler: async (args: string, ctx: ExtensionCommandContext) => {
+		// 返回文本供测试与上层调用读取；pi 只要求 Promise<void>，忽略返回值
+		handler: (async (args: string, ctx: ExtensionCommandContext) => {
 			return await handleClineCommand(args, ctx, pi);
-		},
+		}) as unknown as CommandHandler,
 	});
 }
 
@@ -1320,7 +1323,7 @@ function maskKey(key: string): string {
 }
 
 function notify(
-	ctx: ExtensionCommandContext,
+	ctx: ExtensionContext,
 	message: string,
 	level: "info" | "warning" | "error" = "info",
 ): void {

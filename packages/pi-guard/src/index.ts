@@ -48,7 +48,8 @@ export default function piGuard(pi: ExtensionAPI): void {
 	// 3. 注册 /guard 诊断与控制指令
 	pi.registerCommand("guard", {
 		description: "查看或配置 ck-pi-guard 智能续行守护与边缘网关重试状态",
-		handler: async (args: string, ctx: ExtensionCommandContext) => {
+		// 返回文本供测试与上层调用读取；pi 只要求 Promise<void>，忽略返回值
+		handler: (async (args: string, ctx: ExtensionCommandContext) => {
 			const sub = (args || "").trim().toLowerCase();
 
 			if (sub === "on" || sub === "enable") {
@@ -100,6 +101,6 @@ export default function piGuard(pi: ExtensionAPI): void {
 			const report = lines.join("\n");
 			if (ctx.hasUI) ctx.ui.notify(report, "info");
 			return report;
-		},
+		}) as unknown as (args: string, ctx: ExtensionCommandContext) => Promise<void>,
 	});
 }
