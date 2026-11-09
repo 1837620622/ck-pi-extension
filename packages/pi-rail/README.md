@@ -3,7 +3,7 @@
 无表情、自适应满宽的 Pi 状态栏。
 
 ```bash
-pi install npm:ck-pi-rail
+pi install git:github.com/1837620622/ck-pi-extension
 ```
 
 合集仓库：[ck-pi-extension](https://github.com/1837620622/ck-pi-extension)。

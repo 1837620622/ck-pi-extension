@@ -78,10 +78,10 @@ Pi 原生内核收到该消息后，判定助手本轮已正常交代完毕，�
 
 ## 安装与配置
 
-### 方式一：通过 npm 安装为 Pi 插件包（推荐）
+### 方式一：从 GitHub 安装（推荐，含本仓库全部插件）
 在终端中执行：
 ```bash
-pi install npm:ck-pi-guard
+pi install git:github.com/1837620622/ck-pi-extension
 ```
 
 ### 方式二：手动在 `~/.pi/agent/settings.json` 中配置
@@ -89,7 +89,7 @@ pi install npm:ck-pi-guard
 ```json
 {
   "packages": [
-    "npm:ck-pi-guard"
+    "git:github.com/1837620622/ck-pi-extension"
   ]
 }
 ```

@@ -2,19 +2,27 @@
   "name": "ck-pi-extension-workspace",
   "private": true,
   "type": "module",
-  "description": "Monorepo for CK Pi extensions. NOT published: install ck-pi-rail / ck-pi-redkit individually.",
+  "description": "CK Pi extensions, distributed from GitHub: pi install git:github.com/1837620622/ck-pi-extension",
   "workspaces": [
     "packages/*"
   ],
   "scripts": {
     "test": "npm run test --workspaces --if-present",
-    "pack:check": "npm pack --workspaces --dry-run",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "manifest:check": "node -e \"const fs=require('fs');for(const f of require('./package.json').pi.extensions){if(!fs.existsSync(f)){console.error('missing',f);process.exit(1)}}console.log('manifest ok')\""
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^1.5.0",
     "@earendil-works/pi-tui": "^1.5.0",
     "esbuild": "0.28.1",
     "typescript": "^5.9.3"
+  },
+  "pi": {
+    "extensions": [
+      "./packages/pi-zen-session/src/index.ts",
+      "./packages/pi-cline/src/index.ts",
+      "./packages/pi-guard/src/index.ts",
+      "./packages/pi-rail/src/index.ts"
+    ]
   }
 }

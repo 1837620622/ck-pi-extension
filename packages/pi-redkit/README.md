@@ -4,7 +4,7 @@
 让 agent 接到目标立刻按专业方法开工。仅用于已获书面授权的安全交战。
 
 ```bash
-pi install npm:ck-pi-redkit
+（不随一键安装提供；本地路径安装：pi install ./packages/pi-redkit）
 ```
 
 合集仓库：[ck-pi-extension](https://github.com/1837620622/ck-pi-extension)。

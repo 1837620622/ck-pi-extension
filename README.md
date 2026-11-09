@@ -4,9 +4,9 @@
   <a href="#ck-pi-extension">中文</a> | <a href="#ck-pi-extension-en">English</a>
 </p>
 
-Pi 插件 monorepo：一个 GitHub 仓库，多个彼此独立的 npm 包，用户按需单装。
+Pi 插件 monorepo：通过 GitHub 分发（已停止发布 npm），一条命令安装全部插件，单个插件可在 `pi config` 中开关。
 
-| 插件 | npm 包 | 描述 | 文档 |
+| 插件 | 包名 | 描述 | 文档 |
 | --- | --- | --- | --- |
 | Pi Rail | `ck-pi-rail` | 无表情、自适应满宽状态栏 | [README](packages/pi-rail/README.md) |
 | Pi Redkit | `ck-pi-redkit` | 授权交战条令注入（渗透/逆向） | [README](packages/pi-redkit/README.md) |
@@ -34,11 +34,10 @@ Pi 插件 monorepo：一个 GitHub 仓库，多个彼此独立的 npm 包，用�
 按需单装，互不顺带：
 
 ```bash
-pi install npm:ck-pi-rail        # 状态栏
-pi install npm:ck-pi-redkit      # 条令注入
-pi install npm:ck-pi-zen-session # OpenCode Zen 免费模型与会话自动维护
-pi install npm:ck-pi-cline       # Cline 官方指纹、17 款零额度模型与本地反代
-pi install npm:ck-pi-guard       # 深度思考脱机守卫与网关重试
+pi install git:github.com/1837620622/ck-pi-extension
+pi update --extensions   # 升级到 main 最新提交
+# 固定版本：pi install git:github.com/1837620622/ck-pi-extension@<tag 或 commit>
+# 包含 zen-session、cline、guard、rail；redkit 不在一键安装内
 ```
 
 旧合集包 `ck-pi-extension` 已废弃（不再更新），新用户请装上面单包。
@@ -89,9 +88,9 @@ pi install git:github.com/1837620622/ck-pi-extension
 
 ## 更新日志
 
-- `ck-pi-guard 0.1.3` / `ck-pi-rail 0.1.1`（npm 发布）：
+- **分发方式改为 GitHub**：停止发布 npm，安装改为 `pi install git:github.com/1837620622/ck-pi-extension`；npm 上 ck-pi-zen-session / ck-pi-cline / ck-pi-guard 已标记 deprecated 并指向本仓库；`ck-pi-guard 0.1.3`、`ck-pi-rail 0.1.1` 的改动随 main 提供。
+- `ck-pi-guard 0.1.3` / `ck-pi-rail 0.1.1`：
   - `ck-pi-guard`：适配 pi-coding-agent 1.5 类型（`/guard` 指令签名、重试请求体 `BodyInit`），运行时行为不变；
-  - `ck-pi-rail`：发布仓库中已有的 0.1.1 改动到 npm（此前 npm 停留在 0.1.0）。
 - `ck-pi-zen-session 0.1.28` / `ck-pi-cline 0.1.13`：
   - **修正上下文上限（#3）**：`deepseek-v4.1-flash-free` 与 `glm-5.3-flash-free` 由误报的 1M 更正为 200K 上下文 / 32K 输出（以 models.dev 元数据为准），远端同步、本地 `zen-models.json` 与推断结果都会被压回该上限；
   - **修复 `/zen model` 报错**：`fetchZenModelCatalog is not defined`；
@@ -164,9 +163,9 @@ MIT License，见 [LICENSE](LICENSE)。
   <a href="#ck-pi-extension">中文</a> | <a href="#ck-pi-extension-en">English</a>
 </p>
 
-Monorepo for Pi extensions: one GitHub repository containing independent npm packages. Install only what you need.
+Monorepo for Pi extensions, distributed from GitHub (npm publishing stopped). One command installs all; toggle each one in `pi config`.
 
-| Extension | npm Package | Description | Documentation |
+| Extension | Package | Description | Documentation |
 | --- | --- | --- | --- |
 | Pi Rail | `ck-pi-rail` | Pure-tech adaptive full-width status line | [README](packages/pi-rail/README.md) |
 | Pi Redkit | `ck-pi-redkit` | Authorized rules of engagement injection (pentest / reverse) | [README](packages/pi-redkit/README.md) |
@@ -194,11 +193,10 @@ If you find these extensions helpful and time-saving, consider sponsoring this p
 Install packages individually on demand:
 
 ```bash
-pi install npm:ck-pi-rail        # Statusline
-pi install npm:ck-pi-redkit      # Rules of engagement injection
-pi install npm:ck-pi-zen-session # OpenCode Zen free models & session auto-maintenance
-pi install npm:ck-pi-cline       # Cline official fingerprint, 17 zero-cost models & local proxy
-pi install npm:ck-pi-guard       # Thinking offline sentinel & gateway retry
+pi install git:github.com/1837620622/ck-pi-extension
+pi update --extensions   # update to latest main
+# Pin: pi install git:github.com/1837620622/ck-pi-extension@<tag or commit>
+# Installs zen-session, cline, guard, rail; redkit is not included
 ```
 
 The legacy bundle package `ck-pi-extension` is deprecated (no longer updated); new users should install individual packages above.
@@ -249,9 +247,9 @@ Do not enable `pi-rail` concurrently with other statusline extensions (`@narumit
 
 ## Changelog
 
-- `ck-pi-guard 0.1.3` / `ck-pi-rail 0.1.1` (npm release):
+- **Distribution moved to GitHub**: npm publishing stopped; install with `pi install git:github.com/1837620622/ck-pi-extension`. ck-pi-zen-session / ck-pi-cline / ck-pi-guard are deprecated on npm and point here; `ck-pi-guard 0.1.3` and `ck-pi-rail 0.1.1` ship via main.
+- `ck-pi-guard 0.1.3` / `ck-pi-rail 0.1.1`:
   - `ck-pi-guard`: pi-coding-agent 1.5 typing (`/guard` handler signature, retry body `BodyInit`); no runtime change;
-  - `ck-pi-rail`: publishes the 0.1.1 changes already in the repo (npm was still on 0.1.0).
 - `ck-pi-zen-session 0.1.28` / `ck-pi-cline 0.1.13`:
   - **Context cap fix (#3)**: `deepseek-v4.1-flash-free` and `glm-5.3-flash-free` now report 200K context / 32K output instead of 1M (per models.dev); the cap is enforced after remote sync, local `zen-models.json` and heuristics;
   - **Fixed `/zen model`**: `fetchZenModelCatalog is not defined`;
