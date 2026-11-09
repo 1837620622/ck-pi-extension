@@ -39,5 +39,6 @@
   },
   "scripts": {
     "test": "esbuild src/prompt.test.ts --bundle --packages=external --platform=node --format=esm --outfile=.test-dist/test.mjs --log-level=warning && node --test .test-dist/test.mjs"
-  }
+  },
+  "private": true
 }

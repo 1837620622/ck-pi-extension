@@ -203,10 +203,10 @@ export function generateZenRequestId(timestampMs = Date.now()): string {
 
 ## 六、安装方法
 
-### 方式 1：npm 安装（推荐）
+### 方式 1：GitHub 安装（推荐）
 
 ```bash
-pi install npm:ck-pi-zen-session
+pi install git:github.com/1837620622/ck-pi-extension
 ```
 
 ### 方式 2：GitHub 源码安装
@@ -471,10 +471,10 @@ export function generateZenRequestId(timestampMs = Date.now()): string {
 
 ## 6. Installation
 
-### Method 1: npm (Recommended)
+### Method 1: GitHub (Recommended)
 
 ```bash
-pi install npm:ck-pi-zen-session
+pi install git:github.com/1837620622/ck-pi-extension
 ```
 
 ### Method 2: From GitHub

@@ -46,5 +46,6 @@
     "build": "esbuild src/bin.ts --bundle --platform=node --format=esm --outfile=bin/cline-proxy.js",
     "prepack": "npm run build",
     "test": "npm run build && esbuild src/index.test.ts --bundle --packages=external --platform=node --format=esm --outfile=.test-dist/test.mjs --log-level=warning && node --test .test-dist/test.mjs"
-  }
+  },
+  "private": true
 }
